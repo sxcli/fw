@@ -49,6 +49,12 @@ func WithConfig(cfgPtr any) RegisterOption {
 // and unique within the binary; the same concrete struct type may be
 // registered only once. Register never panics — every violation is
 // recorded and reported at startup, all problems at once.
+//
+// After Register the instance belongs to the framework: register a
+// literal (Register("x", &X{}, ...)) and do not keep references to it.
+// Services outside the resolved closure are ejected from the registry so
+// their instances can be garbage collected — a kept package-level
+// reference only defeats that reclamation.
 func Register(id string, instance any, opts ...RegisterOption) {
 	var o registerOptions
 	for _, opt := range opts {

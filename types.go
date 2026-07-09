@@ -22,6 +22,11 @@ type Stopper interface {
 // order, after every closure member has been configured and just before
 // the applet runs. A Start error aborts startup: already-started services
 // are stopped in reverse order and the process exits non-zero.
+//
+// Dependencies are normally started before their dependents. Dependency
+// cycles are legal (they are logged as warnings) but weaken that
+// promise: a service participating in a cycle may receive Start while an
+// injected fellow cycle member is not started yet, and must tolerate it.
 type Starter interface {
 	Stopper
 	Start() error

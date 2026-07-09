@@ -154,7 +154,13 @@ type SCMApplet interface {
   is `Configurable`; `Start()` in dependency order on every `Starter`;
   `Stop()` in exact reverse order of the *successful* Start calls.
 - Lifecycle calls are sequential — no concurrency in the core.
-- A dependency cycle is a startup error naming the cycle.
+- Dependency cycles are legal but logged as warnings: injection is
+  unaffected (all instances exist before anything runs), but the
+  started-before-you promise cannot hold inside a cycle. Ordering uses
+  the SCC condensation: the dependency guarantee holds *between*
+  strongly connected components; *within* one, registration order
+  applies. A cycle member may receive Start with an injected-but-not-yet-
+  started dependency and must tolerate it.
 
 ### Windows service mode
 
@@ -203,6 +209,12 @@ startup fails reporting *all* problems at once:
 The concrete struct type is recorded automatically — no option needed —
 so dependents may require the service by `*Struct` or by any declared
 interface.
+
+After `Register` the instance belongs to the framework: register a
+literal (`Register("x", &X{}, …)`) and keep no references. Once the
+closure is resolved, services outside it are **ejected** from the
+registry so their instances can be garbage collected before `Configured`
+ever runs (best effort — a kept package-level reference defeats it).
 
 ### Dependency declaration
 
@@ -293,7 +305,10 @@ init() registrations → Main()
   4. config file discovery and loading (format providers used pre-lifecycle
      as pure stream transforms)
   5. closure resolution: applet + AlwaysOn + transitive deps,
-     with disable/enable/override applied; topo-sort (cycle = error)
+     with disable/enable/override applied; dependency-ordered via SCC
+     condensation (cycles are warnings, registration order within);
+     cold services are ejected from the registry so their instances
+     can be garbage collected
   6. strict full parse — complete arg/env schema now known
      (core + every closure member); unknown argument = error
   7. fill each closure member's config struct (in place, merged values)
@@ -494,7 +509,7 @@ func Tr(format string, args ...any) string
 
 | Item | State |
 | --- | --- |
-| `ConfigurationUpdated` trigger (file watch? signal? API?) | interface reserved, semantics open |
+| `ConfigurationUpdated` trigger (file watch? signal? API?) | interface reserved, semantics open — but constrained: a reload only re-fills config values of closure members; the graph is immutable once resolved (no add/remove/rewire, ever) |
 | Terminal UI provider | concept named, comes after v1 |
 | i18n providers + gettext catalogs | `Tr()`/`usage` designed as extraction sources |
 | Demo applet | undecided; will not mirror busybox applets |

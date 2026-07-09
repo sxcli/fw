@@ -77,6 +77,24 @@ func (r *Registry) All() []*Descriptor {
 	return r.ordered
 }
 
+// Retain drops every descriptor whose id is not in keep, so the
+// instances of services outside the resolved closure can be garbage
+// collected (best effort: a package-level reference kept by the
+// registering package defeats it). The composition is fixed once
+// resolved — ejected services cannot come back.
+func (r *Registry) Retain(keep map[string]bool) {
+	var kept []*Descriptor
+	for _, d := range r.ordered {
+		if keep[d.ID] {
+			kept = append(kept, d)
+		} else {
+			delete(r.byID, d.ID)
+			delete(r.concrete, d.Concrete)
+		}
+	}
+	r.ordered = kept
+}
+
 func (r *Registry) validateProvides(d *Descriptor, declared []reflect.Type) {
 	for _, it := range declared {
 		if it != nil && it.Kind() == reflect.Interface {

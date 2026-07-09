@@ -236,6 +236,23 @@ func TestParseInjectTag(t *testing.T) {
 	}
 }
 
+func TestRetainEjectsCold(t *testing.T) {
+	r := New()
+	r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{greeterType}})
+	r.Register("svcb", &svcB{}, Options{Interfaces: []reflect.Type{greeterType}})
+	r.Register("plain", &svcPlain{}, Options{})
+	r.Retain(map[string]bool{"svca": true, "plain": true})
+	if len(r.All()) != 2 {
+		t.Fatalf("expected 2 retained descriptors, got %d", len(r.All()))
+	}
+	if _, ok := r.ByID("svcb"); ok {
+		t.Error("ejected service still resolvable by id")
+	}
+	if r.All()[0].ID != "svca" || r.All()[1].ID != "plain" {
+		t.Errorf("retain must preserve registration order: %q, %q", r.All()[0].ID, r.All()[1].ID)
+	}
+}
+
 func TestDumpReadable(t *testing.T) {
 	r := New()
 	cfg := &struct {
