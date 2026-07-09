@@ -243,19 +243,38 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
 ### Dispatch rules
 
 1. Obtain argv from the platform layer.
-2. **If the first argument exists and does not start with `-`:** it is
+2. **Single-applet mode:** if exactly one applet is registered, it is
+   always dispatched. argv[0] is ignored and *no applet-selector
+   consumption happens at all* — the entire argument vector (after the
+   binary name) belongs to the applet as ordinary flags/positionals. This
+   lets the framework serve simple applications with no thought given to
+   binary names, symlinks, or subcommands. Notes:
+   - `binary myapplet --args` does **not** treat `myapplet` as a selector
+     even when it matches the sole applet's ID — it is a leading bare
+     token under normal arg parsing. Selector logic is fully off; no
+     "data or selector?" ambiguity.
+   - Registering a second applet re-enables selector logic (rules 3–4),
+     changing the binary's command-line contract. That breaking change is
+     the developer's responsibility to manage.
+   - Only dispatch changes. The sole applet's ID still anchors the
+     `APPLETID_` env prefix and config file names; closure resolution,
+     disable/enable/override, and the lifecycle proceed as usual.
+3. **If the first argument exists and does not start with `-`:** it is
    always an applet selector. Look it up, dispatch with the remaining args,
    overriding argv[0]. Unknown name → dispatch failure — even if
    basename(argv[0]) is itself a valid applet. No fallback.
-3. **Otherwise:** basename(argv[0]) must name a registered applet; dispatch
+4. **Otherwise:** basename(argv[0]) must name a registered applet; dispatch
    with all args.
-4. Every dispatch failure (including a binary with zero registered applets)
+5. Every dispatch failure (including a binary with zero registered applets)
    prints usage — including the list of registered applet IDs — to stderr
-   and exits non-zero.
+   and exits non-zero. In single-applet mode the applet-list section is
+   dropped from usage/--help output; only the lone applet's argument
+   schema (core + closure, grouped by service ID) is rendered.
 
-Consequence (documented): a leading bare token is *never* applet data.
-Scripts must know `binary appletName --args` dispatches to `appletName`, and
-a symlinked applet cannot take a bare first positional.
+Consequence (documented): in multi-applet binaries a leading bare token is
+*never* applet data. Scripts must know `binary appletName --args`
+dispatches to `appletName`, and a symlinked applet cannot take a bare first
+positional.
 
 ### Pipeline
 
