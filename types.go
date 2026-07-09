@@ -46,10 +46,9 @@ type Starter interface {
 // taxes every invocation with its startup cost, its configuration surface,
 // and its failure modes. It SHOULD NOT be used lightly, if at all — almost
 // every service belongs in the normal dependency closure instead. AlwaysOn
-// exists for framework-level infrastructure (config format providers, log
-// sinks) and little else. The framework reserves the right to disable or
-// remove AlwaysOn support in a future version; do not build designs that
-// depend on it.
+// exists for framework-level infrastructure (log sinks) and little else.
+// The framework reserves the right to disable or remove AlwaysOn support
+// in a future version; do not build designs that depend on it.
 type AlwaysOn interface {
 	Starter
 }
@@ -84,13 +83,18 @@ type ConfigurationUpdater interface {
 // startup error.
 //
 // ToJSON and FromJSON must be pure stream transforms: the core uses them
-// while discovering and loading config files — before the provider is
+// while discovering and loading config files — before anything is
 // configured or started — so they must not depend on the provider's own
 // configuration or lifecycle state. FromJSON serves configuration file
-// generation (--write-config). The provider still receives its normal
-// Configured/Start/Stop as an always-on service.
+// generation (--write-config).
+//
+// Providers are ordinary services: registered cold, discovered by this
+// interface, used statelessly. The provider whose extension matched an
+// actually loaded file (or the --write-config target) is pulled into the
+// closure and receives the normal lifecycle; unused providers stay cold
+// and are ejected. A provider that wants an unconditional lifecycle may
+// still declare Provides[AlwaysOn]() at registration.
 type ConfigFormatProvider interface {
-	AlwaysOn
 	Extensions() []string
 	ToJSON(in io.Reader) (io.Reader, error)
 	FromJSON(in io.Reader) (io.Reader, error)

@@ -103,10 +103,10 @@ type Starter interface {
 // taxes every invocation with its startup cost, its configuration
 // surface, and its failure modes. It SHOULD NOT be used lightly, if at
 // all — almost every service belongs in the normal dependency closure
-// instead. AlwaysOn exists for framework-level infrastructure (config
-// format providers, log sinks) and little else. The framework reserves
-// the right to disable or remove AlwaysOn support in a future version;
-// do not build designs that depend on it.
+// instead. AlwaysOn exists for framework-level infrastructure (log
+// sinks) and little else. The framework reserves the right to disable
+// or remove AlwaysOn support in a future version; do not build designs
+// that depend on it.
 type AlwaysOn interface {
     Starter
 }
@@ -412,11 +412,17 @@ Files are transcoded by extension via format providers; JSON is handled
 natively. A file whose extension no registered provider handles is a
 **startup error**.
 
+The core's `--config,-c` path is itself an ordinary config value with the
+usual source precedence — default empty, settable via env, the argument
+always wins (it cannot meaningfully come from a config file). When it
+resolves non-empty, that single file **is** the configuration and the
+three-location search is skipped entirely; when empty, the locations are
+searched and merged as above.
+
 ### Format providers
 
 ```go
 type ConfigFormatProvider interface {
-    AlwaysOn
     Extensions() []string                       // e.g. ["yaml", "yml"]
     ToJSON(in io.Reader) (io.Reader, error)     // native format → JSON
     FromJSON(in io.Reader) (io.Reader, error)   // JSON → native format (--write-config)
@@ -424,9 +430,15 @@ type ConfigFormatProvider interface {
 ```
 
 Documented contract: `ToJSON`/`FromJSON` are **pure stream transforms**,
-usable before the provider is configured or started (the core needs them
-during step 4, pre-lifecycle). Providers still receive their normal
-Configured/Start/Stop as always-on services.
+usable before anything is configured or started (the core needs them
+during step 4, pre-lifecycle). Providers are ordinary services: registered
+cold, discovered by interface, used statelessly. The provider whose
+extension matched an actually loaded file (or the `--write-config`
+target) is added as a closure seed — it receives the normal lifecycle and
+survives ejection, keeping a future value-only config reload able to
+re-read the file. Unused providers stay cold and are ejected. A provider
+wanting an unconditional lifecycle may still declare `Provides[AlwaysOn]()`
+itself.
 
 ### Argument syntax
 
