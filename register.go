@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/sxcli/sxcli-fw/internal/config"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
 // defaultRegistry is populated by Register calls from package init()
 // functions; Main validates and consumes it.
-var defaultRegistry = registry.New(checkReservedID, checkAppletLifecycle)
+var defaultRegistry = registry.New(checkReservedID, checkAppletLifecycle, config.ValidateConfig)
 
 type registerOptions struct {
 	interfaces []reflect.Type

@@ -527,3 +527,4 @@ func Tr(format string, args ...any) string
 | Demo applet | undecided; will not mirror busybox applets |
 | Positional parsing/routing | positionals collected, routing open |
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
+| Custom value parsers (e.g. `type UnixTime` with a user-provided parser service, discovered like format providers) | deliberately not in v1 — the converter is a single switch; a parser registry slots in front of it when someone actually needs one |
