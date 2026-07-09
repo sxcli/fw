@@ -5,12 +5,17 @@ import (
 	"reflect"
 
 	"github.com/sxcli/sxcli-fw/internal/config"
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
+// defaultCollector accumulates every startup violation across all
+// phases; Main reports its content and exits when it is non-empty.
+var defaultCollector = &fail.Collector{}
+
 // defaultRegistry is populated by Register calls from package init()
 // functions; Main validates and consumes it.
-var defaultRegistry = registry.New(checkReservedID, checkAppletLifecycle, config.ValidateConfig)
+var defaultRegistry = registry.New(defaultCollector, checkReservedID, checkAppletLifecycle, config.ValidateConfig)
 
 type registerOptions struct {
 	interfaces []reflect.Type

@@ -1,9 +1,9 @@
 package graph
 
 import (
-	"fmt"
 	"reflect"
 
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
@@ -11,28 +11,30 @@ import (
 // with the dispatched applet, the always-on services and every forced
 // Enable, expand it through the inject fields, resolve every member's
 // bindings against the final closure, and order it dependencies-first.
-// Errors are collected and returned together; a non-empty error slice
-// means the Result must not be used.
-func Resolve(reg *registry.Registry, appletID string, alwaysOn []string, ctl Controls) (Result, []error) {
+// Violations are recorded into c; when c grew, the Result must not be
+// used.
+func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, alwaysOn []string, ctl Controls) Result {
 	r := &resolver{
 		reg:      reg,
+		c:        c,
 		disabled: map[string]bool{},
 		override: map[string]string{},
 		closure:  map[string]bool{},
 	}
+	before := c.Len()
 	r.validateControls(ctl)
-	if len(r.errs) == 0 {
+	if c.Len() == before {
 		r.expand(r.seeds(appletID, alwaysOn, ctl.Enable))
 	}
-	if len(r.errs) == 0 {
+	if c.Len() == before {
 		r.order(r.bind())
 	}
-	return r.result, r.errs
+	return r.result
 }
 
 // fail records a resolution violation.
 func (r *resolver) fail(format string, args ...any) {
-	r.errs = append(r.errs, fmt.Errorf(format, args...))
+	r.c.Fail(format, args...)
 }
 
 func (r *resolver) validateControls(ctl Controls) {

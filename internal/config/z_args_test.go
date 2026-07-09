@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/sxcli/sxcli-fw/internal/fail"
 )
 
 type argsConfig struct {
@@ -18,7 +20,9 @@ type argsConfig struct {
 func parseInto(t *testing.T, cfg *argsConfig, lenient bool, args ...string) ([]string, []error) {
 	t.Helper()
 	s := newTestSchema(t, &Core{}, map[string]any{"svc": cfg})
-	return s.parseArgs(args, lenient)
+	c := &fail.Collector{}
+	pos := s.parseArgs(c, args, lenient)
+	return pos, c.All()
 }
 
 func mustParse(t *testing.T, cfg *argsConfig, args ...string) []string {
@@ -114,13 +118,11 @@ func TestStrictErrors(t *testing.T) {
 
 func TestLenientSkipsUnknown(t *testing.T) {
 	var core Core
-	s, errs := NewSchema("cat", &core, nil)
-	if len(errs) != 0 {
-		t.Fatalf("unexpected schema errors: %v", errs)
-	}
-	_, perrs := s.parseArgs([]string{"--level", "warn", "-z", "--config", "override.json", "stray"}, true)
-	if len(perrs) != 0 {
-		t.Fatalf("lenient mode must not error on unknowns: %v", perrs)
+	c := &fail.Collector{}
+	s := NewSchema(c, "cat", &core, nil)
+	s.parseArgs(c, []string{"--level", "warn", "-z", "--config", "override.json", "stray"}, true)
+	if c.Len() != 0 {
+		t.Fatalf("lenient mode must not error on unknowns: %v", c.All())
 	}
 	if core.Config != "override.json" {
 		t.Errorf("known core value not extracted: %q", core.Config)

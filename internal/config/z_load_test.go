@@ -7,7 +7,19 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sxcli/sxcli-fw/internal/fail"
 )
+
+func mustLoadFiles(t *testing.T, src Sources, explicit string) *Files {
+	t.Helper()
+	c := &fail.Collector{}
+	files := LoadFiles(c, src, explicit)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected file errors: %v", c.All())
+	}
+	return files
+}
 
 // identityYAML pretends to be a YAML provider; ToJSON passes the content
 // through, which is enough to prove the transcode wiring and Used
@@ -61,17 +73,15 @@ func TestPrecedenceEndToEnd(t *testing.T) {
 		}),
 		Providers: []Provider{&identityYAML{}},
 	}
-	files, ferrs := LoadFiles(src, "")
-	if len(ferrs) != 0 {
-		t.Fatalf("unexpected file errors: %v", ferrs)
-	}
+	files := mustLoadFiles(t, src, "")
 	if len(files.Used) != 1 {
 		t.Errorf("yaml provider use not recorded: %v", files.Used)
 	}
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
-	loaded, errs := s.Apply(files, src)
-	if len(errs) != 0 {
-		t.Fatalf("unexpected apply errors: %v", errs)
+	c := &fail.Collector{}
+	loaded := s.Apply(c, files, src)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected apply errors: %v", c.All())
 	}
 	if cfg.Path != "env.log" {
 		t.Errorf("env must beat files: %q", cfg.Path)
@@ -99,13 +109,12 @@ func TestLaterLocationOverridesEarlier(t *testing.T) {
 			"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
 		}),
 	}
-	files, ferrs := LoadFiles(src, "")
-	if len(ferrs) != 0 {
-		t.Fatalf("unexpected file errors: %v", ferrs)
-	}
+	files := mustLoadFiles(t, src, "")
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
-	if _, errs := s.Apply(files, src); len(errs) != 0 {
-		t.Fatalf("unexpected apply errors: %v", errs)
+	c := &fail.Collector{}
+	s.Apply(c, files, src)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected apply errors: %v", c.All())
 	}
 	if cfg.Path != "etc.log" || cfg.Backups != 3 {
 		t.Errorf("later file must override field-wise only: %+v", cfg)
@@ -122,13 +131,12 @@ func TestExplicitConfigReplacesSearch(t *testing.T) {
 		}),
 		Providers: []Provider{&identityYAML{}},
 	}
-	files, ferrs := LoadFiles(src, "/tmp/mine.yml")
-	if len(ferrs) != 0 {
-		t.Fatalf("unexpected file errors: %v", ferrs)
-	}
+	files := mustLoadFiles(t, src, "/tmp/mine.yml")
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
-	if _, errs := s.Apply(files, src); len(errs) != 0 {
-		t.Fatalf("unexpected apply errors: %v", errs)
+	c := &fail.Collector{}
+	s.Apply(c, files, src)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected apply errors: %v", c.All())
 	}
 	if cfg.Path != "mine.log" {
 		t.Errorf("--config must replace the search: %q", cfg.Path)
@@ -156,7 +164,9 @@ func TestFileErrors(t *testing.T) {
 				Open:      fakeFS(tc.files),
 				Providers: []Provider{&identityYAML{}},
 			}
-			if _, errs := LoadFiles(src, tc.explicit); len(errs) == 0 {
+			c := &fail.Collector{}
+			LoadFiles(c, src, tc.explicit)
+			if c.Len() == 0 {
 				t.Error("expected file errors, got none")
 			}
 		})
@@ -169,12 +179,11 @@ func TestUnknownKeyInOwnedSection(t *testing.T) {
 		Locations: []string{"/etc/cat/config"},
 		Open:      fakeFS(map[string]string{"/etc/cat/config.json": `{"filesink": {"pth": "typo.log"}}`}),
 	}
-	files, ferrs := LoadFiles(src, "")
-	if len(ferrs) != 0 {
-		t.Fatalf("unexpected file errors: %v", ferrs)
-	}
+	files := mustLoadFiles(t, src, "")
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
-	if _, errs := s.Apply(files, src); len(errs) == 0 {
+	c := &fail.Collector{}
+	s.Apply(c, files, src)
+	if c.Len() == 0 {
 		t.Error("unknown key in an owned section must be an error")
 	}
 }
@@ -186,13 +195,11 @@ func TestApplyCoreSeesFileValues(t *testing.T) {
 		Locations: []string{"/etc/cat/config"},
 		Open:      fakeFS(map[string]string{"/etc/cat/config.json": `{"core": {"disable": ["never"], "override": ["sqlite=mysql"]}}`}),
 	}
-	files, ferrs := LoadFiles(src, "")
-	if len(ferrs) != 0 {
-		t.Fatalf("unexpected file errors: %v", ferrs)
-	}
-	core, errs := files.ApplyCore("cat", src)
-	if len(errs) != 0 {
-		t.Fatalf("unexpected core errors: %v", errs)
+	files := mustLoadFiles(t, src, "")
+	c := &fail.Collector{}
+	core := files.ApplyCore(c, "cat", src)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected core errors: %v", c.All())
 	}
 	if !reflect.DeepEqual(core.Disable, []string{"sqlite", "boltdb"}) {
 		t.Errorf("env must beat file for disable: %v", core.Disable)
@@ -206,12 +213,13 @@ func TestApplyCoreSeesFileValues(t *testing.T) {
 }
 
 func TestPeekCore(t *testing.T) {
-	core, errs := PeekCore("cat", Sources{
+	c := &fail.Collector{}
+	core := PeekCore(c, "cat", Sources{
 		Args:      []string{"--unknown-service-flag", "junk", "--config=x.yml", "--write-config"},
 		LookupEnv: env(map[string]string{"CAT_HELP": "true"}),
 	})
-	if len(errs) != 0 {
-		t.Fatalf("unexpected errors: %v", errs)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected errors: %v", c.All())
 	}
 	if core.Config != "x.yml" || !core.WriteConfig || !core.Help {
 		t.Errorf("core values not extracted: %+v", core)

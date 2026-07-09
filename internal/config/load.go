@@ -1,54 +1,51 @@
 package config
 
-import "fmt"
+import "github.com/sxcli/sxcli-fw/internal/fail"
 
 // PeekCore is the first pipeline pass: it leniently extracts the core's
 // own configuration from environment and arguments only — no file can be
 // located before --config is known. File-sourced core values arrive
 // later via Files.ApplyCore.
-func PeekCore(appletID string, src Sources) (Core, []error) {
+func PeekCore(c *fail.Collector, appletID string, src Sources) Core {
 	var core Core
-	sch, errs := NewSchema(appletID, &core, nil)
-	if len(errs) == 0 {
-		errs = append(errs, sch.applyEnv(src.LookupEnv)...)
-		_, aerrs := sch.parseArgs(src.Args, true)
-		errs = append(errs, aerrs...)
+	before := c.Len()
+	sch := NewSchema(c, appletID, &core, nil)
+	if c.Len() == before {
+		sch.applyEnv(c, src.LookupEnv)
+		sch.parseArgs(c, src.Args, true)
 	}
-	return core, errs
+	return core
 }
 
 // ApplyCore refills a fresh Core in full precedence order once the
 // files are loaded: file sections, then environment, then arguments.
 // This is the Core the closure resolution must use — a disable/enable/
 // override list in a config file is only visible here.
-func (f *Files) ApplyCore(appletID string, src Sources) (Core, []error) {
+func (f *Files) ApplyCore(c *fail.Collector, appletID string, src Sources) Core {
 	var core Core
-	sch, errs := NewSchema(appletID, &core, nil)
-	if len(errs) == 0 {
-		errs = append(errs, sch.applyFiles(f)...)
-		errs = append(errs, sch.applyEnv(src.LookupEnv)...)
-		_, aerrs := sch.parseArgs(src.Args, true)
-		errs = append(errs, aerrs...)
+	before := c.Len()
+	sch := NewSchema(c, appletID, &core, nil)
+	if c.Len() == before {
+		sch.applyFiles(c, f)
+		sch.applyEnv(c, src.LookupEnv)
+		sch.parseArgs(c, src.Args, true)
 	}
-	return core, errs
+	return core
 }
 
 // Apply is the strict pipeline pass over the full schema: files, then
-// environment, then arguments, unknown argument = error. It fills every
-// member's config struct in place and returns the trailing positionals.
-func (s *Schema) Apply(files *Files, src Sources) (Loaded, []error) {
-	var errs []error
-	errs = append(errs, s.applyFiles(files)...)
-	errs = append(errs, s.applyEnv(src.LookupEnv)...)
-	positionals, aerrs := s.parseArgs(src.Args, false)
-	errs = append(errs, aerrs...)
-	return Loaded{Positionals: positionals}, errs
+// environment, then arguments, unknown argument = violation. It fills
+// every member's config struct in place and returns the trailing
+// positionals.
+func (s *Schema) Apply(c *fail.Collector, files *Files, src Sources) Loaded {
+	s.applyFiles(c, files)
+	s.applyEnv(c, src.LookupEnv)
+	return Loaded{Positionals: s.parseArgs(c, src.Args, false)}
 }
 
 // applyEnv writes every present environment variable into its field.
 // Slice values are comma-separated and replace the field whole.
-func (s *Schema) applyEnv(lookup func(string) (string, bool)) []error {
-	var errs []error
+func (s *Schema) applyEnv(c *fail.Collector, lookup func(string) (string, bool)) {
 	if lookup != nil {
 		for _, svc := range s.services {
 			for _, f := range svc.fields {
@@ -62,12 +59,11 @@ func (s *Schema) applyEnv(lookup func(string) (string, bool)) []error {
 							err = setFromString(target, value)
 						}
 						if err != nil {
-							errs = append(errs, fmt.Errorf("$%s: %v", f.EnvName, err))
+							c.Fail("$%s: %v", f.EnvName, err)
 						}
 					}
 				}
 			}
 		}
 	}
-	return errs
 }

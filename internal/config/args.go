@@ -1,9 +1,10 @@
 package config
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/sxcli/sxcli-fw/internal/fail"
 )
 
 // parseArgs applies the argument source to the schema's config structs.
@@ -15,8 +16,8 @@ import (
 // values whose neighbours are unknown.
 //
 // A literal "--" ends flag parsing; everything after it is positional.
-func (s *Schema) parseArgs(args []string, lenient bool) ([]string, []error) {
-	p := &argParser{schema: s, lenient: lenient, reset: map[*Field]bool{}}
+func (s *Schema) parseArgs(c *fail.Collector, args []string, lenient bool) []string {
+	p := &argParser{schema: s, c: c, lenient: lenient, reset: map[*Field]bool{}}
 	i := 0
 	for i < len(args) {
 		token := args[i]
@@ -33,19 +34,19 @@ func (s *Schema) parseArgs(args []string, lenient bool) ([]string, []error) {
 		}
 		i += consumed
 	}
-	return p.pending, p.errs
+	return p.pending
 }
 
 type argParser struct {
 	schema  *Schema
+	c       *fail.Collector
 	lenient bool
 	pending []string        // bare tokens; positionals only if nothing follows
 	reset   map[*Field]bool // slice fields already reset by this parse
-	errs    []error
 }
 
 func (p *argParser) fail(format string, args ...any) {
-	p.errs = append(p.errs, fmt.Errorf(format, args...))
+	p.c.Fail(format, args...)
 }
 
 // flagSeen enforces that bare tokens only trail: hitting a flag while

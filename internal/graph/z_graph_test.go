@@ -4,8 +4,13 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
+
+func newRegistry() *registry.Registry {
+	return registry.New(&fail.Collector{})
+}
 
 type worker interface{ Work() }
 type storage interface{ Store() }
@@ -101,15 +106,16 @@ func position(t *testing.T, res Result, id string) int {
 
 func mustResolve(t *testing.T, reg *registry.Registry, appletID string, alwaysOn []string, ctl Controls) Result {
 	t.Helper()
-	res, errs := Resolve(reg, appletID, alwaysOn, ctl)
-	if len(errs) != 0 {
-		t.Fatalf("unexpected resolve errors: %v", errs)
+	c := &fail.Collector{}
+	res := Resolve(c, reg, appletID, alwaysOn, ctl)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected resolve errors: %v", c.All())
 	}
 	return res
 }
 
 func TestChainOrderAndBindings(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
@@ -127,7 +133,7 @@ func TestChainOrderAndBindings(t *testing.T) {
 }
 
 func TestColdServicesStayOut(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType)) // nothing pulls it
@@ -138,7 +144,7 @@ func TestColdServicesStayOut(t *testing.T) {
 }
 
 func TestFirstRegisteredWins(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
@@ -154,7 +160,7 @@ func TestFirstRegisteredWins(t *testing.T) {
 }
 
 func TestSliceGathersLateJoiners(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("appseeded", &appSeeded{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType)) // joins via always-on, not via the seed list
@@ -171,7 +177,7 @@ func TestSliceGathersLateJoiners(t *testing.T) {
 }
 
 func TestBareSlicePullsAllRegistered(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("appall", &appAll{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
@@ -183,7 +189,7 @@ func TestBareSlicePullsAllRegistered(t *testing.T) {
 }
 
 func TestOptionalMissingIsFine(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("appopt", &appOptional{}, registry.Options{})
 	res := mustResolve(t, r, "appopt", nil, Controls{})
 	m := res.Ordered[0]
@@ -239,9 +245,11 @@ func TestResolutionErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := registry.New()
+			r := newRegistry()
 			tc.setup(r)
-			if _, errs := Resolve(r, tc.applet, nil, tc.ctl); len(errs) == 0 {
+			c := &fail.Collector{}
+			Resolve(c, r, tc.applet, nil, tc.ctl)
+			if c.Len() == 0 {
 				t.Error("expected resolve errors, got none")
 			}
 		})
@@ -249,7 +257,7 @@ func TestResolutionErrors(t *testing.T) {
 }
 
 func TestDisableSteersBareField(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
@@ -262,7 +270,7 @@ func TestDisableSteersBareField(t *testing.T) {
 }
 
 func TestOverrideSubstitutes(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("appbyid", &appByID{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
@@ -280,7 +288,7 @@ func TestOverrideSubstitutes(t *testing.T) {
 }
 
 func TestEnableForcesColdService(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType)) // cold unless enabled; drags storea
@@ -295,7 +303,7 @@ func TestEnableForcesColdService(t *testing.T) {
 }
 
 func TestConcreteTypeDependency(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("appstore", &appStore{}, registry.Options{})
 	r.Register("storea", &storeA{}, provides(storageType))
 	res := mustResolve(t, r, "appstore", nil, Controls{})
@@ -306,7 +314,7 @@ func TestConcreteTypeDependency(t *testing.T) {
 }
 
 func TestCycleIsWarningNotError(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("ping", &ping{}, provides(workerType))
 	r.Register("pong", &pong{}, provides(storageType))
 	res := mustResolve(t, r, "ping", nil, Controls{})
@@ -322,7 +330,7 @@ func TestCycleIsWarningNotError(t *testing.T) {
 }
 
 func TestSelfLoopIsReported(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("selfish", &selfish{}, provides(workerType))
 	res := mustResolve(t, r, "selfish", nil, Controls{})
 	if !reflect.DeepEqual(res.Cycles, [][]string{{"selfish"}}) {
@@ -331,7 +339,7 @@ func TestSelfLoopIsReported(t *testing.T) {
 }
 
 func TestAlwaysOnJoinsAndDisabledAlwaysOnSkips(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
@@ -346,7 +354,7 @@ func TestAlwaysOnJoinsAndDisabledAlwaysOnSkips(t *testing.T) {
 }
 
 func TestDiamondResolvesOnce(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("appall", &appAll{}, registry.Options{})
 	r.Register("ping", &ping{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType)) // both need storage

@@ -3,6 +3,7 @@ package graph
 import (
 	"testing"
 
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
@@ -18,13 +19,15 @@ func (d *derived) Work() {}
 
 func mustInject(t *testing.T, res Result) {
 	t.Helper()
-	if errs := res.Inject(); len(errs) != 0 {
-		t.Fatalf("unexpected inject errors: %v", errs)
+	c := &fail.Collector{}
+	res.Inject(c)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected inject errors: %v", c.All())
 	}
 }
 
 func TestInjectWiresInterfaceAndConcreteFields(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	theApp := &app{}
 	wb := &workerB{}
 	sa := &storeA{}
@@ -39,7 +42,7 @@ func TestInjectWiresInterfaceAndConcreteFields(t *testing.T) {
 		t.Errorf("transitive dependency not wired: %v", wb.S)
 	}
 	store := &appStore{}
-	r2 := registry.New()
+	r2 := newRegistry()
 	r2.Register("appstore", store, registry.Options{})
 	r2.Register("storea", sa, provides(storageType))
 	mustInject(t, mustResolve(t, r2, "appstore", nil, Controls{}))
@@ -49,7 +52,7 @@ func TestInjectWiresInterfaceAndConcreteFields(t *testing.T) {
 }
 
 func TestInjectFillsSliceInOrder(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	theApp := &appAll{}
 	wa := &workerA{}
 	wb := &workerB{}
@@ -65,7 +68,7 @@ func TestInjectFillsSliceInOrder(t *testing.T) {
 }
 
 func TestInjectLeavesUnmatchedOptionalUntouched(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	theApp := &appOptional{}
 	r.Register("appopt", theApp, registry.Options{})
 	mustInject(t, mustResolve(t, r, "appopt", nil, Controls{}))
@@ -75,7 +78,7 @@ func TestInjectLeavesUnmatchedOptionalUntouched(t *testing.T) {
 }
 
 func TestInjectWiresCycleBothWays(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	p1 := &ping{}
 	p2 := &pong{}
 	r.Register("ping", p1, provides(workerType))
@@ -87,11 +90,13 @@ func TestInjectWiresCycleBothWays(t *testing.T) {
 }
 
 func TestInjectReportsNilEmbeddedPointer(t *testing.T) {
-	r := registry.New()
+	r := newRegistry()
 	r.Register("derived", &derived{}, registry.Options{}) // base is nil
 	r.Register("workera", &workerA{}, provides(workerType))
 	res := mustResolve(t, r, "derived", nil, Controls{})
-	if errs := res.Inject(); len(errs) != 1 {
-		t.Errorf("expected one nil-embedded-pointer error, got %v", errs)
+	c := &fail.Collector{}
+	res.Inject(c)
+	if c.Len() != 1 {
+		t.Errorf("expected one nil-embedded-pointer error, got %v", c.All())
 	}
 }

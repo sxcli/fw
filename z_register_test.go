@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
@@ -33,8 +34,9 @@ func (a *startingApplet) Run() int          { return 0 }
 func (a *startingApplet) Stop() error       { return nil }
 func (a *startingApplet) Start() error      { return nil }
 
-func newRootRegistry() *registry.Registry {
-	return registry.New(checkReservedID, checkAppletLifecycle)
+func newRootRegistry() (*registry.Registry, *fail.Collector) {
+	c := &fail.Collector{}
+	return registry.New(c, checkReservedID, checkAppletLifecycle), c
 }
 
 func fold(opts ...RegisterOption) registry.Options {
@@ -57,9 +59,9 @@ func TestProvidesCapturesInterfaceType(t *testing.T) {
 }
 
 func TestProvidesNonInterfaceIsRecorded(t *testing.T) {
-	r := newRootRegistry()
+	r, c := newRootRegistry()
 	r.Register("plain", &plainService{}, fold(Provides[plainService]()))
-	if len(r.Errors()) == 0 {
+	if c.Len() == 0 {
 		t.Error("Provides of a non-interface type must record an error")
 	}
 }
@@ -73,9 +75,9 @@ func TestWithConfigCapturesPointer(t *testing.T) {
 }
 
 func TestReservedCoreID(t *testing.T) {
-	r := newRootRegistry()
+	r, c := newRootRegistry()
 	r.Register("core", &plainService{}, fold())
-	if len(r.Errors()) == 0 {
+	if c.Len() == 0 {
 		t.Error("registering under the reserved id must record an error")
 	}
 }
@@ -93,22 +95,22 @@ func TestAppletLifecycleCheck(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := newRootRegistry()
+			r, c := newRootRegistry()
 			r.Register("subject", tc.instance, fold())
-			if tc.wantErr != (len(r.Errors()) > 0) {
-				t.Errorf("errors=%v, wantErr=%v", r.Errors(), tc.wantErr)
+			if tc.wantErr != (c.Len() > 0) {
+				t.Errorf("errors=%v, wantErr=%v", c.All(), tc.wantErr)
 			}
 		})
 	}
 }
 
 func TestRegisterEndToEnd(t *testing.T) {
-	r := newRootRegistry()
+	r, c := newRootRegistry()
 	cfg := &struct{ Level string }{Level: "info"}
 	r.Register("plain", &plainService{}, fold(Provides[pingService](), WithConfig(cfg)))
 	r.Register("app", &goodApplet{}, fold())
-	if len(r.Errors()) != 0 {
-		t.Fatalf("unexpected errors: %v", r.Errors())
+	if c.Len() != 0 {
+		t.Fatalf("unexpected errors: %v", c.All())
 	}
 	d, ok := r.ByID("plain")
 	if !ok {

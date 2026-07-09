@@ -5,7 +5,11 @@
 // functions run against every descriptor at registration time.
 package registry
 
-import "reflect"
+import (
+	"reflect"
+
+	"github.com/sxcli/sxcli-fw/internal/fail"
+)
 
 // Check is a semantic validation hook supplied by the framework root. A
 // non-nil result is recorded like any other registration violation.
@@ -39,13 +43,13 @@ type Descriptor struct {
 	Deps      []DepField
 }
 
-// Registry collects service descriptors and every registration
-// violation. It never panics: errors are reported together via Errors so
-// startup can fail listing all problems at once.
+// Registry collects service descriptors. It never panics: every
+// violation is recorded into the shared startup collector so startup can
+// fail listing all problems at once.
 type Registry struct {
+	c        *fail.Collector
 	checks   []Check
 	ordered  []*Descriptor
 	byID     map[string]*Descriptor
 	concrete map[reflect.Type]string // concrete type → id that claimed it
-	errs     []error
 }

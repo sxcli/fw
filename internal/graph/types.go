@@ -6,7 +6,10 @@
 // package.
 package graph
 
-import "github.com/sxcli/sxcli-fw/internal/registry"
+import (
+	"github.com/sxcli/sxcli-fw/internal/fail"
+	"github.com/sxcli/sxcli-fw/internal/registry"
+)
 
 // Controls is the config-driven service control surface (the core's
 // disable/enable/override settings). Disable removes services from the
@@ -49,9 +52,9 @@ type Result struct {
 // resolver carries the working state of one Resolve call.
 type resolver struct {
 	reg      *registry.Registry
+	c        *fail.Collector
 	disabled map[string]bool
 	override map[string]string
 	closure  map[string]bool
-	errs     []error
 	result   Result
 }

@@ -5,7 +5,14 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sxcli/sxcli-fw/internal/fail"
 )
+
+func newReg(checks ...Check) (*Registry, *fail.Collector) {
+	c := &fail.Collector{}
+	return New(c, checks...), c
+}
 
 type greeter interface {
 	Greet() string
@@ -55,12 +62,12 @@ var greeterType = reflect.TypeOf((*greeter)(nil)).Elem()
 var farewellType = reflect.TypeOf((*farewell)(nil)).Elem()
 
 func TestRegisterHappyPath(t *testing.T) {
-	r := New()
+	r, c := newReg()
 	cfg := &struct{ N int }{N: 42}
 	r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{greeterType}})
 	r.Register("svcb", &svcB{}, Options{Interfaces: []reflect.Type{greeterType}, Config: cfg})
-	if len(r.Errors()) != 0 {
-		t.Fatalf("unexpected errors: %v", r.Errors())
+	if c.Len() != 0 {
+		t.Fatalf("unexpected errors: %v", c.All())
 	}
 	if len(r.All()) != 2 {
 		t.Fatalf("expected 2 descriptors, got %d", len(r.All()))
@@ -123,9 +130,9 @@ func TestRegisterIdentityViolations(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := New()
+			r, c := newReg()
 			tc.register(r)
-			if len(r.Errors()) == 0 {
+			if c.Len() == 0 {
 				t.Error("expected a recorded error, got none")
 			}
 			if len(r.All()) != tc.stored {
@@ -170,9 +177,9 @@ func TestRegisterNonIdentityViolationsStillStore(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := New()
+			r, c := newReg()
 			tc.register(r)
-			if len(r.Errors()) == 0 {
+			if c.Len() == 0 {
 				t.Error("expected a recorded error, got none")
 			}
 			if len(r.All()) != 1 {
@@ -189,13 +196,13 @@ func TestChecksRunAndRecord(t *testing.T) {
 		return fmt.Errorf("check rejects %q", d.ID)
 	}
 	passing := func(d *Descriptor) error { return nil }
-	r := New(failing, passing)
+	r, c := newReg(failing, passing)
 	r.Register("svca", &svcA{}, Options{})
 	if len(seen) != 1 || seen[0] != "svca" {
 		t.Errorf("check not invoked with descriptor: %v", seen)
 	}
-	if len(r.Errors()) != 1 {
-		t.Errorf("expected exactly the failing check's error, got %v", r.Errors())
+	if c.Len() != 1 {
+		t.Errorf("expected exactly the failing check's error, got %v", c.All())
 	}
 	if len(r.All()) != 1 {
 		t.Errorf("check failures must not discard the descriptor, got %d stored", len(r.All()))
@@ -237,7 +244,7 @@ func TestParseInjectTag(t *testing.T) {
 }
 
 func TestRetainEjectsCold(t *testing.T) {
-	r := New()
+	r, _ := newReg()
 	r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{greeterType}})
 	r.Register("svcb", &svcB{}, Options{Interfaces: []reflect.Type{greeterType}})
 	r.Register("plain", &svcPlain{}, Options{})
@@ -254,7 +261,7 @@ func TestRetainEjectsCold(t *testing.T) {
 }
 
 func TestDumpReadable(t *testing.T) {
-	r := New()
+	r, _ := newReg()
 	cfg := &struct {
 		Path  string
 		Level int

@@ -10,7 +10,7 @@ import (
 // Dump writes a human-readable description of the registry's contents
 // and collected errors to w.
 func (r *Registry) Dump(w io.Writer) {
-	fmt.Fprintf(w, "registry: %d service(s), %d error(s)\n", len(r.ordered), len(r.errs))
+	fmt.Fprintf(w, "registry: %d service(s), %d error(s)\n", len(r.ordered), r.c.Len())
 	for i, d := range r.ordered {
 		fmt.Fprintf(w, "[%d] %s → %s\n", i+1, d.ID, d.Concrete)
 		if len(d.Provides) > 0 {
@@ -30,9 +30,9 @@ func (r *Registry) Dump(w io.Writer) {
 			}
 		}
 	}
-	if len(r.errs) > 0 {
+	if r.c.Len() > 0 {
 		fmt.Fprintf(w, "errors:\n")
-		for _, err := range r.errs {
+		for _, err := range r.c.All() {
 			fmt.Fprintf(w, "  - %v\n", err)
 		}
 	}

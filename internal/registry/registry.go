@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/sxcli/sxcli-fw/internal/fail"
 )
 
-// New creates an empty registry running the given semantic checks
-// against every registration.
-func New(checks ...Check) *Registry {
+// New creates an empty registry recording violations into c and running
+// the given semantic checks against every registration.
+func New(c *fail.Collector, checks ...Check) *Registry {
 	return &Registry{
+		c:        c,
 		checks:   checks,
 		byID:     map[string]*Descriptor{},
 		concrete: map[reflect.Type]string{},
@@ -18,7 +21,7 @@ func New(checks ...Check) *Registry {
 
 // fail records a registration violation.
 func (r *Registry) fail(format string, args ...any) {
-	r.errs = append(r.errs, fmt.Errorf(format, args...))
+	r.c.Fail(format, args...)
 }
 
 // Register validates the instance and options and stores a descriptor.
@@ -39,7 +42,7 @@ func (r *Registry) Register(id string, instance any, opts Options) {
 					r.collectDeps(d)
 					for _, check := range r.checks {
 						if err := check(d); err != nil {
-							r.errs = append(r.errs, err)
+							r.c.Add(err)
 						}
 					}
 					r.ordered = append(r.ordered, d)
@@ -57,11 +60,6 @@ func (r *Registry) Register(id string, instance any, opts Options) {
 	} else {
 		r.fail("service id %q: must be a lowercase go identifier", id)
 	}
-}
-
-// Errors returns every violation recorded so far, in occurrence order.
-func (r *Registry) Errors() []error {
-	return r.errs
 }
 
 // ByID returns the descriptor registered under id.

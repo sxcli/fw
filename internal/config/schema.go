@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
@@ -27,20 +28,19 @@ func ValidateConfig(d *registry.Descriptor) error {
 // NewSchema builds the full schema of one invocation: the core config
 // first (so its short forms win), then every member owning a config
 // struct. Duplicate long argument names and duplicate explicit env names
-// across the schema are errors; short-form collisions are resolved
+// across the schema are violations; short-form collisions are resolved
 // first-come-first-served.
-func NewSchema(appletID string, core *Core, members []*registry.Descriptor) (*Schema, []error) {
+func NewSchema(c *fail.Collector, appletID string, core *Core, members []*registry.Descriptor) *Schema {
 	s := &Schema{
 		appletID: appletID,
 		long:     map[string]*Field{},
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
 	}
-	var errs []error
-	errs = append(errs, s.add("core", reflect.ValueOf(core))...)
+	s.add(c, "core", reflect.ValueOf(core))
 	for _, d := range members {
 		if d.ConfigPtr != nil {
-			errs = append(errs, s.add(d.ID, reflect.ValueOf(d.ConfigPtr))...)
+			s.add(c, d.ID, reflect.ValueOf(d.ConfigPtr))
 		}
 	}
 	env := map[string]*Field{}
@@ -50,7 +50,7 @@ func NewSchema(appletID string, core *Core, members []*registry.Descriptor) (*Sc
 				if prev, dup := s.long[f.Long]; !dup {
 					s.long[f.Long] = f
 				} else {
-					errs = append(errs, fmt.Errorf("duplicate argument --%s between service %q and service %q", f.Long, prev.ServiceID, f.ServiceID))
+					c.Fail("duplicate argument --%s between service %q and service %q", f.Long, prev.ServiceID, f.ServiceID)
 				}
 				if f.Short != "" {
 					if _, taken := s.short[f.Short]; !taken {
@@ -67,22 +67,24 @@ func NewSchema(appletID string, core *Core, members []*registry.Descriptor) (*Sc
 				if prev, dup := env[f.EnvName]; !dup {
 					env[f.EnvName] = f
 				} else {
-					errs = append(errs, fmt.Errorf("duplicate environment variable %s between service %q and service %q", f.EnvName, prev.ServiceID, f.ServiceID))
+					c.Fail("duplicate environment variable %s between service %q and service %q", f.EnvName, prev.ServiceID, f.ServiceID)
 				}
 			}
 		}
 	}
-	return s, errs
+	return s
 }
 
-func (s *Schema) add(id string, cfgPtr reflect.Value) []error {
+func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value) {
 	fields, errs := extract(id, cfgPtr.Type().Elem(), nil, nil, "", true)
+	for _, err := range errs {
+		c.Add(err)
+	}
 	svc := &serviceSchema{id: id, cfg: cfgPtr, fields: fields}
 	s.services = append(s.services, svc)
 	for _, f := range fields {
 		s.owner[f] = svc
 	}
-	return errs
 }
 
 // extract walks one config struct type and returns its settable fields.

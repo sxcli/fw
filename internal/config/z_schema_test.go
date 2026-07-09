@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
 )
 
@@ -26,7 +27,7 @@ type dbConfig struct {
 
 func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 	t.Helper()
-	r := registry.New()
+	r := registry.New(&fail.Collector{})
 	var members []*registry.Descriptor
 	for id, cfg := range structs {
 		r.Register(id, &struct{ X int }{}, registry.Options{})
@@ -34,9 +35,10 @@ func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 		d.ConfigPtr = cfg
 		members = append(members, d)
 	}
-	s, errs := NewSchema("cat", core, members)
-	if len(errs) != 0 {
-		t.Fatalf("unexpected schema errors: %v", errs)
+	c := &fail.Collector{}
+	s := NewSchema(c, "cat", core, members)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected schema errors: %v", c.All())
 	}
 	return s
 }
@@ -108,7 +110,7 @@ func TestSchemaErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := registry.New()
+			r := registry.New(&fail.Collector{})
 			r.Register("svc", &struct{ X int }{}, registry.Options{})
 			d, _ := r.ByID("svc")
 			d.ConfigPtr = tc.cfg
@@ -127,14 +129,16 @@ func TestSchemaCrossServiceCollisions(t *testing.T) {
 	type two struct {
 		Y int `json:"y" arg:"shared"`
 	}
-	r := registry.New()
+	r := registry.New(&fail.Collector{})
 	r.Register("one", &struct{ A int }{}, registry.Options{})
 	r.Register("two", &struct{ B int }{}, registry.Options{})
 	d1, _ := r.ByID("one")
 	d1.ConfigPtr = &one{}
 	d2, _ := r.ByID("two")
 	d2.ConfigPtr = &two{}
-	if _, errs := NewSchema("cat", &Core{}, r.All()); len(errs) == 0 {
+	c := &fail.Collector{}
+	NewSchema(c, "cat", &Core{}, r.All())
+	if c.Len() == 0 {
 		t.Error("duplicate long across services must be an error")
 	}
 }
