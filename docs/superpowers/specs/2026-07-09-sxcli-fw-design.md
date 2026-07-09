@@ -504,8 +504,23 @@ the normal machinery (imports, closure, enable/disable); the console sink
 registers itself as `AlwaysOn` so there is sane output by default.
 
 The core assembles a **multihandler** over every enabled sink:
-`Enabled` = any child accepts; `Handle` fans out to accepting children;
-`WithAttrs`/`WithGroup` clone all children.
+`Enabled` = any child accepts; `Handle` fans out to accepting children
+(child errors are joined, one failing sink never blocks the rest);
+`WithAttrs`/`WithGroup` derive views of all children.
+
+**Sink-author contract** (standard slog semantics, stated explicitly):
+
+- `WithAttrs`/`WithGroup` must return derived *views* sharing the
+  underlying output resource — never `return s` (loses the attrs), never
+  a deep copy (duplicates the resource). Views are ephemeral values;
+  only the registered service instance owns the resource and has a
+  lifecycle.
+- Handlers must be safe for concurrent use; many derived loggers share
+  one sink.
+- `Handle` must be prompt and apply its own I/O deadlines (a network
+  syslog sink sets write timeouts on its connection). The multihandler
+  is deliberately synchronous — fan-out happens on the caller's
+  goroutine; a hung sink is the sink's bug, not the core's to babysit.
 
 Bootstrap: the core's initial `slog.Default()` is a **buffering handler**
 collecting every record emitted during startup. After the `Configured`
@@ -570,3 +585,4 @@ func Tr(format string, args ...any) string
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
 | Custom value parsers (e.g. `type UnixTime` with a user-provided parser service, discovered like format providers) | deliberately not in v1 — the converter is a single switch; a parser registry slots in front of it when someone actually needs one |
 | Embedded configs in the binary (e.g. a `go:embed`-ed default config compiled into the consumer's binary, lowest-priority file source before the on-disk locations) | future version; slots into the existing merge order as a pre-location source and needs no new precedence rules |
+| Async log sink decorator (bounded queue + writer goroutine wrapping any `slog.Handler`, drop-counting on overflow, flush on Stop) | deliberately not in v1 — the multihandler stays synchronous; decoupling is an opt-in wrapper service if the need materializes |
