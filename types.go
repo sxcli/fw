@@ -8,6 +8,8 @@
 // and runs the service lifecycle around the applet.
 package sxclifw
 
+import "io"
+
 // Stopper is the base lifecycle interface. Stop is called once, in exact
 // reverse order of the successful Start calls, after the applet returns
 // (or when startup is aborted after this service was started). Errors
@@ -72,6 +74,26 @@ type Configurable interface {
 // no update is ever delivered in the current version.
 type ConfigurationUpdater interface {
 	ConfigurationUpdated() error
+}
+
+// ConfigFormatProvider is a service that transcodes a configuration
+// format to and from the core's native JSON. The core matches config
+// files to providers by file extension; Extensions returns the supported
+// ones, lowercase and without the leading dot (e.g. "yaml", "yml"). A
+// config file whose extension no registered provider handles is a
+// startup error.
+//
+// ToJSON and FromJSON must be pure stream transforms: the core uses them
+// while discovering and loading config files — before the provider is
+// configured or started — so they must not depend on the provider's own
+// configuration or lifecycle state. FromJSON serves configuration file
+// generation (--write-config). The provider still receives its normal
+// Configured/Start/Stop as an always-on service.
+type ConfigFormatProvider interface {
+	AlwaysOn
+	Extensions() []string
+	ToJSON(in io.Reader) (io.Reader, error)
+	FromJSON(in io.Reader) (io.Reader, error)
 }
 
 // Applet is a dispatchable entry point. The framework brackets Run with
