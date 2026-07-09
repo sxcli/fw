@@ -1,0 +1,17 @@
+{
+  "attribution": {
+    "commit": ""
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"RULE: Do not modify any files or start implementation unless the user message contains an explicit instruction to do so. Questions and design statements get answers and proposals only.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}

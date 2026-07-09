@@ -1,12 +1,14 @@
-# sxcl-fw — Design Specification
+# sxcli-fw — Design Specification
+
+sxcli stands for **Simple Extensible CLI**.
 
 Date: 2026-07-09
 Status: approved section by section during brainstorming
-Module: `github.com/sxcl/sxcl-fw` · Package: `sxclfw` · Go: 1.26
+Module: `github.com/sxcli/sxcli-fw` · Package: `sxclifw` · Go: 1.26
 
 ## 1. Purpose & Scope
 
-`sxcl-fw` is a Go framework for building busybox-style single-binary tools. A
+`sxcli-fw` is a Go framework for building busybox-style single-binary tools. A
 consumer imports the framework and provider subpackages, registers services
 (applets are just services implementing a specific interface), and gets a
 binary with:
@@ -41,9 +43,9 @@ binary with:
 ## 2. Module Layout
 
 ```
-sxcl-fw/
-├── go.mod                — module github.com/sxcl/sxcl-fw
-├── *.go                  — package sxclfw: the entire public API
+sxcli-fw/
+├── go.mod                — module github.com/sxcli/sxcli-fw
+├── *.go                  — package sxclifw: the entire public API
 ├── platform_unix.go      — args acquisition, no-op service hooks
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
 ├── internal/
@@ -63,9 +65,9 @@ Consumers choose what links into their binary via blank imports:
 
 ```go
 import (
-    fw "github.com/sxcl/sxcl-fw"
-    _ "github.com/sxcl/sxcl-fw/sink/console"
-    _ "github.com/sxcl/sxcl-fw/configfmt/yaml"
+    fw "github.com/sxcli/sxcli-fw"
+    _ "github.com/sxcli/sxcli-fw/sink/console"
+    _ "github.com/sxcli/sxcli-fw/configfmt/yaml"
 )
 
 func main() { fw.Main() }
@@ -76,7 +78,7 @@ Providers only import the root package — no import cycles. Everything under
 
 ## 3. Service Model — Interfaces
 
-All in package `sxclfw` (Go-conventional `-er` names):
+All in package `sxclifw` (Go-conventional `-er` names):
 
 ```go
 // Base lifecycle interface.
