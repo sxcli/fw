@@ -226,6 +226,20 @@ func TestPinnedLocationWithoutOpenerFails(t *testing.T) {
 	}
 }
 
+func TestSuppressedFileKeyIsLoud(t *testing.T) {
+	src := Sources{
+		Locations:    []Location{{Base: "/etc/cat/config"}},
+		Open:         fakeFS(map[string]string{"/etc/cat/config.json": `{"core": {"override": ["a=b"]}}`}),
+		SuppressCore: []string{"override"},
+	}
+	files := mustLoadFiles(t, src, "")
+	c := &fail.Collector{}
+	files.ApplyCore(c, "cat", src)
+	if c.Len() == 0 {
+		t.Error("a suppressed key in the core file section must be a loud error")
+	}
+}
+
 func TestUnknownKeyInOwnedSection(t *testing.T) {
 	cfg := &loadSink{}
 	src := Sources{

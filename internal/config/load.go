@@ -9,7 +9,7 @@ import "github.com/sxcli/sxcli-fw/internal/fail"
 func PeekCore(c *fail.Collector, appletID string, src Sources) Core {
 	var core Core
 	before := c.Len()
-	sch := NewSchema(c, appletID, &core, nil)
+	sch := NewSchema(c, appletID, &core, nil, src.SuppressCore)
 	if c.Len() == before {
 		sch.applyEnv(c, src.LookupEnv)
 		sch.parseArgs(c, src.Args, true)
@@ -24,7 +24,7 @@ func PeekCore(c *fail.Collector, appletID string, src Sources) Core {
 func (f *Files) ApplyCore(c *fail.Collector, appletID string, src Sources) Core {
 	var core Core
 	before := c.Len()
-	sch := NewSchema(c, appletID, &core, nil)
+	sch := NewSchema(c, appletID, &core, nil, src.SuppressCore)
 	if c.Len() == before {
 		sch.applyFiles(c, f)
 		sch.applyEnv(c, src.LookupEnv)

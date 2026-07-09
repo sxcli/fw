@@ -36,12 +36,13 @@ type Location struct {
 // Sources carries every external input of configuration loading, all
 // injectable for hermetic tests.
 type Sources struct {
-	Args       []string                            // argv without the binary name and applet selector
-	LookupEnv  func(string) (string, bool)         // os.LookupEnv in production
-	Locations  []Location                          // search locations in merge order
-	Open       func(string) (io.ReadCloser, error) // os.Open in production; missing files must report fs.ErrNotExist
-	OpenPinned func(string) (io.ReadCloser, error) // symlink-refusing opener (O_NOFOLLOW-style) for pinned locations
-	Providers  []Provider                          // registered format providers, registration order
+	Args         []string                            // argv without the binary name and applet selector
+	LookupEnv    func(string) (string, bool)         // os.LookupEnv in production
+	Locations    []Location                          // search locations in merge order
+	Open         func(string) (io.ReadCloser, error) // os.Open in production; missing files must report fs.ErrNotExist
+	OpenPinned   func(string) (io.ReadCloser, error) // symlink-refusing opener (O_NOFOLLOW-style) for pinned locations
+	Providers    []Provider                          // registered format providers, registration order
+	SuppressCore []string                            // long names of core fields the binary suppressed (fw.Suppress)
 }
 
 // Core is the framework core's own configuration, living under the

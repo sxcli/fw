@@ -36,7 +36,7 @@ func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 		members = append(members, d)
 	}
 	c := &fail.Collector{}
-	s := NewSchema(c, "cat", core, members)
+	s := NewSchema(c, "cat", core, members, nil)
 	if c.Len() != 0 {
 		t.Fatalf("unexpected schema errors: %v", c.All())
 	}
@@ -137,9 +137,42 @@ func TestSchemaCrossServiceCollisions(t *testing.T) {
 	d2, _ := r.ByID("two")
 	d2.ConfigPtr = &two{}
 	c := &fail.Collector{}
-	NewSchema(c, "cat", &Core{}, r.All())
+	NewSchema(c, "cat", &Core{}, r.All(), nil)
 	if c.Len() == 0 {
 		t.Error("duplicate long across services must be an error")
+	}
+}
+
+func TestSuppressedCoreFields(t *testing.T) {
+	var core Core
+	c := &fail.Collector{}
+	s := NewSchema(c, "cat", &core, nil, []string{"config", "override"})
+	if c.Len() != 0 {
+		t.Fatalf("unexpected schema errors: %v", c.All())
+	}
+	if _, present := s.long["config"]; present {
+		t.Error("suppressed --config must not be in the schema")
+	}
+	if _, present := s.short["c"]; present {
+		t.Error("suppressed field's short form must vanish too")
+	}
+	s.parseArgs(c, []string{"--config", "x.json"}, false)
+	if c.Len() == 0 {
+		t.Error("a suppressed argument must be unknown in the strict pass")
+	}
+	c2 := &fail.Collector{}
+	s.applyEnv(c2, env(map[string]string{"CAT_CONFIG": "sneaky.json"}))
+	if core.Config != "" || c2.Len() != 0 {
+		t.Errorf("suppressed env var must be ignored: %q, %v", core.Config, c2.All())
+	}
+}
+
+func TestSuppressUnknownNameFails(t *testing.T) {
+	var core Core
+	c := &fail.Collector{}
+	NewSchema(c, "cat", &core, nil, []string{"no-such-flag"})
+	if c.Len() == 0 {
+		t.Error("suppressing a non-existent core argument must fail")
 	}
 }
 

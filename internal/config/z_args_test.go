@@ -119,7 +119,7 @@ func TestStrictErrors(t *testing.T) {
 func TestLenientSkipsUnknown(t *testing.T) {
 	var core Core
 	c := &fail.Collector{}
-	s := NewSchema(c, "cat", &core, nil)
+	s := NewSchema(c, "cat", &core, nil, nil)
 	s.parseArgs(c, []string{"--level", "warn", "-z", "--config", "override.json", "stray"}, true)
 	if c.Len() != 0 {
 		t.Fatalf("lenient mode must not error on unknowns: %v", c.All())

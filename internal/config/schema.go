@@ -27,20 +27,23 @@ func ValidateConfig(d *registry.Descriptor) error {
 
 // NewSchema builds the full schema of one invocation: the core config
 // first (so its short forms win), then every member owning a config
-// struct. Duplicate long argument names and duplicate explicit env names
-// across the schema are violations; short-form collisions are resolved
+// struct. Core fields whose long name appears in suppress are removed
+// from the schema entirely: the argument becomes unknown, the env var is
+// never consulted, and the file key turns into an unknown-key violation.
+// Duplicate long argument names and duplicate explicit env names across
+// the schema are violations; short-form collisions are resolved
 // first-come-first-served.
-func NewSchema(c *fail.Collector, appletID string, core *Core, members []*registry.Descriptor) *Schema {
+func NewSchema(c *fail.Collector, appletID string, core *Core, members []*registry.Descriptor, suppress []string) *Schema {
 	s := &Schema{
 		appletID: appletID,
 		long:     map[string]*Field{},
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
 	}
-	s.add(c, "core", reflect.ValueOf(core))
+	s.add(c, "core", reflect.ValueOf(core), suppress)
 	for _, d := range members {
 		if d.ConfigPtr != nil {
-			s.add(c, d.ID, reflect.ValueOf(d.ConfigPtr))
+			s.add(c, d.ID, reflect.ValueOf(d.ConfigPtr), nil)
 		}
 	}
 	env := map[string]*Field{}
@@ -75,10 +78,28 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 	return s
 }
 
-func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value) {
+func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppress []string) {
 	fields, errs := extract(id, cfgPtr.Type().Elem(), nil, nil, "", true)
 	for _, err := range errs {
 		c.Add(err)
+	}
+	if len(suppress) > 0 {
+		drop := map[string]bool{}
+		for _, long := range suppress {
+			drop[long] = true
+		}
+		var kept []*Field
+		for _, f := range fields {
+			if drop[f.Long] {
+				delete(drop, f.Long)
+			} else {
+				kept = append(kept, f)
+			}
+		}
+		for long := range drop {
+			c.Fail("suppress: %q does not name a core argument", long)
+		}
+		fields = kept
 	}
 	svc := &serviceSchema{id: id, cfg: cfgPtr, fields: fields}
 	s.services = append(s.services, svc)

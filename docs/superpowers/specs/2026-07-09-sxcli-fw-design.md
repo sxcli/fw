@@ -437,6 +437,29 @@ resolves non-empty, that single file **is** the configuration and the
 three-location search is skipped entirely; when empty, the locations are
 searched and merged as above.
 
+### Core feature suppression
+
+A binary may remove pieces of the core's configuration surface — a
+hardened or embedded deployment should be able to forbid config
+redirection and service rewiring:
+
+```go
+func main() {
+    fw.Suppress(fw.FeatureConfigFile, fw.FeatureOverride)
+    fw.Main()
+}
+```
+
+Suppressible features: `FeatureConfigFile` (`--config,-c`),
+`FeatureWriteConfig`, `FeatureDisable`, `FeatureEnable`,
+`FeatureOverride`. A suppressed feature vanishes from the core schema
+entirely: its argument becomes unknown (strict-pass error), its env var
+is never consulted, and its key appearing in a config file's `core`
+section is a **loud startup error** — operators learn it is not honored
+instead of wondering why it is ignored. Suppression is a build-time
+property of the binary (called from `main()`/`init()` before `Main`),
+not runtime configuration.
+
 ### Format providers
 
 ```go
