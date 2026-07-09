@@ -134,9 +134,12 @@ type Applet interface {
 In `platform_windows.go` (references `x/sys/windows/svc` types):
 
 ```go
-// An applet that runs under Windows Service Control Manager.
+// An applet that can run under the Windows Service Control Manager. It
+// extends Applet: started as a normal process the framework drives Run
+// as usual; under the SCM it drives Execute instead — one applet, both
+// launch modes (console-mode debugging of services comes for free).
 type SCMApplet interface {
-    Configurable
+    Applet
     Execute(args []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (svcSpecificEC bool, exitCode uint32)
 }
 ```
@@ -145,8 +148,8 @@ type SCMApplet interface {
 
 - A service registered with `Provides[AlwaysOn]()` receives
   Configured/Start/Stop on every invocation, in every closure.
-- An applet (implements `Applet` or `SCMApplet`) that also implements
-  `Starter`/`Stopper` is a registration error.
+- An applet (implements `Applet`; `SCMApplet` extends it) that also
+  implements `Starter`/`Stopper` is a registration error.
 - `Configured()` is called in dependency order on every closure member that
   is `Configurable`; `Start()` in dependency order on every `Starter`;
   `Stop()` in exact reverse order of the *successful* Start calls.
