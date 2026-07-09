@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 	"reflect"
@@ -65,7 +66,7 @@ func TestPrecedenceEndToEnd(t *testing.T) {
 	src := Sources{
 		Args:      []string{"--log-max-age", "2h", "trail"},
 		LookupEnv: env(map[string]string{"CAT_LOG_PATH": "env.log", "CAT_LOG_MAX_AGE": "1h"}),
-		Locations: []string{"/bin/cat-config", "/etc/cat/config", "/home/u/cat/config"},
+		Locations: []Location{{Base: "/bin/cat-config"}, {Base: "/etc/cat/config"}, {Base: "/home/u/cat/config"}},
 		Open: fakeFS(map[string]string{
 			"/bin/cat-config.json":  `{"filesink": {"path": "bin.log", "maxAge": "5m", "backups": 3, "tags": ["f1","f2"], "rotation": {"size": 99}}}`,
 			"/etc/cat/config.yml":   `{"filesink": {"path": "etc.log"}, "coldsvc": {"whatever": 1}}`,
@@ -103,7 +104,7 @@ func TestPrecedenceEndToEnd(t *testing.T) {
 func TestLaterLocationOverridesEarlier(t *testing.T) {
 	cfg := &loadSink{}
 	src := Sources{
-		Locations: []string{"/bin/cat-config", "/etc/cat/config"},
+		Locations: []Location{{Base: "/bin/cat-config"}, {Base: "/etc/cat/config"}},
 		Open: fakeFS(map[string]string{
 			"/bin/cat-config.json": `{"filesink": {"path": "bin.log", "backups": 3}}`,
 			"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
@@ -124,7 +125,7 @@ func TestLaterLocationOverridesEarlier(t *testing.T) {
 func TestExplicitConfigReplacesSearch(t *testing.T) {
 	cfg := &loadSink{}
 	src := Sources{
-		Locations: []string{"/etc/cat/config"},
+		Locations: []Location{{Base: "/etc/cat/config"}},
 		Open: fakeFS(map[string]string{
 			"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
 			"/tmp/mine.yml":        `{"filesink": {"path": "mine.log"}}`,
@@ -160,7 +161,7 @@ func TestFileErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			src := Sources{
-				Locations: []string{"/etc/cat/config"},
+				Locations: []Location{{Base: "/etc/cat/config"}},
 				Open:      fakeFS(tc.files),
 				Providers: []Provider{&identityYAML{}},
 			}
@@ -173,10 +174,62 @@ func TestFileErrors(t *testing.T) {
 	}
 }
 
+func TestPinnedLocationUsesPinnedOpener(t *testing.T) {
+	cfg := &loadSink{}
+	pinnedCalled := false
+	src := Sources{
+		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
+		Open: func(path string) (io.ReadCloser, error) {
+			t.Fatalf("pinned location must never use the plain opener (asked for %q)", path)
+			return nil, nil
+		},
+		OpenPinned: func(path string) (io.ReadCloser, error) {
+			pinnedCalled = true
+			return fakeFS(map[string]string{"/opt/box/cat-config.json": `{"filesink": {"path": "pinned.log"}}`})(path)
+		},
+	}
+	files := mustLoadFiles(t, src, "")
+	if !pinnedCalled {
+		t.Fatal("pinned opener was not consulted")
+	}
+	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
+	c := &fail.Collector{}
+	s.Apply(c, files, src)
+	if c.Len() != 0 || cfg.Path != "pinned.log" {
+		t.Errorf("pinned file not applied: %v, %+v", c.All(), cfg)
+	}
+}
+
+func TestPinnedSymlinkRejectionIsLoud(t *testing.T) {
+	src := Sources{
+		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
+		OpenPinned: func(path string) (io.ReadCloser, error) {
+			return nil, errors.New("is a symlink: refusing")
+		},
+	}
+	c := &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() == 0 {
+		t.Error("a symlinked companion must be a startup error, not a skip")
+	}
+}
+
+func TestPinnedLocationWithoutOpenerFails(t *testing.T) {
+	src := Sources{
+		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
+		Open:      fakeFS(map[string]string{}),
+	}
+	c := &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() == 0 {
+		t.Error("a pinned location without a pinned opener must fail")
+	}
+}
+
 func TestUnknownKeyInOwnedSection(t *testing.T) {
 	cfg := &loadSink{}
 	src := Sources{
-		Locations: []string{"/etc/cat/config"},
+		Locations: []Location{{Base: "/etc/cat/config"}},
 		Open:      fakeFS(map[string]string{"/etc/cat/config.json": `{"filesink": {"pth": "typo.log"}}`}),
 	}
 	files := mustLoadFiles(t, src, "")
@@ -192,7 +245,7 @@ func TestApplyCoreSeesFileValues(t *testing.T) {
 	src := Sources{
 		Args:      []string{"--enable", "mysql"},
 		LookupEnv: env(map[string]string{"CAT_DISABLE": "sqlite,boltdb"}),
-		Locations: []string{"/etc/cat/config"},
+		Locations: []Location{{Base: "/etc/cat/config"}},
 		Open:      fakeFS(map[string]string{"/etc/cat/config.json": `{"core": {"disable": ["never"], "override": ["sqlite=mysql"]}}`}),
 	}
 	files := mustLoadFiles(t, src, "")

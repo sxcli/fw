@@ -23,14 +23,25 @@ type Provider interface {
 	FromJSON(in io.Reader) (io.Reader, error)
 }
 
+// Location is one config file search location: a base path without
+// extension. A pinned location is security-sensitive — the binary
+// companion — and its candidates are opened through Sources.OpenPinned,
+// which must refuse symlinks so the file really lives at Base's
+// directory.
+type Location struct {
+	Base   string
+	Pinned bool
+}
+
 // Sources carries every external input of configuration loading, all
 // injectable for hermetic tests.
 type Sources struct {
-	Args      []string                            // argv without the binary name and applet selector
-	LookupEnv func(string) (string, bool)         // os.LookupEnv in production
-	Locations []string                            // config file base paths WITHOUT extension, merge order
-	Open      func(string) (io.ReadCloser, error) // os.Open in production; missing files must report fs.ErrNotExist
-	Providers []Provider                          // registered format providers, registration order
+	Args       []string                            // argv without the binary name and applet selector
+	LookupEnv  func(string) (string, bool)         // os.LookupEnv in production
+	Locations  []Location                          // search locations in merge order
+	Open       func(string) (io.ReadCloser, error) // os.Open in production; missing files must report fs.ErrNotExist
+	OpenPinned func(string) (io.ReadCloser, error) // symlink-refusing opener (O_NOFOLLOW-style) for pinned locations
+	Providers  []Provider                          // registered format providers, registration order
 }
 
 // Core is the framework core's own configuration, living under the

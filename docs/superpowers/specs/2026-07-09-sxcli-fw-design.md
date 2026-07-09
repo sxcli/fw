@@ -408,6 +408,24 @@ Config files, loaded in order, later overriding earlier field-by-field:
 (Exact Windows locations to be pinned down during implementation of the
 platform layer.)
 
+**Security — the binary-companion location (1) is pinned:**
+
+- "Next to the binary" means next to the **real** binary: the executable
+  path from `os.Executable()` with every symlink resolved. Busybox-style
+  applet symlinks never relocate the companion location — a symlink to
+  the binary in an attacker-writable directory must not choose its
+  configuration.
+- The companion itself is opened refusing a symlink at the final path
+  component (`O_NOFOLLOW`, atomically enforced by the kernel — no
+  check-then-open race; the Windows variant rejects reparse points
+  before opening). The companion must be a regular file physically in
+  the real binary's directory.
+- A symlinked companion is a **loud startup error**, never a silent
+  skip — someone put it there.
+- `/etc` and the XDG location are deliberately not pinned
+  (symlink-overlay distros like OpenWrt), and `--config` is exempt: an
+  explicit user path is the user's business.
+
 Files are transcoded by extension via format providers; JSON is handled
 natively. A file whose extension no registered provider handles is a
 **startup error**.

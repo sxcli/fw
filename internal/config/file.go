@@ -43,30 +43,38 @@ func LoadFiles(c *fail.Collector, src Sources, explicit string) *Files {
 			c.Fail("config file %q: no format provider handles extension %q", explicit, ext)
 		}
 	} else {
-		for _, base := range src.Locations {
-			type candidate struct {
-				path     string
-				reader   io.ReadCloser
-				provider Provider // nil for native json
+		for _, loc := range src.Locations {
+			open := src.Open
+			if loc.Pinned {
+				open = src.OpenPinned
 			}
-			var found []candidate
-			for _, ext := range append([]string{"json"}, exts...) {
-				path := base + "." + ext
-				if r, err := src.Open(path); err == nil {
-					found = append(found, candidate{path: path, reader: r, provider: byExt[ext]})
-				} else if !errors.Is(err, fs.ErrNotExist) {
-					c.Fail("config file %q: %v", path, err)
+			if open != nil {
+				type candidate struct {
+					path     string
+					reader   io.ReadCloser
+					provider Provider // nil for native json
 				}
-			}
-			if len(found) == 1 {
-				f.parse(c, found[0].path, found[0].reader, found[0].provider)
-			} else if len(found) > 1 {
-				var paths []string
-				for _, cand := range found {
-					paths = append(paths, cand.path)
-					cand.reader.Close()
+				var found []candidate
+				for _, ext := range append([]string{"json"}, exts...) {
+					path := loc.Base + "." + ext
+					if r, err := open(path); err == nil {
+						found = append(found, candidate{path: path, reader: r, provider: byExt[ext]})
+					} else if !errors.Is(err, fs.ErrNotExist) {
+						c.Fail("config file %q: %v", path, err)
+					}
 				}
-				c.Fail("ambiguous configuration at %q: %v all exist", base, paths)
+				if len(found) == 1 {
+					f.parse(c, found[0].path, found[0].reader, found[0].provider)
+				} else if len(found) > 1 {
+					var paths []string
+					for _, cand := range found {
+						paths = append(paths, cand.path)
+						cand.reader.Close()
+					}
+					c.Fail("ambiguous configuration at %q: %v all exist", loc.Base, paths)
+				}
+			} else {
+				c.Fail("config location %q: pinned location without a pinned opener", loc.Base)
 			}
 		}
 	}
