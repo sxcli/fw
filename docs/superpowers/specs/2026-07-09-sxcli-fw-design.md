@@ -546,3 +546,4 @@ func Tr(format string, args ...any) string
 | Positional parsing/routing | positionals collected, routing open |
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
 | Custom value parsers (e.g. `type UnixTime` with a user-provided parser service, discovered like format providers) | deliberately not in v1 — the converter is a single switch; a parser registry slots in front of it when someone actually needs one |
+| Embedded configs in the binary (e.g. a `go:embed`-ed default config compiled into the consumer's binary, lowest-priority file source before the on-disk locations) | future version; slots into the existing merge order as a pre-location source and needs no new precedence rules |
