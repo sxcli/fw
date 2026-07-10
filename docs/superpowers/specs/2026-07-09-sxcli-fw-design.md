@@ -246,6 +246,9 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
   that interface — accidental structural matches never inject.
 - Pointer-to-struct fields match by concrete type (unique by rule above).
 - Single-valued field → the first registered match (or the named ID).
+  A single-valued field may name **at most one** id — a list on a
+  non-slice field is a registration error (see Open Items for the
+  planned boolean preference syntax).
 - Slice fields: **interface element types only**. Injection delivers *all
   enabled* matching services in registration order — with listed IDs the
   slice may contain *more* than listed (always-on services and other
@@ -691,3 +694,4 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | Showing defaults alongside effective values in `--help` (`value: X (default: Y)`) | deferred — needs a pre-merge snapshot in NewSchema (~20 lines, no API change); add when it earns its keep |
 | A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
 | Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
+| Logical/boolean `inject` expressions for single-valued fields (e.g. `inject:"mysql \|\| sqlite"` — a preference list letting the service express fallbacks without forcing user overrides) | future syntax extension; must compose with `override` remapping (each alternative remapped before resolution); until then a non-slice field names at most one id |
