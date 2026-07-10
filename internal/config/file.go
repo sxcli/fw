@@ -203,7 +203,9 @@ func applyObject(c *fail.Collector, svc *serviceSchema, fields []*Field, depth i
 				}
 			}
 			if leaf != nil {
-				if err := setFromJSON(svc.cfg.Elem().FieldByIndex(leaf.Path), value); err != nil {
+				if leaf.Transient {
+					c.Fail("config %s.%s: run-scoped, settable only by argument or environment", where, key)
+				} else if err := setFromJSON(svc.cfg.Elem().FieldByIndex(leaf.Path), value); err != nil {
 					c.Fail("config %s.%s: %v", where, key, err)
 				}
 			} else if len(nested) > 0 {

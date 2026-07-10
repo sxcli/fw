@@ -52,11 +52,12 @@ type Sources struct {
 const DefaultMaxSize = 1 << 20
 
 // Core is the framework core's own configuration, living under the
-// reserved service id "core". Config cannot meaningfully come from a
-// config file: the files are already loaded by the time such a value
-// would be seen. The run-scoped fields (config, writeConfig, help)
-// carry dump:"-" — persisting them would make a written config file
-// self-triggering.
+// reserved service id "core". The run-scoped fields (config,
+// writeConfig, help) carry dump:"-": excluded from --write-config
+// output AND refused loudly from config files — a file setting them
+// would be self-triggering (every run becoming help output, or a
+// config write to an attacker-chosen path). Arguments and environment
+// are their only doors.
 type Core struct {
 	Config      string   `json:"config" arg:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
 	WriteConfig bool     `json:"writeConfig" arg:"write-config" dump:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
@@ -78,7 +79,7 @@ type Field struct {
 	Usage     string
 	Type      reflect.Type
 	IsSlice   bool
-	Transient bool // dump:"-": run-scoped, excluded from --write-config output
+	Transient bool // dump:"-": run-scoped — excluded from --write-config output AND refused from config files; argument/environment only
 }
 
 // serviceSchema is the schema of one service's config struct.

@@ -342,6 +342,23 @@ func TestMissingStatIsAViolation(t *testing.T) {
 	}
 }
 
+func TestRunScopedCoreKeysAreRefusedFromFiles(t *testing.T) {
+	for _, key := range []string{`"help": true`, `"writeConfig": true`, `"config": "/tmp/x.json"`} {
+		disk := map[string]string{"/etc/cat/config.json": `{"core": {` + key + `}}`}
+		src := Sources{
+			Locations: []Location{{Base: "/etc/cat/config"}},
+			Stat:      fakeStat(disk),
+			Open:      fakeFS(disk),
+		}
+		files := mustLoadFiles(t, src, "")
+		c := &fail.Collector{}
+		files.ApplyCore(c, "cat", src)
+		if c.Len() == 0 {
+			t.Errorf("run-scoped core key %s must be refused from a config file", key)
+		}
+	}
+}
+
 func TestSuppressedFileKeyIsLoud(t *testing.T) {
 	disk := map[string]string{"/etc/cat/config.json": `{"core": {"override": ["a=b"]}}`}
 	src := Sources{

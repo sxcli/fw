@@ -464,10 +464,16 @@ before `Main`.
 
 The core's `--config,-c` path is itself an ordinary config value with the
 usual source precedence — default empty, settable via env, the argument
-always wins (it cannot meaningfully come from a config file). When it
-resolves non-empty, that single file **is** the configuration and the
-three-location search is skipped entirely; when empty, the locations are
-searched and merged as above.
+always wins. When it resolves non-empty, that single file **is** the
+configuration and the three-location search is skipped entirely; when
+empty, the locations are searched and merged as above.
+
+The run-scoped core values — `config`, `writeConfig`, `help` — are
+settable **only by argument or environment**. They are excluded from
+`--write-config` output and a config file attempting to set them is a
+loud startup error: a file-sourced `help` or `writeConfig` would make
+every run self-triggering (permanent help mode, or a config write to a
+file-chosen path).
 
 ### Core feature suppression
 
