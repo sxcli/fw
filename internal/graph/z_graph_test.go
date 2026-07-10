@@ -2,6 +2,7 @@ package graph
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sxcli/sxcli-fw/internal/fail"
@@ -280,10 +281,26 @@ func TestOverrideSubstitutes(t *testing.T) {
 	if m.Bindings[0].Targets[0].ID != "workera" {
 		t.Errorf("override must substitute, got %q", m.Bindings[0].Targets[0].ID)
 	}
+	if len(res.UnusedOverrides) != 0 {
+		t.Errorf("a fired override must not be reported unused: %v", res.UnusedOverrides)
+	}
 	for _, member := range res.Ordered {
 		if member.Desc.ID == "workerb" || member.Desc.ID == "storea" {
 			t.Errorf("substituted-away service leaked into closure: %v", ids(res))
 		}
+	}
+}
+
+func TestUnusedOverridesAreReported(t *testing.T) {
+	r := newRegistry()
+	r.Register("app", &app{}, registry.Options{})
+	r.Register("workera", &workerA{}, provides(workerType))
+	res := mustResolve(t, r, "app", nil, Controls{Override: map[string]string{
+		"ghost":   "workera", // unregistered key: legal rescue mapping, but unused here
+		"unfired": "workera",
+	}})
+	if strings.Join(res.UnusedOverrides, ",") != "ghost,unfired" {
+		t.Errorf("unused overrides must be reported sorted: %v", res.UnusedOverrides)
 	}
 }
 

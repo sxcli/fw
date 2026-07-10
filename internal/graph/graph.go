@@ -2,6 +2,7 @@ package graph
 
 import (
 	"reflect"
+	"sort"
 
 	"github.com/sxcli/sxcli-fw/internal/fail"
 	"github.com/sxcli/sxcli-fw/internal/registry"
@@ -15,11 +16,12 @@ import (
 // used.
 func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, alwaysOn []string, ctl Controls) Result {
 	r := &resolver{
-		reg:      reg,
-		c:        c,
-		disabled: map[string]bool{},
-		override: map[string]string{},
-		closure:  map[string]bool{},
+		reg:          reg,
+		c:            c,
+		disabled:     map[string]bool{},
+		override:     map[string]string{},
+		overrideUsed: map[string]bool{},
+		closure:      map[string]bool{},
 	}
 	before := c.Len()
 	r.validateControls(ctl)
@@ -29,6 +31,12 @@ func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, alwaysO
 	if c.Len() == before {
 		r.order(r.bind())
 	}
+	for from := range r.override {
+		if !r.overrideUsed[from] {
+			r.result.UnusedOverrides = append(r.result.UnusedOverrides, from)
+		}
+	}
+	sort.Strings(r.result.UnusedOverrides)
 	return r.result
 }
 
@@ -139,10 +147,12 @@ func (r *resolver) expandDep(owner *registry.Descriptor, dep registry.DepField) 
 	return out
 }
 
-// mapped applies the override remapping to one requested id.
+// mapped applies the override remapping to one requested id, recording
+// which overrides actually fired.
 func (r *resolver) mapped(id string) string {
 	out := id
 	if to, ok := r.override[id]; ok {
+		r.overrideUsed[id] = true
 		out = to
 	}
 	return out

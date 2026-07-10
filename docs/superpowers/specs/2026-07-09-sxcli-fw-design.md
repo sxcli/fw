@@ -366,6 +366,11 @@ everything else):
   `sqlite`, resolve `mysql` instead. The substitute must satisfy the
   dependency's field type (checked at resolve time) or startup fails.
   A disabled required dependency without a substitute is a startup error.
+  An override key may name an unregistered id (rescue mappings for
+  unlinked implementations), and an override matching no dependency is
+  legal — generic configs may carry entries irrelevant to this applet —
+  but each unused key is logged as a **warning**, so a typo never
+  silently changes nothing.
 
 This is why closure resolution (step 5) happens *after* config loading
 (steps 3–4): enablement is configuration-driven (e.g. an applet declares a

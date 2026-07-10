@@ -197,6 +197,9 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 			for _, cycle := range res.Cycles {
 				slog.Warn("dependency cycle detected: the start-order promise is weakened inside it", "cycle", cycle)
 			}
+			for _, from := range res.UnusedOverrides {
+				slog.Warn("override matched no dependency", "from", from)
+			}
 			multi := rt.assembleSinks(res, silence)
 			if err := buffer.Replay(multi); err != nil {
 				fmt.Fprintf(rt.stderr, "log replay: %v\n", err)

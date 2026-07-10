@@ -17,8 +17,10 @@ import (
 // transitive dependencies) in; Override remaps ids named in inject tags.
 // Every id in Disable and Enable, and every Override substitute, must be
 // registered. An Override key is just a name — it may refer to an
-// unregistered id so a missing implementation can be substituted — and
-// an override matching no dependency is silently unused.
+// unregistered id so a missing implementation can be substituted, and a
+// generic config may carry overrides irrelevant to this applet — so an
+// override matching no dependency is not an error; it is reported via
+// Result.UnusedOverrides for the caller to log.
 type Controls struct {
 	Disable  []string
 	Enable   []string
@@ -47,14 +49,19 @@ type Result struct {
 	// registration order. Cycles are legal but weaken the Start
 	// promise; the caller should log a warning per entry.
 	Cycles [][]string
+	// UnusedOverrides lists override keys that remapped nothing,
+	// sorted. Legal (generic configs, unlinked rescue targets) but
+	// worth a warning: a typo here silently changes nothing.
+	UnusedOverrides []string
 }
 
 // resolver carries the working state of one Resolve call.
 type resolver struct {
-	reg      *registry.Registry
-	c        *fail.Collector
-	disabled map[string]bool
-	override map[string]string
-	closure  map[string]bool
-	result   Result
+	reg          *registry.Registry
+	c            *fail.Collector
+	disabled     map[string]bool
+	override     map[string]string
+	overrideUsed map[string]bool
+	closure      map[string]bool
+	result       Result
 }
