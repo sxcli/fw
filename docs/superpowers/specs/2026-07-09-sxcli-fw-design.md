@@ -185,6 +185,9 @@ platforms.
    request/status channels so stop/shutdown/interrogate reach the applet,
 5. after it returns: reverse-order `Stop`, final status to the SCM.
 
+A dispatched applet that does not implement `SCMApplet` while running
+under the SCM is a logged error, exit code 2.
+
 ## 4. Registration & Dependency Injection
 
 ### Registration API
@@ -296,7 +299,8 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
    overriding argv[0]. Unknown name → dispatch failure — even if
    basename(argv[0]) is itself a valid applet. No fallback.
 4. **Otherwise:** basename(argv[0]) must name a registered applet; dispatch
-   with all args.
+   with all args. On Windows the `.exe` suffix is stripped before
+   matching.
 5. Every dispatch failure (including a binary with zero registered applets)
    prints usage — including the list of registered applet IDs — to stderr
    and exits non-zero. In single-applet mode the applet list is dropped
@@ -360,6 +364,8 @@ Part of the core's config struct (settable via args, env, or file like
 everything else):
 
 - `disable` — service IDs removed from the closure even if required.
+  Disabling the dispatched applet itself is a startup error, as is
+  listing the same id in both `enable` and `disable`.
 - `enable` — service IDs forced into the closure (with their transitive
   dependencies) even if nothing requires them.
 - `override` — ID remapping (`sqlite=mysql`): wherever a dependency names
@@ -436,12 +442,11 @@ defaults  <  config files  <  environment  <  arguments
 Config files, loaded in order, later overriding earlier field-by-field:
 
 1. `<binary-dir>/<applet-id>-config.<ext>` (next to the real binary)
-2. `/etc/<applet-id>/config.<ext>` — or the Windows equivalent
-3. XDG user config location: `<xdg-config>/<applet-id>/config.<ext>` — or
-   the Windows equivalent
-
-(Exact Windows locations to be pinned down during implementation of the
-platform layer.)
+2. `/etc/<applet-id>/config.<ext>` — on Windows:
+   `%ProgramData%\<applet-id>\config.<ext>` (`C:\ProgramData` when the
+   variable is unset)
+3. XDG user config location: `<xdg-config>/<applet-id>/config.<ext>` —
+   `os.UserConfigDir` per platform (`%AppData%` on Windows)
 
 **Security — the binary-companion location (1) is pinned:**
 
@@ -472,7 +477,10 @@ registered provider's): a config file at a standard location with an
 unhandled extension is simply outside its view and silently unused —
 the search never enumerates directories, so foreign files
 (`config.json.bak`, package-manager droppings) can never break
-startup.
+startup. More than one existing candidate at the *same* location
+(e.g. both `config.json` and `config.yaml`) is ambiguous — a startup
+error. Trailing data after a config file's top-level JSON object is a
+startup error too, never silently dropped.
 
 A config source must resolve to a **regular file**: the `stat` probe —
 which follows symlinks, so a symlink to a regular file still passes
@@ -513,6 +521,10 @@ The run-scoped core values are locked down (`dump:"-"`, `env:"-"`):
 - All three are excluded from `--write-config` output, and a config
   file attempting to set any of them is a loud startup error.
 
+The `dump:"-"` tag is available to any service's config struct, with
+the same run-scoped semantics: excluded from `--write-config` output
+and refused from config files.
+
 ### Core feature suppression
 
 A binary may remove pieces of the core's configuration surface — a
@@ -536,6 +548,11 @@ section is a **loud startup error** — operators learn it is not honored
 instead of wondering why it is ignored. Suppression is a build-time
 property of the binary (called from `main()`/`init()` before `Main`),
 not runtime configuration.
+
+Misusing the build-time API is itself a collected startup violation,
+never silently ignored: `MaxConfigSize` with a non-positive limit,
+`Suppress` of the default-off `FeatureSCMDebug`, `Enable` of a
+default-on feature, and unknown features everywhere.
 
 ### Format providers
 
@@ -567,12 +584,26 @@ itself.
 - Slices: flag repetition appends (`--tag a --tag b`); env values
   comma-separated, with an empty env value meaning an empty slice (the
   only way to express one from the environment); JSON arrays in files.
+  Precedence made concrete: the **first** argument occurrence of a slice
+  flag replaces any file/env-sourced content, repetitions append.
 - Short-flag bundling: `-abc` — every bundled flag must be a bool except
   the last, which may take a value (`-abc=5`, `-abc 5`).
+- A literal `--` ends flag parsing; everything after it is positional.
 - **Positionals:** every bare token after the last flag argument is
-  collected as a positional and does not cause errors. Parsing/routing of
-  positionals is deferred — v1 collects them and exposes them via
-  `sxclifw.Positionals()`, nothing more.
+  collected as a positional and does not cause errors; a bare token
+  *followed by* another flag is a strict-parse error ("positionals must
+  come last"). Parsing/routing of positionals is deferred — v1 collects
+  them and exposes them via `sxclifw.Positionals()`, nothing more.
+- Durations are strict in every source: a unit suffix is required
+  (`5s`, `5000ms`, `5000000ns`; bare numbers are rejected), and in JSON
+  files a duration must be a *string* — never a number.
+- Name lexicon: long names are lowercase, at least two characters,
+  letter-first, letters/digits/dashes, no trailing dash; short forms are
+  one ascii letter/digit; env names are uppercase letters, digits and
+  underscores, not digit-first. Embedded fields in config structs are
+  not supported (registration error).
+- Duplicate explicit env names across the closure are a startup error
+  (derived names cannot collide because long names are unique).
 
 ## 7. Logging & Tr()
 
