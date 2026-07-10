@@ -475,7 +475,12 @@ The core's `--config,-c` path is itself an ordinary config value with the
 usual source precedence — default empty, settable via env, the argument
 always wins. When it resolves non-empty, that single file **is** the
 configuration and the three-location search is skipped entirely; when
-empty, the locations are searched and merged as above.
+empty, the locations are searched and merged as above. One deliberate
+exception: in `--write-config` mode a *missing* target does not replace
+the search — the locations are loaded as usual so the written file
+reflects the currently effective configuration, and the target is only
+created (an *existing* target is loaded as the explicit config, per the
+input-and-output rule in §5).
 
 The run-scoped core values are locked down (`dump:"-"`, `env:"-"`):
 
