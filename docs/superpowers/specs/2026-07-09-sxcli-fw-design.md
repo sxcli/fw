@@ -296,9 +296,11 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
    with all args.
 5. Every dispatch failure (including a binary with zero registered applets)
    prints usage — including the list of registered applet IDs — to stderr
-   and exits non-zero. In single-applet mode the applet-list section is
-   dropped from usage/--help output; only the lone applet's argument
-   schema (core + closure, grouped by service ID) is rendered.
+   and exits non-zero. In single-applet mode the applet list is dropped
+   from the usage output. `--help` renders only the dispatched applet's
+   argument schema (core + closure, grouped by service ID) and never an
+   applet list; enumerating applets is a future core argument (see Open
+   Items).
 
 Consequence (documented): in multi-applet binaries a leading bare token is
 *never* applet data. Scripts must know `binary appletName --args`
@@ -659,3 +661,4 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | Embedded configs in the binary (e.g. a `go:embed`-ed default config compiled into the consumer's binary, lowest-priority file source before the on-disk locations) | future version; slots into the existing merge order as a pre-location source and needs no new precedence rules |
 | Async log sink decorator (bounded queue + writer goroutine wrapping any `slog.Handler`, drop-counting on overflow, flush on Stop) | deliberately not in v1 — the multihandler stays synchronous; decoupling is an opt-in wrapper service if the need materializes |
 | Showing defaults alongside effective values in `--help` (`value: X (default: Y)`) | deferred — needs a pre-merge snapshot in NewSchema (~20 lines, no API change); add when it earns its keep |
+| A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
