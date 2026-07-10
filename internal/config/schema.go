@@ -131,6 +131,7 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 					Path:      append(append([]int{}, path...), i),
 					Type:      sf.Type,
 					Usage:     sf.Tag.Get("usage"),
+					Transient: sf.Tag.Get("dump") == "-",
 				}
 				jsonName, hasJSON := sf.Tag.Lookup("json")
 				jsonName, _, _ = strings.Cut(jsonName, ",")

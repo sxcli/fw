@@ -174,17 +174,19 @@ func (s *Schema) MarshalIndent() ([]byte, error) {
 	for _, svc := range s.services {
 		section := map[string]any{}
 		for _, f := range svc.fields {
-			node := section
-			for _, key := range f.JSONPath[:len(f.JSONPath)-1] {
-				if next, ok := node[key].(map[string]any); ok {
-					node = next
-				} else {
-					created := map[string]any{}
-					node[key] = created
-					node = created
+			if !f.Transient {
+				node := section
+				for _, key := range f.JSONPath[:len(f.JSONPath)-1] {
+					if next, ok := node[key].(map[string]any); ok {
+						node = next
+					} else {
+						created := map[string]any{}
+						node[key] = created
+						node = created
+					}
 				}
+				node[f.JSONPath[len(f.JSONPath)-1]] = fieldValue(svc.cfg.Elem().FieldByIndex(f.Path))
 			}
-			node[f.JSONPath[len(f.JSONPath)-1]] = fieldValue(svc.cfg.Elem().FieldByIndex(f.Path))
 		}
 		root[svc.id] = section
 	}

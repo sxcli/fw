@@ -54,11 +54,13 @@ const DefaultMaxSize = 1 << 20
 // Core is the framework core's own configuration, living under the
 // reserved service id "core". Config cannot meaningfully come from a
 // config file: the files are already loaded by the time such a value
-// would be seen.
+// would be seen. The run-scoped fields (config, writeConfig, help)
+// carry dump:"-" — persisting them would make a written config file
+// self-triggering.
 type Core struct {
-	Config      string   `json:"config" arg:"config,c" usage:"path of the configuration file, replaces the location search"`
-	WriteConfig bool     `json:"writeConfig" arg:"write-config" usage:"write the merged configuration to the --config target (or stdout) and exit"`
-	Help        bool     `json:"help" arg:"help,h" usage:"print the applet's argument schema and exit"`
+	Config      string   `json:"config" arg:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
+	WriteConfig bool     `json:"writeConfig" arg:"write-config" dump:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
+	Help        bool     `json:"help" arg:"help,h" dump:"-" usage:"print the applet's argument schema and exit"`
 	Disable     []string `json:"disable" arg:"disable" usage:"service ids to remove from the closure"`
 	Enable      []string `json:"enable" arg:"enable" usage:"service ids to force into the closure"`
 	Override    []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
@@ -76,6 +78,7 @@ type Field struct {
 	Usage     string
 	Type      reflect.Type
 	IsSlice   bool
+	Transient bool // dump:"-": run-scoped, excluded from --write-config output
 }
 
 // serviceSchema is the schema of one service's config struct.

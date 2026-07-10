@@ -424,9 +424,14 @@ func TestMarshalIndentRoundTrip(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 	text := string(out)
-	for _, want := range []string{`"maxAge": "1h30m0s"`, `"path": "a.log"`, `"size": 5`, `"config": "c.json"`, `"rotation"`} {
+	for _, want := range []string{`"maxAge": "1h30m0s"`, `"path": "a.log"`, `"size": 5`, `"rotation"`} {
 		if !strings.Contains(text, want) {
 			t.Errorf("dump missing %s:\n%s", want, text)
+		}
+	}
+	for _, transient := range []string{`"config"`, `"writeConfig"`, `"help"`} {
+		if strings.Contains(text, transient) {
+			t.Errorf("run-scoped core field %s must not be dumped (a written config would be self-triggering):\n%s", transient, text)
 		}
 	}
 }
