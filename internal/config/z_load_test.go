@@ -157,6 +157,7 @@ func TestFileErrors(t *testing.T) {
 			"/etc/cat/config.yml":  `{}`,
 		}},
 		{"broken json", "", map[string]string{"/etc/cat/config.json": `{"x":`}},
+		{"trailing garbage", "", map[string]string{"/etc/cat/config.json": `{"filesink": {}} {"more": true}`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -171,6 +172,55 @@ func TestFileErrors(t *testing.T) {
 				t.Error("expected file errors, got none")
 			}
 		})
+	}
+}
+
+// jsonThief claims the native json extension.
+type jsonThief struct{}
+
+func (p *jsonThief) Extensions() []string                     { return []string{"json"} }
+func (p *jsonThief) ToJSON(in io.Reader) (io.Reader, error)   { return in, nil }
+func (p *jsonThief) FromJSON(in io.Reader) (io.Reader, error) { return in, nil }
+
+func TestProviderClaimingJSONFails(t *testing.T) {
+	src := Sources{
+		Locations: []Location{{Base: "/etc/cat/config"}},
+		Open:      fakeFS(map[string]string{}),
+		Providers: []Provider{&jsonThief{}},
+	}
+	c := &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() == 0 {
+		t.Error("a provider claiming the native json extension must be a violation")
+	}
+}
+
+func TestDuplicateExtensionClaimFails(t *testing.T) {
+	src := Sources{
+		Locations: []Location{{Base: "/etc/cat/config"}},
+		Open:      fakeFS(map[string]string{}),
+		Providers: []Provider{&identityYAML{}, &identityYAML{}},
+	}
+	c := &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() == 0 {
+		t.Error("two providers claiming the same extension must be a violation")
+	}
+}
+
+func TestEmptyEnvValueMeansEmptySlice(t *testing.T) {
+	cfg := &loadSink{Tags: []string{"default"}}
+	src := Sources{
+		LookupEnv: env(map[string]string{"CAT_TAG": ""}),
+	}
+	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
+	c := &fail.Collector{}
+	s.Apply(c, &Files{}, src)
+	if c.Len() != 0 {
+		t.Fatalf("unexpected errors: %v", c.All())
+	}
+	if cfg.Tags == nil || len(cfg.Tags) != 0 {
+		t.Errorf("empty env value must yield an empty slice, got %#v", cfg.Tags)
 	}
 }
 

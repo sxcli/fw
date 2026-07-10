@@ -24,9 +24,13 @@ func LoadFiles(c *fail.Collector, src Sources, explicit string) *Files {
 	var exts []string
 	for _, p := range src.Providers {
 		for _, ext := range p.Extensions() {
-			if _, taken := byExt[ext]; !taken {
+			if ext == "json" {
+				c.Fail("format provider claims the native extension %q", ext)
+			} else if _, taken := byExt[ext]; !taken {
 				byExt[ext] = p
 				exts = append(exts, ext)
+			} else {
+				c.Fail("format providers conflict over extension %q", ext)
 			}
 		}
 	}
@@ -74,7 +78,7 @@ func LoadFiles(c *fail.Collector, src Sources, explicit string) *Files {
 					c.Fail("ambiguous configuration at %q: %v all exist", loc.Base, paths)
 				}
 			} else {
-				c.Fail("config location %q: pinned location without a pinned opener", loc.Base)
+				c.Fail("config location %q: no opener available (pinned: %v)", loc.Base, loc.Pinned)
 			}
 		}
 	}
@@ -98,14 +102,19 @@ func (f *Files) parse(c *fail.Collector, path string, r io.ReadCloser, provider 
 		dec := json.NewDecoder(in)
 		dec.UseNumber()
 		if err := dec.Decode(&section); err == nil {
-			f.sections = append(f.sections, section)
-			if provider != nil {
-				used := false
-				for _, u := range f.Used {
-					used = used || u == provider
-				}
-				if !used {
-					f.Used = append(f.Used, provider)
+			var trailing json.RawMessage
+			if terr := dec.Decode(&trailing); terr != io.EOF {
+				c.Fail("config file %q: trailing data after the configuration object", path)
+			} else {
+				f.sections = append(f.sections, section)
+				if provider != nil {
+					used := false
+					for _, u := range f.Used {
+						used = used || u == provider
+					}
+					if !used {
+						f.Used = append(f.Used, provider)
+					}
 				}
 			}
 		} else {

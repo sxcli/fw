@@ -66,6 +66,10 @@ func (b *Buffer) Len() int {
 // rebuilding each record's WithAttrs/WithGroup chain so it lands exactly
 // as it would have live. Target errors are joined; records the target's
 // Enabled rejects are skipped.
+//
+// Replay is meant to run once, at the bootstrap swap: the buffer does
+// not drain — a second Replay re-delivers everything and captures keep
+// accumulating — so discard the Buffer after the swap.
 func (b *Buffer) Replay(target slog.Handler) error {
 	b.store.mu.Lock()
 	entries := make([]entry, len(b.store.entries))

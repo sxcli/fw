@@ -9,10 +9,21 @@ func TestSuppressMapsFeaturesToLongNames(t *testing.T) {
 	old := suppressedCore
 	t.Cleanup(func() { suppressedCore = old })
 	suppressedCore = nil
-	Suppress(FeatureConfigFile, FeatureWriteConfig, FeatureDisable, FeatureEnable, FeatureOverride)
-	want := []string{"config", "write-config", "disable", "enable", "override"}
+	Suppress(FeatureConfigFile, FeatureWriteConfig, FeatureDisable, FeatureEnable, FeatureOverride, FeatureHelp)
+	want := []string{"config", "write-config", "disable", "enable", "override", "help"}
 	if !reflect.DeepEqual(suppressedCore, want) {
 		t.Errorf("got %v, want %v", suppressedCore, want)
+	}
+}
+
+func TestSuppressDeduplicates(t *testing.T) {
+	old := suppressedCore
+	t.Cleanup(func() { suppressedCore = old })
+	suppressedCore = nil
+	Suppress(FeatureOverride)
+	Suppress(FeatureOverride, FeatureOverride)
+	if !reflect.DeepEqual(suppressedCore, []string{"override"}) {
+		t.Errorf("repeated suppression must not duplicate: %v", suppressedCore)
 	}
 }
 

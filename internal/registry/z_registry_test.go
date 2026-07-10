@@ -115,6 +115,7 @@ func TestRegisterIdentityViolations(t *testing.T) {
 		{"invalid id empty", func(r *Registry) { r.Register("", &svcA{}, Options{}) }, 0},
 		{"invalid id digit start", func(r *Registry) { r.Register("1svc", &svcA{}, Options{}) }, 0},
 		{"invalid id dash", func(r *Registry) { r.Register("svc-a", &svcA{}, Options{}) }, 0},
+		{"invalid id blank identifier", func(r *Registry) { r.Register("_", &svcA{}, Options{}) }, 0},
 		{"duplicate id", func(r *Registry) {
 			r.Register("svca", &svcA{}, Options{})
 			r.Register("svca", &svcPlain{}, Options{})

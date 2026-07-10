@@ -69,7 +69,7 @@ func setFromJSON(f reflect.Value, raw json.RawMessage) error {
 				el := reflect.New(f.Type().Elem()).Elem()
 				if serr := setFromJSON(el, e); serr == nil {
 					s = reflect.Append(s, el)
-				} else {
+				} else if err == nil {
 					err = serr
 				}
 			}
@@ -113,16 +113,19 @@ func setFromJSON(f reflect.Value, raw json.RawMessage) error {
 }
 
 // setSliceFromEnv replaces a slice field with the comma-separated
-// elements of one environment value.
+// elements of one environment value. An empty value means an empty
+// slice — there is no other way to express one from the environment.
 func setSliceFromEnv(f reflect.Value, value string) error {
 	var err error
 	s := reflect.MakeSlice(f.Type(), 0, 4)
-	for _, part := range strings.Split(value, ",") {
-		el := reflect.New(f.Type().Elem()).Elem()
-		if serr := setFromString(el, strings.TrimSpace(part)); serr == nil {
-			s = reflect.Append(s, el)
-		} else {
-			err = serr
+	if value != "" {
+		for _, part := range strings.Split(value, ",") {
+			el := reflect.New(f.Type().Elem()).Elem()
+			if serr := setFromString(el, strings.TrimSpace(part)); serr == nil {
+				s = reflect.Append(s, el)
+			} else if err == nil {
+				err = serr
+			}
 		}
 	}
 	if err == nil {
@@ -143,18 +146,20 @@ func appendFromString(f reflect.Value, s string) error {
 }
 
 // fieldValue renders one field's current value for serialization:
-// durations become unit-suffixed strings, everything else marshals
-// naturally.
+// durations become unit-suffixed strings, nil slices become empty json
+// arrays (never null), everything else marshals naturally.
 func fieldValue(f reflect.Value) any {
 	var out any
 	if f.Type() == durationType {
 		out = time.Duration(f.Int()).String()
 	} else if f.Kind() == reflect.Slice && f.Type().Elem() == durationType {
-		var ds []string
+		ds := []string{}
 		for i := 0; i < f.Len(); i++ {
 			ds = append(ds, time.Duration(f.Index(i).Int()).String())
 		}
 		out = ds
+	} else if f.Kind() == reflect.Slice && f.IsNil() {
+		out = []any{}
 	} else {
 		out = f.Interface()
 	}

@@ -94,31 +94,34 @@ func (p *argParser) long(body string, rest []string) int {
 func (p *argParser) bundle(body string, rest []string) int {
 	extra := 0
 	shorts, value, hasValue := strings.Cut(body, "=")
+	// byte iteration is deliberate: valid shorts are single ascii
+	// characters, so any multi-byte rune can only be unknown anyway
 	known := shorts != ""
-	for _, c := range shorts {
-		_, ok := p.schema.short[string(c)]
+	for i := 0; i < len(shorts); i++ {
+		_, ok := p.schema.short[string(shorts[i])]
 		known = known && ok
 	}
 	if known {
 		p.flagSeen("-" + shorts)
-		for i, c := range shorts {
-			f := p.schema.short[string(c)]
+		for i := 0; i < len(shorts); i++ {
+			c := string(shorts[i])
+			f := p.schema.short[c]
 			last := i == len(shorts)-1
 			if !last && !isBool(f) {
-				p.fail("-%s: only the last flag of a bundle may take a value, -%c does not take one here", shorts, c)
+				p.fail("-%s: only the last flag of a bundle may take a value, -%s does not take one here", shorts, c)
 			} else if isBool(f) {
 				v := "true"
 				if last && hasValue {
 					v = value
 				}
-				p.set(f, "-"+string(c), v)
+				p.set(f, "-"+c, v)
 			} else if hasValue {
-				p.set(f, "-"+string(c), value)
+				p.set(f, "-"+c, value)
 			} else if len(rest) > 0 {
-				p.set(f, "-"+string(c), rest[0])
+				p.set(f, "-"+c, rest[0])
 				extra = 1
 			} else {
-				p.fail("-%s: missing value", string(c))
+				p.fail("-%s: missing value", c)
 			}
 		}
 	} else if !p.lenient {

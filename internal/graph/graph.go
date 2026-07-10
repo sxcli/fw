@@ -230,10 +230,14 @@ func (r *resolver) order(members []Member) {
 	for i := range members {
 		for _, b := range members[i].Bindings {
 			for _, target := range b.Targets {
-				if j := pos[target.ID]; j == i {
-					selfLoop[i] = true
+				if j, member := pos[target.ID]; member {
+					if j == i {
+						selfLoop[i] = true
+					} else {
+						needs[i] = append(needs[i], j)
+					}
 				} else {
-					needs[i] = append(needs[i], j)
+					r.fail("internal: binding target %q is not a closure member", target.ID)
 				}
 			}
 		}

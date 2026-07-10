@@ -245,6 +245,9 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
   is how to narrow that.
 - `;optional`: zero matches leaves a nil field / possibly-empty slice.
   Without it, zero matches is a startup error.
+- Optional tolerates a *disabled* target, never an *unknown* one: an id
+  that names no registered service is a startup error even on an
+  optional field — a typo must never silently change the composition.
 
 ## 5. Dispatch & Application Lifecycle
 
@@ -452,7 +455,9 @@ func main() {
 
 Suppressible features: `FeatureConfigFile` (`--config,-c`),
 `FeatureWriteConfig`, `FeatureDisable`, `FeatureEnable`,
-`FeatureOverride`. A suppressed feature vanishes from the core schema
+`FeatureOverride`, `FeatureHelp` (`--help,-h` — help is otherwise also
+reachable via the derived `APPLETID_HELP` env var; suppression closes
+both doors). A suppressed feature vanishes from the core schema
 entirely: its argument becomes unknown (strict-pass error), its env var
 is never consulted, and its key appearing in a config file's `core`
 section is a **loud startup error** — operators learn it is not honored
@@ -472,7 +477,9 @@ type ConfigFormatProvider interface {
 
 Documented contract: `ToJSON`/`FromJSON` are **pure stream transforms**,
 usable before anything is configured or started (the core needs them
-during step 4, pre-lifecycle). Providers are ordinary services: registered
+during step 4, pre-lifecycle). A provider claiming the native `json`
+extension, or an extension another provider already claims, is a
+startup violation. Providers are ordinary services: registered
 cold, discovered by interface, used statelessly. The provider whose
 extension matched an actually loaded file (or the `--write-config`
 target) is added as a closure seed — it receives the normal lifecycle and
@@ -486,7 +493,8 @@ itself.
 - `--long value`, `--long=value`, `-s value`, `-s=value`.
 - Bools: bare presence = true; `=false` to unset.
 - Slices: flag repetition appends (`--tag a --tag b`); env values
-  comma-separated; JSON arrays in files.
+  comma-separated, with an empty env value meaning an empty slice (the
+  only way to express one from the environment); JSON arrays in files.
 - Short-flag bundling: `-abc` — every bundled flag must be a bool except
   the last, which may take a value (`-abc=5`, `-abc 5`).
 - **Positionals:** every bare token after the last flag argument is

@@ -171,25 +171,31 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 				if !topLevel && (f.Long != "" || f.EnvName != "") {
 					errs = append(errs, fmt.Errorf("service %q config field %s: nested struct fields are file-only, arg/env tags are not allowed", serviceID, name))
 				}
-				if sf.Type.Kind() == reflect.Struct && sf.Type != durationType {
-					if f.Long == "" && f.EnvName == "" {
-						nested, nerrs := extract(serviceID, sf.Type, f.Path, f.JSONPath, name+".", false)
-						fields = append(fields, nested...)
-						errs = append(errs, nerrs...)
-					} else {
-						errs = append(errs, fmt.Errorf("service %q config field %s: struct fields cannot carry arg/env tags", serviceID, name))
-					}
-				} else if sf.Type.Kind() == reflect.Slice {
-					if scalarOK(sf.Type.Elem()) {
-						f.IsSlice = true
+				// A field without a valid json name is unusable — the
+				// violation is already recorded; keeping it would leave
+				// a nil JSONPath for applyObject/MarshalIndent to trip
+				// over.
+				if len(f.JSONPath) > 0 {
+					if sf.Type.Kind() == reflect.Struct {
+						if f.Long == "" && f.EnvName == "" {
+							nested, nerrs := extract(serviceID, sf.Type, f.Path, f.JSONPath, name+".", false)
+							fields = append(fields, nested...)
+							errs = append(errs, nerrs...)
+						} else {
+							errs = append(errs, fmt.Errorf("service %q config field %s: struct fields cannot carry arg/env tags", serviceID, name))
+						}
+					} else if sf.Type.Kind() == reflect.Slice {
+						if scalarOK(sf.Type.Elem()) {
+							f.IsSlice = true
+							fields = append(fields, f)
+						} else {
+							errs = append(errs, fmt.Errorf("service %q config field %s: unsupported slice element type %s", serviceID, name, sf.Type.Elem()))
+						}
+					} else if scalarOK(sf.Type) {
 						fields = append(fields, f)
 					} else {
-						errs = append(errs, fmt.Errorf("service %q config field %s: unsupported slice element type %s", serviceID, name, sf.Type.Elem()))
+						errs = append(errs, fmt.Errorf("service %q config field %s: unsupported type %s", serviceID, name, sf.Type))
 					}
-				} else if scalarOK(sf.Type) {
-					fields = append(fields, f)
-				} else {
-					errs = append(errs, fmt.Errorf("service %q config field %s: unsupported type %s", serviceID, name, sf.Type))
 				}
 			}
 		}

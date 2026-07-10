@@ -172,7 +172,7 @@ func parseInjectTag(tag string) ([]string, bool, error) {
 			id := strings.TrimSpace(raw)
 			if isValidID(id) {
 				ids = append(ids, id)
-			} else {
+			} else if err == nil {
 				err = fmt.Errorf("invalid service id %q in inject tag", id)
 			}
 		}
@@ -181,9 +181,9 @@ func parseInjectTag(tag string) ([]string, bool, error) {
 }
 
 // isValidID reports whether id is a non-empty, all-lowercase go
-// identifier.
+// identifier (the blank identifier "_" is not a service id).
 func isValidID(id string) bool {
-	valid := id != ""
+	valid := id != "" && id != "_"
 	for i, c := range id {
 		valid = valid && (c == '_' || 'a' <= c && c <= 'z' || i > 0 && '0' <= c && c <= '9')
 	}

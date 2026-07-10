@@ -12,11 +12,12 @@ func NewMulti(children ...slog.Handler) *Multi {
 }
 
 // Enabled reports whether any child accepts the level, so the logger
-// front end can skip building records nobody wants.
+// front end can skip building records nobody wants. This is the hottest
+// path in logging; the loop stops at the first accepting child.
 func (m *Multi) Enabled(ctx context.Context, level slog.Level) bool {
-	var ok bool
-	for _, child := range m.children {
-		ok = ok || child.Enabled(ctx, level)
+	ok := false
+	for i := 0; i < len(m.children) && !ok; i++ {
+		ok = m.children[i].Enabled(ctx, level)
 	}
 	return ok
 }

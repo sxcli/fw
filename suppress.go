@@ -17,6 +17,10 @@ const (
 	FeatureEnable
 	// FeatureOverride is the --override service control.
 	FeatureOverride
+	// FeatureHelp is the --help,-h argument. Note that help is
+	// otherwise reachable from the environment too (APPLETID_HELP), so
+	// suppressing it closes both doors.
+	FeatureHelp
 )
 
 // coreFeatureLongs maps features to the long argument names of the
@@ -27,6 +31,7 @@ var coreFeatureLongs = map[CoreFeature]string{
 	FeatureDisable:     "disable",
 	FeatureEnable:      "enable",
 	FeatureOverride:    "override",
+	FeatureHelp:        "help",
 }
 
 // suppressedCore holds the long names of suppressed core fields; Main
@@ -46,7 +51,13 @@ var suppressedCore []string
 func Suppress(features ...CoreFeature) {
 	for _, feature := range features {
 		if long, known := coreFeatureLongs[feature]; known {
-			suppressedCore = append(suppressedCore, long)
+			dup := false
+			for _, existing := range suppressedCore {
+				dup = dup || existing == long
+			}
+			if !dup {
+				suppressedCore = append(suppressedCore, long)
+			}
 		} else {
 			defaultCollector.Fail("Suppress: unknown core feature %d", feature)
 		}
