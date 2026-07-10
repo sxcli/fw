@@ -536,7 +536,10 @@ phase, the multihandler is assembled, the buffer **replays** into it, and
 the default swaps over.
 
 - Zero enabled `slog.Handler` services after resolution → the core
-  force-pulls the console sink into the closure.
+  force-pulls the console sink into the closure — **unless the operator
+  explicitly disabled it**: disabling every sink means deliberate
+  silence, respected as stated ("your choice, your problem"). Use
+  `--console-level error` for quiet-not-mute.
 - Console sink not even registered (package never imported) → last resort
   is a plain stderr text handler.
 - Startup failure before the swap → the buffer flushes to stderr so
