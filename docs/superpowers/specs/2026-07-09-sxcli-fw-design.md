@@ -529,6 +529,17 @@ The core assembles a **multihandler** over every enabled sink:
   syslog sink sets write timeouts on its connection). The multihandler
   is deliberately synchronous — fan-out happens on the caller's
   goroutine; a hung sink is the sink's bug, not the core's to babysit.
+- A sink SHOULD be **fully operational when `Configured()` returns** —
+  it acquires its own resources there (the file sink opens its file in
+  Configured, not Start), so it is live for the buffer replay at the
+  swap and captures the complete startup history. `Start` is typically a
+  no-op (sinks stay `Starter`s because only started Starters receive
+  `Stop`, which is where resources close). A sink that *cannot* be
+  operational until its own `Start` — e.g. a DB logger depending on a
+  started pool service — is legal but late-joining: its inert guards
+  (`Enabled` false while unready) make it invisible to the replay and to
+  early records; it joins the stream from its `Start` onward. Records
+  before that exist only in the sinks that were ready.
 
 Bootstrap: the core's initial `slog.Default()` is a **buffering handler**
 collecting every record emitted during startup. After the `Configured`
