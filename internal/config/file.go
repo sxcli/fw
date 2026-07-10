@@ -68,6 +68,11 @@ func LoadFiles(c *fail.Collector, src Sources, explicit string) *Files {
 						found = append(found, candidate{path: path, size: size, provider: byExt[ext]})
 					} else if !errors.Is(err, fs.ErrNotExist) {
 						c.Fail("config file %q: %v", path, err)
+					} else if loc.Pinned && src.Lstat != nil && src.Lstat(path) == nil {
+						// Stat (follows links) saw nothing, Lstat sees
+						// something: a dangling symlink squats on the
+						// companion location — someone put it there
+						c.Fail("config file %q: a dangling symlink occupies the pinned companion location", path)
 					}
 				}
 				if len(found) == 1 {

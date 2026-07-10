@@ -439,7 +439,10 @@ platform layer.)
   before opening). The companion must be a regular file physically in
   the real binary's directory.
 - A symlinked companion is a **loud startup error**, never a silent
-  skip — someone put it there.
+  skip — someone put it there. This includes a *dangling* symlink:
+  `Stat` (which follows links) sees nothing, so pinned candidates get
+  an `Lstat` cross-check that catches the squatter before it becomes a
+  live redirect.
 - `/etc` and the XDG location are deliberately not pinned
   (symlink-overlay distros like OpenWrt), and `--config` is exempt: an
   explicit user path is the user's business.

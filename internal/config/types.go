@@ -40,6 +40,7 @@ type Sources struct {
 	LookupEnv    func(string) (string, bool)         // os.LookupEnv in production
 	Locations    []Location                          // search locations in merge order
 	Stat         func(string) (int64, error)         // file size probe; missing files must report fs.ErrNotExist
+	Lstat        func(string) error                  // pinned-location cross-check: nil when something occupies the path ITSELF (e.g. a dangling symlink Stat cannot see)
 	Open         func(string) (io.ReadCloser, error) // os.Open in production; missing files must report fs.ErrNotExist
 	OpenPinned   func(string) (io.ReadCloser, error) // symlink-refusing opener (O_NOFOLLOW-style) for pinned locations
 	Providers    []Provider                          // registered format providers, registration order

@@ -125,6 +125,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 		LookupEnv:    rt.lookupEnv,
 		Locations:    rt.locations(appletID),
 		Stat:         rt.stat,
+		Lstat:        rt.lstat,
 		Open:         rt.open,
 		OpenPinned:   rt.openPinned,
 		Providers:    rt.providers(),

@@ -23,6 +23,7 @@ type runtime struct {
 	stderr     io.Writer
 	locations  func(appletID string) []config.Location
 	stat       func(string) (int64, error)
+	lstat      func(string) error
 	open       func(string) (io.ReadCloser, error)
 	openPinned func(string) (io.ReadCloser, error)
 	suppressed []string
@@ -33,14 +34,18 @@ type runtime struct {
 
 func productionRuntime(argv []string, execApplet func(Applet) int) *runtime {
 	return &runtime{
-		reg:        defaultRegistry,
-		c:          defaultCollector,
-		argv:       argv,
-		lookupEnv:  os.LookupEnv,
-		stdout:     os.Stdout,
-		stderr:     os.Stderr,
-		locations:  productionLocations,
-		stat:       statRegular,
+		reg:       defaultRegistry,
+		c:         defaultCollector,
+		argv:      argv,
+		lookupEnv: os.LookupEnv,
+		stdout:    os.Stdout,
+		stderr:    os.Stderr,
+		locations: productionLocations,
+		stat:      statRegular,
+		lstat: func(path string) error {
+			_, err := os.Lstat(path)
+			return err
+		},
 		open:       func(path string) (io.ReadCloser, error) { return os.Open(path) },
 		openPinned: openPinned,
 		suppressed: suppressedCore,

@@ -245,6 +245,35 @@ func TestEmptyEnvValueMeansEmptySlice(t *testing.T) {
 	}
 }
 
+func TestDanglingSymlinkAtPinnedLocationIsLoud(t *testing.T) {
+	// Stat sees nothing (follows links), Lstat sees the link itself
+	src := Sources{
+		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
+		Stat:      fakeStat(map[string]string{}),
+		Lstat: func(path string) error {
+			var err error = fs.ErrNotExist
+			if path == "/opt/box/cat-config.json" {
+				err = nil
+			}
+			return err
+		},
+		OpenPinned: fakeFS(map[string]string{}),
+	}
+	c := &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() == 0 {
+		t.Error("a dangling symlink at the pinned location must be a loud violation")
+	}
+	// the same ghost at a NON-pinned location is invisible by design
+	src.Locations = []Location{{Base: "/opt/box/cat-config"}}
+	src.Open = fakeFS(map[string]string{})
+	c = &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() != 0 {
+		t.Errorf("non-pinned locations must not run the cross-check: %v", c.All())
+	}
+}
+
 func TestPinnedLocationUsesPinnedOpener(t *testing.T) {
 	cfg := &loadSink{}
 	pinnedCalled := false
