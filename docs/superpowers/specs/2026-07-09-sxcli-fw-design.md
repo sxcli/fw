@@ -343,7 +343,8 @@ is only created. Written files get mode 0600.
 
 `--help,-h` (core-owned) prints the dispatched applet's full argument schema
 — core + entire closure, grouped by service ID, with usage texts (rendered
-through `Tr()`) and defaults — to stdout and exits 0.
+through `Tr()`) and the **current effective values** (all sources already
+merged: what the binary would actually use) — to stdout and exits 0.
 
 ### Config-driven service control
 
@@ -657,3 +658,4 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | Custom value parsers (e.g. `type UnixTime` with a user-provided parser service, discovered like format providers) | deliberately not in v1 — the converter is a single switch; a parser registry slots in front of it when someone actually needs one |
 | Embedded configs in the binary (e.g. a `go:embed`-ed default config compiled into the consumer's binary, lowest-priority file source before the on-disk locations) | future version; slots into the existing merge order as a pre-location source and needs no new precedence rules |
 | Async log sink decorator (bounded queue + writer goroutine wrapping any `slog.Handler`, drop-counting on overflow, flush on Stop) | deliberately not in v1 — the multihandler stays synchronous; decoupling is an opt-in wrapper service if the need materializes |
+| Showing defaults alongside effective values in `--help` (`value: X (default: Y)`) | deferred — needs a pre-merge snapshot in NewSchema (~20 lines, no API change); add when it earns its keep |
