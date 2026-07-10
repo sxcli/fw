@@ -468,12 +468,16 @@ always wins. When it resolves non-empty, that single file **is** the
 configuration and the three-location search is skipped entirely; when
 empty, the locations are searched and merged as above.
 
-The run-scoped core values — `config`, `writeConfig`, `help` — are
-settable **only by argument or environment**. They are excluded from
-`--write-config` output and a config file attempting to set them is a
-loud startup error: a file-sourced `help` or `writeConfig` would make
-every run self-triggering (permanent help mode, or a config write to a
-file-chosen path).
+The run-scoped core values are locked down (`dump:"-"`, `env:"-"`):
+
+- `help` and `writeConfig` are **argument-only** — a config file or an
+  inherited environment variable setting them would be a persistent
+  denial (every run printing help, or writing a config and exiting).
+- `config` is settable by argument or environment (`APPLETID_CONFIG`
+  is a legitimate deployment pattern; the pointed-at file still passes
+  every gate), but never by a config file.
+- All three are excluded from `--write-config` output, and a config
+  file attempting to set any of them is a loud startup error.
 
 ### Core feature suppression
 
@@ -490,9 +494,8 @@ func main() {
 
 Suppressible features: `FeatureConfigFile` (`--config,-c`),
 `FeatureWriteConfig`, `FeatureDisable`, `FeatureEnable`,
-`FeatureOverride`, `FeatureHelp` (`--help,-h` — help is otherwise also
-reachable via the derived `APPLETID_HELP` env var; suppression closes
-both doors). A suppressed feature vanishes from the core schema
+`FeatureOverride`, `FeatureHelp` (`--help,-h`; help and write-config
+are argument-only, so suppressing them closes their single door). A suppressed feature vanishes from the core schema
 entirely: its argument becomes unknown (strict-pass error), its env var
 is never consulted, and its key appearing in a config file's `core`
 section is a **loud startup error** — operators learn it is not honored

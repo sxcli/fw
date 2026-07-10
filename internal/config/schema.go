@@ -62,7 +62,7 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 						f.Short = "" // first come, first served
 					}
 				}
-				if f.EnvName == "" {
+				if f.EnvName == "" && !f.NoEnv {
 					f.EnvName = strings.ToUpper(appletID) + "_" + strings.ToUpper(strings.ReplaceAll(f.Long, "-", "_"))
 				}
 			}
@@ -163,7 +163,9 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 					}
 				}
 				if env, hasEnv := sf.Tag.Lookup("env"); hasEnv {
-					if isValidEnv(env) {
+					if env == "-" {
+						f.NoEnv = true // argument-only: suppress the derived env var too
+					} else if isValidEnv(env) {
 						f.EnvName = env
 					} else {
 						errs = append(errs, fmt.Errorf("service %q config field %s: invalid env tag %q", serviceID, name, env))

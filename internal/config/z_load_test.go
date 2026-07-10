@@ -421,14 +421,34 @@ func TestApplyCoreSeesFileValues(t *testing.T) {
 func TestPeekCore(t *testing.T) {
 	c := &fail.Collector{}
 	core := PeekCore(c, "cat", Sources{
-		Args:      []string{"--unknown-service-flag", "junk", "--config=x.yml", "--write-config"},
-		LookupEnv: env(map[string]string{"CAT_HELP": "true"}),
+		Args:      []string{"--unknown-service-flag", "junk", "--config=x.yml", "--write-config", "--help"},
+		LookupEnv: env(map[string]string{"CAT_CONFIG": "env.yml"}),
 	})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
 	}
 	if core.Config != "x.yml" || !core.WriteConfig || !core.Help {
 		t.Errorf("core values not extracted: %+v", core)
+	}
+}
+
+func TestArgumentOnlyCoreFieldsIgnoreEnvironment(t *testing.T) {
+	c := &fail.Collector{}
+	core := PeekCore(c, "cat", Sources{
+		LookupEnv: env(map[string]string{
+			"CAT_HELP":         "true",
+			"CAT_WRITE_CONFIG": "true",
+			"CAT_CONFIG":       "env.yml",
+		}),
+	})
+	if c.Len() != 0 {
+		t.Fatalf("unexpected errors: %v", c.All())
+	}
+	if core.Help || core.WriteConfig {
+		t.Errorf("help and writeConfig must be argument-only: %+v", core)
+	}
+	if core.Config != "env.yml" {
+		t.Errorf("config must keep its env door: %q", core.Config)
 	}
 }
 

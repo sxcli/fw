@@ -56,12 +56,15 @@ const DefaultMaxSize = 1 << 20
 // writeConfig, help) carry dump:"-": excluded from --write-config
 // output AND refused loudly from config files — a file setting them
 // would be self-triggering (every run becoming help output, or a
-// config write to an attacker-chosen path). Arguments and environment
-// are their only doors.
+// config write to an attacker-chosen path). writeConfig and help
+// additionally carry env:"-": an inherited APPLETID_HELP=true would be
+// the same persistent denial — they are argument-only. config keeps
+// its env door (a legitimate deployment pattern; the pointed-at file
+// still passes every gate).
 type Core struct {
 	Config      string   `json:"config" arg:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
-	WriteConfig bool     `json:"writeConfig" arg:"write-config" dump:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
-	Help        bool     `json:"help" arg:"help,h" dump:"-" usage:"print the applet's argument schema and exit"`
+	WriteConfig bool     `json:"writeConfig" arg:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
+	Help        bool     `json:"help" arg:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
 	Disable     []string `json:"disable" arg:"disable" usage:"service ids to remove from the closure"`
 	Enable      []string `json:"enable" arg:"enable" usage:"service ids to force into the closure"`
 	Override    []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
@@ -75,11 +78,12 @@ type Field struct {
 	JSONPath  []string // json object path inside the service's section
 	Long      string   // long argument name; "" = file-only
 	Short     string   // single-character short form; "" = none
-	EnvName   string   // resolved environment variable name; "" = file-only
+	EnvName   string   // resolved environment variable name; "" = not env-settable
+	NoEnv     bool     // env:"-": no environment variable, not even derived
 	Usage     string
 	Type      reflect.Type
 	IsSlice   bool
-	Transient bool // dump:"-": run-scoped — excluded from --write-config output AND refused from config files; argument/environment only
+	Transient bool // dump:"-": run-scoped — excluded from --write-config output AND refused from config files
 }
 
 // serviceSchema is the schema of one service's config struct.

@@ -17,9 +17,8 @@ const (
 	FeatureEnable
 	// FeatureOverride is the --override service control.
 	FeatureOverride
-	// FeatureHelp is the --help,-h argument. Note that help is
-	// otherwise reachable from the environment too (APPLETID_HELP), so
-	// suppressing it closes both doors.
+	// FeatureHelp is the --help,-h argument (argument-only: help has
+	// no environment door).
 	FeatureHelp
 	// FeatureSCMDebug is the windows-only --scm-debug argument: it runs
 	// the service pipeline under svc/debug outside the service manager,
