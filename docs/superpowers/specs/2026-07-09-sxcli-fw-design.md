@@ -341,7 +341,10 @@ format provider) or, with no target, dump JSON to stdout; exit 0 without
 Configured/Start/Run. The target is input *and* output: an existing
 target is loaded as the explicit config first — making `--write-config`
 an easy way to normalize/reformat an existing file — and a missing one
-is only created. Written files get mode 0600.
+is only created. **Newly created** files get mode 0600; an existing
+target's permissions are the operator's prior decision and are left
+untouched (format normalization must not silently revoke a
+deliberately granted group read).
 
 `--help,-h` (core-owned) prints the dispatched applet's full argument schema
 — core + entire closure, grouped by service ID, with usage texts (rendered
@@ -682,3 +685,4 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | Async log sink decorator (bounded queue + writer goroutine wrapping any `slog.Handler`, drop-counting on overflow, flush on Stop) | deliberately not in v1 — the multihandler stays synchronous; decoupling is an opt-in wrapper service if the need materializes |
 | Showing defaults alongside effective values in `--help` (`value: X (default: Y)`) | deferred — needs a pre-merge snapshot in NewSchema (~20 lines, no API change); add when it earns its keep |
 | A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
+| Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
