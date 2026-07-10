@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"path/filepath"
@@ -18,79 +19,123 @@ import (
 // registered provider extension; more than one existing candidate at the
 // same location is ambiguous and a startup violation, as is a file whose
 // extension no provider handles.
+//
+// Existence and size are probed via Stat before any file is opened: an
+// oversized config is never opened, read or parsed.
 func LoadFiles(c *fail.Collector, src Sources, explicit string) *Files {
-	f := &Files{}
-	byExt := map[string]Provider{}
-	var exts []string
-	for _, p := range src.Providers {
-		for _, ext := range p.Extensions() {
-			if ext == "json" {
-				c.Fail("format provider claims the native extension %q", ext)
-			} else if _, taken := byExt[ext]; !taken {
-				byExt[ext] = p
-				exts = append(exts, ext)
-			} else {
-				c.Fail("format providers conflict over extension %q", ext)
+	f := &Files{maxSize: src.MaxSize}
+	if f.maxSize <= 0 {
+		f.maxSize = DefaultMaxSize
+	}
+	if src.Stat != nil {
+		byExt := map[string]Provider{}
+		var exts []string
+		for _, p := range src.Providers {
+			for _, ext := range p.Extensions() {
+				if ext == "json" {
+					c.Fail("format provider claims the native extension %q", ext)
+				} else if _, taken := byExt[ext]; !taken {
+					byExt[ext] = p
+					exts = append(exts, ext)
+				} else {
+					c.Fail("format providers conflict over extension %q", ext)
+				}
 			}
 		}
-	}
-	if explicit != "" {
-		ext := strings.TrimPrefix(filepath.Ext(explicit), ".")
-		provider, known := byExt[ext]
-		if ext == "json" || known {
-			if r, err := src.Open(explicit); err == nil {
-				f.parse(c, explicit, r, provider)
+		if explicit != "" {
+			ext := strings.TrimPrefix(filepath.Ext(explicit), ".")
+			provider, known := byExt[ext]
+			if ext == "json" || known {
+				if size, err := src.Stat(explicit); err == nil {
+					f.admit(c, explicit, size, src.Open, provider)
+				} else {
+					c.Fail("config file %q: %v", explicit, err)
+				}
 			} else {
-				c.Fail("config file %q: %v", explicit, err)
+				c.Fail("config file %q: no format provider handles extension %q", explicit, ext)
 			}
 		} else {
-			c.Fail("config file %q: no format provider handles extension %q", explicit, ext)
-		}
-	} else {
-		for _, loc := range src.Locations {
-			open := src.Open
-			if loc.Pinned {
-				open = src.OpenPinned
-			}
-			if open != nil {
+			for _, loc := range src.Locations {
 				type candidate struct {
 					path     string
-					reader   io.ReadCloser
+					size     int64
 					provider Provider // nil for native json
 				}
 				var found []candidate
 				for _, ext := range append([]string{"json"}, exts...) {
 					path := loc.Base + "." + ext
-					if r, err := open(path); err == nil {
-						found = append(found, candidate{path: path, reader: r, provider: byExt[ext]})
+					if size, err := src.Stat(path); err == nil {
+						found = append(found, candidate{path: path, size: size, provider: byExt[ext]})
 					} else if !errors.Is(err, fs.ErrNotExist) {
 						c.Fail("config file %q: %v", path, err)
 					}
 				}
 				if len(found) == 1 {
-					f.parse(c, found[0].path, found[0].reader, found[0].provider)
+					open := src.Open
+					if loc.Pinned {
+						open = src.OpenPinned
+					}
+					if open != nil {
+						f.admit(c, found[0].path, found[0].size, open, found[0].provider)
+					} else {
+						c.Fail("config location %q: no opener available (pinned: %v)", loc.Base, loc.Pinned)
+					}
 				} else if len(found) > 1 {
 					var paths []string
 					for _, cand := range found {
 						paths = append(paths, cand.path)
-						cand.reader.Close()
 					}
 					c.Fail("ambiguous configuration at %q: %v all exist", loc.Base, paths)
 				}
-			} else {
-				c.Fail("config location %q: no opener available (pinned: %v)", loc.Base, loc.Pinned)
 			}
 		}
+	} else {
+		c.Fail("config: no stat function provided")
 	}
 	return f
 }
 
+// admit is the gate between discovery and reading: the stat-reported
+// size is checked against the cap BEFORE the file is opened — an
+// oversized config is never opened, read or parsed.
+func (f *Files) admit(c *fail.Collector, path string, size int64, open func(string) (io.ReadCloser, error), provider Provider) {
+	if size <= f.maxSize {
+		if r, err := open(path); err == nil {
+			f.parse(c, path, r, provider)
+		} else {
+			c.Fail("config file %q: %v", path, err)
+		}
+	} else {
+		c.Fail("config file %q: %d bytes exceeds the %d byte limit", path, size, f.maxSize)
+	}
+}
+
+// cappedReader errors — loudly, never truncating silently — once more
+// than the allowed number of bytes has been read. It is defense in
+// depth behind the stat-time size gate: a file can grow between stat
+// and open, and stat sizes lie for special files.
+type cappedReader struct {
+	r    io.Reader
+	left int64
+	path string
+}
+
+func (cr *cappedReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	cr.left -= int64(n)
+	if cr.left < 0 && (err == nil || errors.Is(err, io.EOF)) {
+		err = fmt.Errorf("config file %q exceeds the size limit", cr.path)
+	}
+	return n, err
+}
+
 // parse transcodes one file to JSON when a provider is given, decodes
-// its top-level service sections and records the used provider.
+// its top-level service sections and records the used provider. The raw
+// stream is capped: an oversized file is a loud violation.
 func (f *Files) parse(c *fail.Collector, path string, r io.ReadCloser, provider Provider) {
-	var in io.Reader = r
+	var in io.Reader = &cappedReader{r: r, left: f.maxSize, path: path}
 	if provider != nil {
-		if jr, err := provider.ToJSON(r); err == nil {
+		if jr, err := provider.ToJSON(in); err == nil {
 			in = jr
 		} else {
 			c.Fail("config file %q: %v", path, err)

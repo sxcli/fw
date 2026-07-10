@@ -39,11 +39,17 @@ type Sources struct {
 	Args         []string                            // argv without the binary name and applet selector
 	LookupEnv    func(string) (string, bool)         // os.LookupEnv in production
 	Locations    []Location                          // search locations in merge order
+	Stat         func(string) (int64, error)         // file size probe; missing files must report fs.ErrNotExist
 	Open         func(string) (io.ReadCloser, error) // os.Open in production; missing files must report fs.ErrNotExist
 	OpenPinned   func(string) (io.ReadCloser, error) // symlink-refusing opener (O_NOFOLLOW-style) for pinned locations
 	Providers    []Provider                          // registered format providers, registration order
 	SuppressCore []string                            // long names of core fields the binary suppressed (fw.Suppress)
+	MaxSize      int64                               // config file size cap in bytes; <=0 means the 1 MiB default
 }
+
+// DefaultMaxSize is the config file size cap applied when Sources does
+// not set one: 1 MiB covers any sane configuration.
+const DefaultMaxSize = 1 << 20
 
 // Core is the framework core's own configuration, living under the
 // reserved service id "core". Config cannot meaningfully come from a
@@ -95,9 +101,16 @@ type Schema struct {
 type Files struct {
 	sections []map[string]json.RawMessage
 	Used     []Provider
+	maxSize  int64
 }
 
 // Loaded is the outcome of a strict Schema.Apply.
 type Loaded struct {
 	Positionals []string
+}
+
+// HelpSection is one service's schema for help rendering.
+type HelpSection struct {
+	ID     string
+	Fields []*Field
 }

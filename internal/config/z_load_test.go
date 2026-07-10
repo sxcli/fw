@@ -43,6 +43,18 @@ func fakeFS(files map[string]string) func(string) (io.ReadCloser, error) {
 	}
 }
 
+func fakeStat(files map[string]string) func(string) (int64, error) {
+	return func(path string) (int64, error) {
+		var size int64
+		err := fs.ErrNotExist
+		if content, ok := files[path]; ok {
+			size = int64(len(content))
+			err = nil
+		}
+		return size, err
+	}
+}
+
 func env(vars map[string]string) func(string) (string, bool) {
 	return func(name string) (string, bool) {
 		v, ok := vars[name]
@@ -63,15 +75,17 @@ type loadSink struct {
 func TestPrecedenceEndToEnd(t *testing.T) {
 	cfg := &loadSink{Path: "default.log", Backups: 1}
 	cfg.Rotation.Size = 10
+	disk := map[string]string{
+		"/bin/cat-config.json":  `{"filesink": {"path": "bin.log", "maxAge": "5m", "backups": 3, "tags": ["f1","f2"], "rotation": {"size": 99}}}`,
+		"/etc/cat/config.yml":   `{"filesink": {"path": "etc.log"}, "coldsvc": {"whatever": 1}}`,
+		"/home/u/cat/config.md": `not a config`,
+	}
 	src := Sources{
 		Args:      []string{"--log-max-age", "2h", "trail"},
 		LookupEnv: env(map[string]string{"CAT_LOG_PATH": "env.log", "CAT_LOG_MAX_AGE": "1h"}),
 		Locations: []Location{{Base: "/bin/cat-config"}, {Base: "/etc/cat/config"}, {Base: "/home/u/cat/config"}},
-		Open: fakeFS(map[string]string{
-			"/bin/cat-config.json":  `{"filesink": {"path": "bin.log", "maxAge": "5m", "backups": 3, "tags": ["f1","f2"], "rotation": {"size": 99}}}`,
-			"/etc/cat/config.yml":   `{"filesink": {"path": "etc.log"}, "coldsvc": {"whatever": 1}}`,
-			"/home/u/cat/config.md": `not a config`,
-		}),
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
 		Providers: []Provider{&identityYAML{}},
 	}
 	files := mustLoadFiles(t, src, "")
@@ -103,12 +117,14 @@ func TestPrecedenceEndToEnd(t *testing.T) {
 
 func TestLaterLocationOverridesEarlier(t *testing.T) {
 	cfg := &loadSink{}
+	disk := map[string]string{
+		"/bin/cat-config.json": `{"filesink": {"path": "bin.log", "backups": 3}}`,
+		"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
+	}
 	src := Sources{
 		Locations: []Location{{Base: "/bin/cat-config"}, {Base: "/etc/cat/config"}},
-		Open: fakeFS(map[string]string{
-			"/bin/cat-config.json": `{"filesink": {"path": "bin.log", "backups": 3}}`,
-			"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
-		}),
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
 	}
 	files := mustLoadFiles(t, src, "")
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
@@ -124,12 +140,14 @@ func TestLaterLocationOverridesEarlier(t *testing.T) {
 
 func TestExplicitConfigReplacesSearch(t *testing.T) {
 	cfg := &loadSink{}
+	disk := map[string]string{
+		"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
+		"/tmp/mine.yml":        `{"filesink": {"path": "mine.log"}}`,
+	}
 	src := Sources{
 		Locations: []Location{{Base: "/etc/cat/config"}},
-		Open: fakeFS(map[string]string{
-			"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
-			"/tmp/mine.yml":        `{"filesink": {"path": "mine.log"}}`,
-		}),
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
 		Providers: []Provider{&identityYAML{}},
 	}
 	files := mustLoadFiles(t, src, "/tmp/mine.yml")
@@ -163,6 +181,7 @@ func TestFileErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			src := Sources{
 				Locations: []Location{{Base: "/etc/cat/config"}},
+				Stat:      fakeStat(tc.files),
 				Open:      fakeFS(tc.files),
 				Providers: []Provider{&identityYAML{}},
 			}
@@ -185,6 +204,7 @@ func (p *jsonThief) FromJSON(in io.Reader) (io.Reader, error) { return in, nil }
 func TestProviderClaimingJSONFails(t *testing.T) {
 	src := Sources{
 		Locations: []Location{{Base: "/etc/cat/config"}},
+		Stat:      fakeStat(map[string]string{}),
 		Open:      fakeFS(map[string]string{}),
 		Providers: []Provider{&jsonThief{}},
 	}
@@ -198,6 +218,7 @@ func TestProviderClaimingJSONFails(t *testing.T) {
 func TestDuplicateExtensionClaimFails(t *testing.T) {
 	src := Sources{
 		Locations: []Location{{Base: "/etc/cat/config"}},
+		Stat:      fakeStat(map[string]string{}),
 		Open:      fakeFS(map[string]string{}),
 		Providers: []Provider{&identityYAML{}, &identityYAML{}},
 	}
@@ -227,15 +248,17 @@ func TestEmptyEnvValueMeansEmptySlice(t *testing.T) {
 func TestPinnedLocationUsesPinnedOpener(t *testing.T) {
 	cfg := &loadSink{}
 	pinnedCalled := false
+	disk := map[string]string{"/opt/box/cat-config.json": `{"filesink": {"path": "pinned.log"}}`}
 	src := Sources{
 		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
+		Stat:      fakeStat(disk),
 		Open: func(path string) (io.ReadCloser, error) {
 			t.Fatalf("pinned location must never use the plain opener (asked for %q)", path)
 			return nil, nil
 		},
 		OpenPinned: func(path string) (io.ReadCloser, error) {
 			pinnedCalled = true
-			return fakeFS(map[string]string{"/opt/box/cat-config.json": `{"filesink": {"path": "pinned.log"}}`})(path)
+			return fakeFS(disk)(path)
 		},
 	}
 	files := mustLoadFiles(t, src, "")
@@ -253,6 +276,7 @@ func TestPinnedLocationUsesPinnedOpener(t *testing.T) {
 func TestPinnedSymlinkRejectionIsLoud(t *testing.T) {
 	src := Sources{
 		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
+		Stat:      fakeStat(map[string]string{"/opt/box/cat-config.json": `{}`}),
 		OpenPinned: func(path string) (io.ReadCloser, error) {
 			return nil, errors.New("is a symlink: refusing")
 		},
@@ -265,21 +289,65 @@ func TestPinnedSymlinkRejectionIsLoud(t *testing.T) {
 }
 
 func TestPinnedLocationWithoutOpenerFails(t *testing.T) {
+	disk := map[string]string{"/opt/box/cat-config.json": `{}`}
 	src := Sources{
 		Locations: []Location{{Base: "/opt/box/cat-config", Pinned: true}},
-		Open:      fakeFS(map[string]string{}),
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
 	}
 	c := &fail.Collector{}
 	LoadFiles(c, src, "")
 	if c.Len() == 0 {
-		t.Error("a pinned location without a pinned opener must fail")
+		t.Error("a pinned location with an existing candidate but no pinned opener must fail")
+	}
+}
+
+func TestOversizedConfigIsRefusedWithoutOpening(t *testing.T) {
+	big := `{"filesink": {"path": "` + strings.Repeat("x", 100) + `"}}`
+	disk := map[string]string{"/etc/cat/config.json": big}
+	opened := false
+	src := Sources{
+		Locations: []Location{{Base: "/etc/cat/config"}},
+		Stat:      fakeStat(disk),
+		Open: func(path string) (io.ReadCloser, error) {
+			opened = true
+			return fakeFS(disk)(path)
+		},
+		MaxSize: 64,
+	}
+	c := &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() == 0 {
+		t.Error("an oversized config file must be refused")
+	}
+	if opened {
+		t.Error("an oversized config must never be opened, let alone read")
+	}
+	src.MaxSize = int64(len(big)) + 1
+	c = &fail.Collector{}
+	LoadFiles(c, src, "")
+	if c.Len() != 0 {
+		t.Errorf("a file within the cap must load: %v", c.All())
+	}
+	if !opened {
+		t.Error("a file within the cap must be opened")
+	}
+}
+
+func TestMissingStatIsAViolation(t *testing.T) {
+	c := &fail.Collector{}
+	LoadFiles(c, Sources{Locations: []Location{{Base: "/etc/cat/config"}}}, "")
+	if c.Len() == 0 {
+		t.Error("a missing stat function must be a violation")
 	}
 }
 
 func TestSuppressedFileKeyIsLoud(t *testing.T) {
+	disk := map[string]string{"/etc/cat/config.json": `{"core": {"override": ["a=b"]}}`}
 	src := Sources{
 		Locations:    []Location{{Base: "/etc/cat/config"}},
-		Open:         fakeFS(map[string]string{"/etc/cat/config.json": `{"core": {"override": ["a=b"]}}`}),
+		Stat:         fakeStat(disk),
+		Open:         fakeFS(disk),
 		SuppressCore: []string{"override"},
 	}
 	files := mustLoadFiles(t, src, "")
@@ -292,9 +360,11 @@ func TestSuppressedFileKeyIsLoud(t *testing.T) {
 
 func TestUnknownKeyInOwnedSection(t *testing.T) {
 	cfg := &loadSink{}
+	disk := map[string]string{"/etc/cat/config.json": `{"filesink": {"pth": "typo.log"}}`}
 	src := Sources{
 		Locations: []Location{{Base: "/etc/cat/config"}},
-		Open:      fakeFS(map[string]string{"/etc/cat/config.json": `{"filesink": {"pth": "typo.log"}}`}),
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
 	}
 	files := mustLoadFiles(t, src, "")
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
@@ -306,11 +376,13 @@ func TestUnknownKeyInOwnedSection(t *testing.T) {
 }
 
 func TestApplyCoreSeesFileValues(t *testing.T) {
+	disk := map[string]string{"/etc/cat/config.json": `{"core": {"disable": ["never"], "override": ["sqlite=mysql"]}}`}
 	src := Sources{
 		Args:      []string{"--enable", "mysql"},
 		LookupEnv: env(map[string]string{"CAT_DISABLE": "sqlite,boltdb"}),
 		Locations: []Location{{Base: "/etc/cat/config"}},
-		Open:      fakeFS(map[string]string{"/etc/cat/config.json": `{"core": {"disable": ["never"], "override": ["sqlite=mysql"]}}`}),
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
 	}
 	files := mustLoadFiles(t, src, "")
 	c := &fail.Collector{}
