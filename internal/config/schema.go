@@ -203,6 +203,26 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 	return fields, errs
 }
 
+// HelpSections returns the schema's services and their fields for help
+// rendering, the core first.
+func (s *Schema) HelpSections() []HelpSection {
+	var out []HelpSection
+	for _, svc := range s.services {
+		out = append(out, HelpSection{ID: svc.id, Fields: svc.fields})
+	}
+	return out
+}
+
+// Value returns one field's current (merged) value, rendered like the
+// --write-config output: durations as unit-suffixed strings.
+func (s *Schema) Value(f *Field) any {
+	var out any
+	if svc, owned := s.owner[f]; owned {
+		out = fieldValue(svc.cfg.Elem().FieldByIndex(f.Path))
+	}
+	return out
+}
+
 // scalarOK reports whether t is a supported scalar: string, bool, any
 // int/uint width, any float width or time.Duration.
 func scalarOK(t reflect.Type) bool {

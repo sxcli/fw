@@ -167,6 +167,15 @@ type SCMApplet interface {
 `Main()` asks the platform layer whether the process runs under the SCM. If
 so it calls `svc.Run` with a core-owned handler. The handler:
 
+For testing, the same handler can run **outside** the service manager:
+the `--scm-debug` argument (windows-only) enters `svc/debug` — console
+process, Ctrl+C/Break translated to Stop/Shutdown requests. It is
+argument-only by construction (a platform-level pre-scan, never a
+config/env value, absent from `--help`) and **default-off**: a binary
+exposes it with `fw.Enable(fw.FeatureSCMDebug)`; without the opt-in the
+token is rejected as an unknown argument, as it is on non-windows
+platforms.
+
 1. reports start-pending status immediately so the SCM does not kill the
    service during initialization (documented on `SCMApplet.Execute`),
 2. receives the argument vector in its `Execute` — this is where args come
@@ -327,7 +336,10 @@ init() registrations → Main()
 `--write-config` short-circuits after step 7's merge: write the merged
 config to the `--config` target (format chosen by the file extension via a
 format provider) or, with no target, dump JSON to stdout; exit 0 without
-Configured/Start/Run.
+Configured/Start/Run. The target is input *and* output: an existing
+target is loaded as the explicit config first — making `--write-config`
+an easy way to normalize/reformat an existing file — and a missing one
+is only created. Written files get mode 0600.
 
 `--help,-h` (core-owned) prints the dispatched applet's full argument schema
 — core + entire closure, grouped by service ID, with usage texts (rendered
@@ -433,6 +445,23 @@ Files are transcoded by extension via format providers; JSON is handled
 natively. A file whose extension no registered provider handles is a
 **startup error**.
 
+A config source must resolve to a **regular file**: the `stat` probe —
+which follows symlinks, so a symlink to a regular file still passes
+(symlink-overlay distros keep working) — refuses FIFOs before any open
+could block on them, and gives devices and directories a clean startup
+error. The pinned companion location additionally forbids the symlink
+hop itself.
+
+Config files are also size-capped: a file larger than the cap (default
+1 MiB, which covers any sane configuration) is refused with a loud
+startup error — the size is checked on the same `stat`, **before the
+file is even opened**; an oversized config is never opened, read or
+parsed. A capped
+reader underneath is defense in depth against stat races and lying
+sizes, and never truncates silently. Like feature suppression the cap
+is a build-time property of the binary: `fw.MaxConfigSize(bytes)`
+before `Main`.
+
 The core's `--config,-c` path is itself an ordinary config value with the
 usual source precedence — default empty, settable via env, the argument
 always wins (it cannot meaningfully come from a config file). When it
@@ -499,7 +528,8 @@ itself.
   the last, which may take a value (`-abc=5`, `-abc 5`).
 - **Positionals:** every bare token after the last flag argument is
   collected as a positional and does not cause errors. Parsing/routing of
-  positionals is deferred (v1 collects and exposes them, nothing more).
+  positionals is deferred — v1 collects them and exposes them via
+  `sxclifw.Positionals()`, nothing more.
 
 ## 7. Logging & Tr()
 

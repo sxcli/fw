@@ -16,7 +16,9 @@ import "golang.org/x/sys/windows/svc"
 // interrogate requests reach the applet directly.
 //
 // When Execute is invoked the service state reported to the SCM is
-// TODO: document the exact state once the implementation is finished.
+// still start-pending: the framework never reports Running — the applet
+// owns that transition and performs it itself (with the
+// accepted-commands mask it wants) once it is ready to serve.
 //
 // When Execute returns, the framework stops every started service in
 // reverse order and reports the final status to the SCM. The signature
