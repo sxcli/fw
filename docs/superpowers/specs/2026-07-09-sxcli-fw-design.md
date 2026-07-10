@@ -556,10 +556,19 @@ func Tr(format string, args ...any) string
 - `args` are name/value pairs; `{name}` placeholders resolve by name with
   `%v` formatting semantics.
 - `{{` and `}}` escape literal braces.
-- A placeholder with no matching name is left verbatim (visible, harmless).
-- v1 is pure formatting. The format string is designed to be the future
-  gettext msgid: translation providers will look the format up in a catalog
-  before substitution. `usage:` strings join the extraction set.
+- A placeholder with no matching name — or a malformed pair (non-string
+  name, trailing odd value) — is left verbatim (visible, harmless).
+
+**gettext is the committed i18n model** (translate-then-format, the
+classic convention): the untranslated format string is the msgid,
+translation providers will load `.po`/`.mo` catalogs and look the format
+up before substitution, and locale selection follows gettext conventions
+(`LANGUAGE`/`LC_ALL`/`LANG`). The `{name}` placeholder syntax matches
+gettext's `python-brace-format` flag, so standard tooling (`msgfmt
+--check`, Poedit, Weblate) validates placeholders in translations.
+`usage:` strings join the same `.pot` extraction set. v1 ships the
+identity lookup — pure formatting. Plural support (`TrN`, gettext
+`ngettext`/`Plural-Forms`) is a future addition.
 
 ## 8. Testing Strategy
 
@@ -587,7 +596,8 @@ func Tr(format string, args ...any) string
 | --- | --- |
 | `ConfigurationUpdated` trigger (file watch? signal? API?) | interface reserved, semantics open — but constrained: a reload only re-fills config values of closure members; the graph is immutable once resolved (no add/remove/rewire, ever) |
 | Terminal UI provider | concept named, comes after v1 |
-| i18n providers + gettext catalogs | `Tr()`/`usage` designed as extraction sources |
+| i18n providers (gettext `.po`/`.mo` catalog loading, locale selection) | gettext is the decided model; `Tr()`/`usage` are the extraction sources, format strings are msgids |
+| `TrN` plural support (gettext `ngettext`/`Plural-Forms`) | future addition alongside catalog providers |
 | Demo applet | undecided; will not mirror busybox applets |
 | Positional parsing/routing | positionals collected, routing open |
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
