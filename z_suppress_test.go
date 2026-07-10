@@ -2,6 +2,7 @@ package sxclifw
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -24,6 +25,63 @@ func TestSuppressDeduplicates(t *testing.T) {
 	Suppress(FeatureOverride, FeatureOverride)
 	if !reflect.DeepEqual(suppressedCore, []string{"override"}) {
 		t.Errorf("repeated suppression must not duplicate: %v", suppressedCore)
+	}
+}
+
+func TestMaxConfigSize(t *testing.T) {
+	old := maxConfigSize
+	t.Cleanup(func() { maxConfigSize = old })
+	MaxConfigSize(4096)
+	if maxConfigSize != 4096 {
+		t.Errorf("limit not set: %d", maxConfigSize)
+	}
+	before := defaultCollector.Len()
+	MaxConfigSize(0)
+	if defaultCollector.Len() != before+1 {
+		t.Error("a non-positive limit must be a violation")
+	}
+	if maxConfigSize != 4096 {
+		t.Error("a rejected limit must not overwrite the previous one")
+	}
+}
+
+func TestEnableSCMDebug(t *testing.T) {
+	old := scmDebugEnabled
+	t.Cleanup(func() { scmDebugEnabled = old })
+	scmDebugEnabled = false
+	Enable(FeatureSCMDebug)
+	if !scmDebugEnabled {
+		t.Error("Enable(FeatureSCMDebug) must set the opt-in")
+	}
+}
+
+func TestEnableDefaultOnFeatureIsViolation(t *testing.T) {
+	before := defaultCollector.Len()
+	Enable(FeatureOverride)
+	if defaultCollector.Len() != before+1 {
+		t.Error("enabling a default-on feature must be a violation")
+	}
+}
+
+func TestSuppressSCMDebugIsViolation(t *testing.T) {
+	before := defaultCollector.Len()
+	Suppress(FeatureSCMDebug)
+	if defaultCollector.Len() != before+1 {
+		t.Error("suppressing the default-off feature must be a violation")
+	}
+}
+
+func TestStripSCMDebug(t *testing.T) {
+	argv, found := stripSCMDebug([]string{"bin", "--verbose", "--scm-debug", "trailing"})
+	if !found || strings.Join(argv, ",") != "bin,--verbose,trailing" {
+		t.Errorf("strip wrong: %v, %v", argv, found)
+	}
+	argv, found = stripSCMDebug([]string{"--scm-debug"})
+	if found || strings.Join(argv, ",") != "--scm-debug" {
+		t.Errorf("argv[0] must never be a candidate: %v, %v", argv, found)
+	}
+	if _, found = stripSCMDebug([]string{"bin", "run"}); found {
+		t.Error("absent token must not be found")
 	}
 }
 
