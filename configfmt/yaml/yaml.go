@@ -7,7 +7,7 @@ import (
 
 	goyaml "github.com/goccy/go-yaml"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
+	sxclifw "sxcli.dev/fw"
 )
 
 func init() {

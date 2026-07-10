@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/sxcli/sxcli-fw/internal/config"
-	"github.com/sxcli/sxcli-fw/internal/fail"
-	"github.com/sxcli/sxcli-fw/internal/registry"
+	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/fw/internal/registry"
 )
 
 // defaultCollector accumulates every startup violation across all

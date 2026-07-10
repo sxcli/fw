@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 func newReg(checks ...Check) (*Registry, *fail.Collector) {

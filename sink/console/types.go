@@ -3,13 +3,13 @@
 // registers itself as always-on, so a binary that imports it has sane
 // log output with no further wiring:
 //
-//	import _ "github.com/sxcli/sxcli-fw/sink/console"
+//	import _ "sxcli.dev/fw/sink/console"
 package console
 
 import (
 	"log/slog"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
+	sxclifw "sxcli.dev/fw"
 )
 
 // Config is the console sink configuration, section "console".

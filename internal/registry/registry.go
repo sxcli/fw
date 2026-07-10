@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 // New creates an empty registry recording violations into c and running

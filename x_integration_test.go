@@ -18,10 +18,10 @@ import (
 	"strings"
 	"testing"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
-	_ "github.com/sxcli/sxcli-fw/configfmt/yaml"
-	_ "github.com/sxcli/sxcli-fw/sink/console"
-	_ "github.com/sxcli/sxcli-fw/sink/file"
+	sxclifw "sxcli.dev/fw"
+	_ "sxcli.dev/fw/configfmt/yaml"
+	_ "sxcli.dev/fw/sink/console"
+	_ "sxcli.dev/fw/sink/file"
 )
 
 const personalityVar = "SXCLI_TEST_PERSONALITY"

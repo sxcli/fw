@@ -7,7 +7,7 @@
 // journal protocol needed for ingestion. It is an ordinary service —
 // cold until an applet requires it or the operator enables it:
 //
-//	import _ "github.com/sxcli/sxcli-fw/sink/syslog"
+//	import _ "sxcli.dev/fw/sink/syslog"
 //	// then: mybox applet --enable syslog
 //
 // The sink is unavailable on non-unix platforms: importing the package
@@ -24,7 +24,7 @@ import (
 	"log/syslog"
 	"sync"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
+	sxclifw "sxcli.dev/fw"
 )
 
 // Config is the syslog sink configuration, section "syslog".

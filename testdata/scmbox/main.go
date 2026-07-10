@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"os"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
 	"golang.org/x/sys/windows/svc"
+	sxclifw "sxcli.dev/fw"
 )
 
 type probeConfig struct {

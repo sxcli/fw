@@ -9,7 +9,7 @@ import (
 	"log/syslog"
 	"strings"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
+	sxclifw "sxcli.dev/fw"
 )
 
 func init() {

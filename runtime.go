@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sxcli/sxcli-fw/internal/config"
-	"github.com/sxcli/sxcli-fw/internal/fail"
-	"github.com/sxcli/sxcli-fw/internal/registry"
+	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/fw/internal/registry"
 )
 
 // runtime carries every external dependency of one run, injectable for

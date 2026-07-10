@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 type argsConfig struct {

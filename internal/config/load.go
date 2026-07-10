@@ -1,6 +1,6 @@
 package config
 
-import "github.com/sxcli/sxcli-fw/internal/fail"
+import "sxcli.dev/fw/internal/fail"
 
 // PeekCore is the first pipeline pass: it leniently extracts the core's
 // own configuration from environment and arguments only — no file can be

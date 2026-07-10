@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
-	"github.com/sxcli/sxcli-fw/internal/registry"
+	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/fw/internal/registry"
 )
 
 var durationType = reflect.TypeOf(time.Duration(0))

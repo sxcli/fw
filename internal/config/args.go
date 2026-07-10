@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 // parseArgs applies the argument source to the schema's config structs.

@@ -10,10 +10,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/sxcli/sxcli-fw/internal/config"
-	"github.com/sxcli/sxcli-fw/internal/graph"
-	"github.com/sxcli/sxcli-fw/internal/logging"
-	"github.com/sxcli/sxcli-fw/internal/registry"
+	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/internal/graph"
+	"sxcli.dev/fw/internal/logging"
+	"sxcli.dev/fw/internal/registry"
 )
 
 // Main runs the framework: dispatch, configuration, resolution,

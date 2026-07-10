@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 // LoadFiles discovers, transcodes and parses the configuration files of

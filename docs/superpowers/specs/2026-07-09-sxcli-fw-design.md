@@ -4,7 +4,7 @@ sxcli stands for **Simple Extensible CLI**.
 
 Date: 2026-07-09
 Status: approved section by section during brainstorming
-Module: `github.com/sxcli/sxcli-fw` · Package: `sxclifw` · Go: 1.26
+Module: `sxcli.dev/fw` · Package: `sxclifw` · Go: 1.26
 
 ## 1. Purpose & Scope
 
@@ -44,7 +44,7 @@ binary with:
 
 ```
 sxcli-fw/
-├── go.mod                — module github.com/sxcli/sxcli-fw
+├── go.mod                — module sxcli.dev/fw
 ├── *.go                  — package sxclifw: the entire public API
 ├── platform_unix.go      — args acquisition, no-op service hooks
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
@@ -65,9 +65,9 @@ Consumers choose what links into their binary via blank imports:
 
 ```go
 import (
-    fw "github.com/sxcli/sxcli-fw"
-    _ "github.com/sxcli/sxcli-fw/sink/console"
-    _ "github.com/sxcli/sxcli-fw/configfmt/yaml"
+    fw "sxcli.dev/fw"
+    _ "sxcli.dev/fw/sink/console"
+    _ "sxcli.dev/fw/configfmt/yaml"
 )
 
 func main() { fw.Main() }

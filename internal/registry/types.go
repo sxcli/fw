@@ -8,7 +8,7 @@ package registry
 import (
 	"reflect"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 // Check is a semantic validation hook supplied by the framework root. A

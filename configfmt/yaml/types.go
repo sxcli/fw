@@ -4,10 +4,10 @@
 // ConfigFormatProvider contract — and is pulled into the closure only
 // when a yaml config file actually matched:
 //
-//	import _ "github.com/sxcli/sxcli-fw/configfmt/yaml"
+//	import _ "sxcli.dev/fw/configfmt/yaml"
 package yaml
 
-import sxclifw "github.com/sxcli/sxcli-fw"
+import sxclifw "sxcli.dev/fw"
 
 // YAML is the provider service.
 type YAML struct{}

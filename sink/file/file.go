@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
+	sxclifw "sxcli.dev/fw"
 )
 
 func init() {

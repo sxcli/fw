@@ -3,7 +3,7 @@
 // ordinary service — cold until an applet requires it or the operator
 // enables it (core `enable`) — never always-on:
 //
-//	import _ "github.com/sxcli/sxcli-fw/sink/file"
+//	import _ "sxcli.dev/fw/sink/file"
 //	// then: mybox applet --enable logfile --logfile-path /var/log/box.log
 //
 // There is no rotation: the file is opened O_APPEND and external
@@ -15,7 +15,7 @@ import (
 	"log/slog"
 	"os"
 
-	sxclifw "github.com/sxcli/sxcli-fw"
+	sxclifw "sxcli.dev/fw"
 )
 
 // Config is the file sink configuration, section "logfile". Path has no

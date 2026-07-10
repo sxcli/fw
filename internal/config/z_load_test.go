@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
+	"sxcli.dev/fw/internal/fail"
 )
 
 func mustLoadFiles(t *testing.T, src Sources, explicit string) *Files {

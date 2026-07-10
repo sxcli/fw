@@ -1,4 +1,4 @@
-module github.com/sxcli/sxcli-fw
+module sxcli.dev/fw
 
 go 1.26.4
 

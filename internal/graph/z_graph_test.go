@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sxcli/sxcli-fw/internal/fail"
-	"github.com/sxcli/sxcli-fw/internal/registry"
+	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/fw/internal/registry"
 )
 
 func newRegistry() *registry.Registry {
