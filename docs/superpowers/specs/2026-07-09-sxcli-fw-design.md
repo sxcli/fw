@@ -591,9 +591,14 @@ The core assembles a **multihandler** over every enabled sink:
 - Handlers must be safe for concurrent use; many derived loggers share
   one sink.
 - `Handle` must be prompt and apply its own I/O deadlines (a network
-  syslog sink sets write timeouts on its connection). The multihandler
-  is deliberately synchronous — fan-out happens on the caller's
-  goroutine; a hung sink is the sink's bug, not the core's to babysit.
+  sink sets write timeouts on its connection). The multihandler is
+  deliberately synchronous — fan-out happens on the caller's goroutine;
+  a hung sink is the sink's bug, not the core's to babysit. Known
+  limitation: the shipped syslog sink is stdlib `log/syslog`-based,
+  which exposes no deadlines — its default local socket is unaffected,
+  but remote `tcp` cannot fully honor this contract; anyone needing
+  deadline-guaranteed remote logging is better served by the future
+  async decorator (Open Items), which bounds any slow sink.
 - A sink SHOULD be **fully operational when `Configured()` returns** —
   it acquires its own resources there (the file sink opens its file in
   Configured, not Start), so it is live for the buffer replay at the
