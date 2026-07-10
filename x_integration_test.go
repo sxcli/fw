@@ -29,7 +29,9 @@ const personalityVar = "SXCLI_TEST_PERSONALITY"
 func TestMain(m *testing.M) {
 	personality := os.Getenv(personalityVar)
 	if personality == "" {
-		os.Exit(m.Run())
+		code := m.Run()
+		wineCleanup()
+		os.Exit(code)
 	}
 	if personality == "single" || personality == "multi" || personality == "hardened" {
 		registerProbe()

@@ -23,16 +23,19 @@ func platformMain() int {
 	debugArgv, debugMode := stripSCMDebug(os.Args)
 	if err == nil && isService {
 		h := &scmHandler{}
-		if runErr := svc.Run("", h); runErr == nil {
-			code = int(h.code)
-		} else {
+		runErr := svc.Run("", h)
+		code = int(h.code)
+		if runErr != nil && code == 0 {
 			code = 2
 		}
 	} else if debugMode && scmDebugEnabled {
+		// debug.Run reports a non-zero Execute exit code AS an error
+		// (syscall.Errno); the handler holds the real code, so the
+		// error only matters when no code was produced at all
 		h := &scmHandler{argv: debugArgv}
-		if runErr := debug.Run(binaryBasename(debugArgv[0]), h); runErr == nil {
-			code = int(h.code)
-		} else {
+		runErr := debug.Run(binaryBasename(debugArgv[0]), h)
+		code = int(h.code)
+		if runErr != nil && code == 0 {
 			code = 2
 		}
 	} else {
