@@ -396,12 +396,18 @@ type FileSinkConfig struct {
 - `json:"…"` — **required** on every exported field; the core is JSON-native.
   File keys nest under the service ID: `{"filesink": {"path": "…"}}`.
   The core's own config lives under the reserved ID `core`.
-- `arg:"long[,short]"` — explicit opt-in per field; no tag → no CLI arg and
-  no env var (file-only). Duplicate long names across the closure = startup
-  error; short names are first-come-first-served.
-- `env:"NAME"` — explicit env name; if absent but `arg` present, derived as
-  `APPLETID_` + long name uppercased with dashes → underscores
-  (applet `cat`, arg `log-max-age` → `CAT_LOG_MAX_AGE`).
+- `arg:"long[,short]"` — explicit opt-in per field; no tag → no CLI
+  argument. Duplicate long names across the closure = startup error;
+  short names are first-come-first-served.
+- `env:"NAME"` — an explicit opt-in of its own: a field with only an
+  `env` tag is env+file settable (useful for values deployable via
+  environment without cluttering the CLI, e.g. tokens). When `arg` is
+  present and `env` absent, the name derives as `APPLETID_` + long name
+  uppercased with dashes → underscores (applet `cat`, arg
+  `log-max-age` → `CAT_LOG_MAX_AGE`). `env:"-"` suppresses the env var
+  entirely, derivation included — combined with `arg` it makes a field
+  argument-only (how the core's `help`/`write-config` are locked down).
+  A field with neither tag is file-only.
 - `usage:"…"` — help text; rendered through `Tr()`; doubles as a gettext
   extraction source when translation support lands.
 
