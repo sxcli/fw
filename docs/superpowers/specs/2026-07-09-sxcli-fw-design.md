@@ -445,8 +445,14 @@ platform layer.)
   explicit user path is the user's business.
 
 Files are transcoded by extension via format providers; JSON is handled
-natively. A file whose extension no registered provider handles is a
-**startup error**.
+natively. An explicit `--config` file whose extension no registered
+provider handles is a **startup error**. The location search, by
+construction, only probes the extensions it knows (`json` + every
+registered provider's): a config file at a standard location with an
+unhandled extension is simply outside its view and silently unused —
+the search never enumerates directories, so foreign files
+(`config.json.bak`, package-manager droppings) can never break
+startup.
 
 A config source must resolve to a **regular file**: the `stat` probe —
 which follows symlinks, so a symlink to a regular file still passes
