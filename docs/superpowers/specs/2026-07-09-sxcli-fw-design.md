@@ -351,7 +351,12 @@ an easy way to normalize/reformat an existing file — and a missing one
 is only created. **Newly created** files get mode 0600; an existing
 target's permissions are the operator's prior decision and are left
 untouched (format normalization must not silently revoke a
-deliberately granted group read).
+deliberately granted group read). Empty values — zero scalars, empty
+slices — are skipped, and sections or nested objects they would leave
+empty are omitted entirely, so a default-heavy configuration dumps
+small. Consequence: a field explicitly set to its zero value is
+indistinguishable from an unset one and falls back to its default when
+the dump is loaded.
 
 `--help,-h` (core-owned) prints the dispatched applet's full argument schema
 — core + entire closure, grouped by service ID, with usage texts (rendered

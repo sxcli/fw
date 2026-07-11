@@ -182,13 +182,19 @@ func fieldValue(f reflect.Value) any {
 
 // MarshalIndent serializes the merged configuration of every schema
 // member — the exact values the config structs hold — as the core's
-// native JSON, service sections keyed by id.
+// native JSON, service sections keyed by id. Empty values (zero
+// scalars, empty slices) are skipped, and sections or nested objects
+// they would leave empty are omitted entirely, so a default-heavy
+// configuration dumps small. Consequence, documented: a field
+// explicitly set to its zero value is indistinguishable from an unset
+// one and falls back to its default when the dump is loaded.
 func (s *Schema) MarshalIndent() ([]byte, error) {
 	root := map[string]any{}
 	for _, svc := range s.services {
 		section := map[string]any{}
 		for _, f := range svc.fields {
-			if !f.Transient {
+			value := svc.cfg.Elem().FieldByIndex(f.Path)
+			if !f.Transient && !emptyValue(value) {
 				node := section
 				for _, key := range f.JSONPath[:len(f.JSONPath)-1] {
 					if next, ok := node[key].(map[string]any); ok {
@@ -199,10 +205,22 @@ func (s *Schema) MarshalIndent() ([]byte, error) {
 						node = created
 					}
 				}
-				node[f.JSONPath[len(f.JSONPath)-1]] = fieldValue(svc.cfg.Elem().FieldByIndex(f.Path))
+				node[f.JSONPath[len(f.JSONPath)-1]] = fieldValue(value)
 			}
 		}
-		root[svc.id] = section
+		if len(section) > 0 {
+			root[svc.id] = section
+		}
 	}
 	return json.MarshalIndent(root, "", "  ")
+}
+
+// emptyValue reports whether a field holds nothing worth dumping: the
+// zero value, or a slice with no elements (nil or not).
+func emptyValue(v reflect.Value) bool {
+	out := v.IsZero()
+	if v.Kind() == reflect.Slice {
+		out = v.Len() == 0
+	}
+	return out
 }

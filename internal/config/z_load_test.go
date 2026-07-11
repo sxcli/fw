@@ -514,4 +514,22 @@ func TestMarshalIndentRoundTrip(t *testing.T) {
 			t.Errorf("run-scoped core field %s must not be dumped (a written config would be self-triggering):\n%s", transient, text)
 		}
 	}
+	if strings.Contains(text, `"backups"`) {
+		t.Errorf("zero values must be skipped:\n%s", text)
+	}
+	if strings.Contains(text, `"core"`) {
+		t.Errorf("a section left empty by skipping must be omitted:\n%s", text)
+	}
+}
+
+func TestMarshalIndentSkipsEmptyNestedObjects(t *testing.T) {
+	cfg := &loadSink{Path: "a.log"} // rotation.size stays zero
+	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
+	out, err := s.MarshalIndent()
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if strings.Contains(string(out), `"rotation"`) {
+		t.Errorf("an all-empty nested object must be omitted:\n%s", out)
+	}
 }

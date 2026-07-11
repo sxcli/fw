@@ -362,8 +362,11 @@ func TestWriteConfigToStdout(t *testing.T) {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	out := w.stdout.String()
-	if !strings.Contains(out, `"greeting": "dumped"`) || !strings.Contains(out, `"core"`) {
+	if !strings.Contains(out, `"greeting": "dumped"`) {
 		t.Errorf("dump wrong:\n%s", out)
+	}
+	if strings.Contains(out, `"core"`) {
+		t.Errorf("empty core section must be omitted from the dump:\n%s", out)
 	}
 	if strings.Contains(strings.Join(w.log, ","), "applet.run") {
 		t.Errorf("write-config must not run the applet: %v", w.log)
