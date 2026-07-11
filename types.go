@@ -92,9 +92,10 @@ type ConfigurationUpdater interface {
 // ConfigFormatProvider is a service that transcodes a configuration
 // format to and from the core's native JSON. The core matches config
 // files to providers by file extension; Extensions returns the supported
-// ones, lowercase and without the leading dot (e.g. "yaml", "yml"). A
-// config file whose extension no registered provider handles is a
-// startup error.
+// ones, lowercase and without the leading dot (e.g. "yaml", "yml"). An
+// explicit --config file whose extension no registered provider handles
+// is a startup error; the location search, by construction, only probes
+// the extensions it knows and never sees other files.
 //
 // ToJSON and FromJSON must be pure stream transforms: the core uses them
 // while discovering and loading config files — before anything is

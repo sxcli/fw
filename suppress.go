@@ -58,16 +58,6 @@ var coreFeatureLongs = map[CoreFeature]string{
 // passes it into the configuration machinery.
 var suppressedCore []string
 
-// Suppress removes core configuration features from this binary. A
-// suppressed feature vanishes from the core's schema entirely: its
-// argument becomes unknown (an error in the strict pass), its
-// environment variable is never consulted, and its key appearing in a
-// config file's core section is a loud startup error — operators learn
-// it is not honored instead of wondering why it is ignored.
-//
-// Call Suppress from the consumer's main() or an init() function,
-// before Main; it is a build-time property of the binary, not runtime
-// configuration.
 // maxConfigSize is the config file size cap; Main passes it into the
 // configuration machinery.
 var maxConfigSize int64
@@ -105,6 +95,16 @@ func Enable(features ...CoreFeature) {
 	}
 }
 
+// Suppress removes core configuration features from this binary. A
+// suppressed feature vanishes from the core's schema entirely: its
+// argument becomes unknown (an error in the strict pass), its
+// environment variable is never consulted, and its key appearing in a
+// config file's core section is a loud startup error — operators learn
+// it is not honored instead of wondering why it is ignored.
+//
+// Call Suppress from the consumer's main() or an init() function,
+// before Main; it is a build-time property of the binary, not runtime
+// configuration.
 func Suppress(features ...CoreFeature) {
 	for _, feature := range features {
 		if feature == FeatureSCMDebug {
