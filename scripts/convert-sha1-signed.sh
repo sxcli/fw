@@ -5,10 +5,14 @@
 # survive the hash change anyway — replaying is the single-pass way.)
 #
 # Run this on the machine holding the signing key. Linear history only;
-# author/committer names, emails and BOTH dates are preserved exactly —
-# the only differences in the replay are the hashes and the signatures.
+# author/committer names and BOTH dates are preserved exactly, but the
+# author and committer EMAIL is overridden with the given one — so every
+# replayed commit matches the identity of the PGP key and the forge
+# account (Codeberg shows Verified only when the committer email belongs
+# to the account the key is registered under). The only differences in
+# the replay are the hashes, the emails and the signatures.
 #
-# usage: convert-sha1-signed.sh <source-repo> <target-dir> [signing-key-id]
+# usage: convert-sha1-signed.sh <source-repo> <target-dir> <email> [signing-key-id]
 #
 # With no key-id argument the machine's `git config user.signingkey`
 # must already point at the right key. The gpg agent prompts once and
@@ -16,10 +20,11 @@
 
 set -euo pipefail
 
-usage="usage: convert-sha1-signed.sh <source-repo> <target-dir> [signing-key-id]"
+usage="usage: convert-sha1-signed.sh <source-repo> <target-dir> <email> [signing-key-id]"
 src=${1:?$usage}
 dst=${2:?$usage}
-key=${3:-}
+email=${3:?$usage}
+key=${4:-}
 
 src=$(cd "$src" && pwd)
 
@@ -42,7 +47,7 @@ mkdir -p "$dst"
 cd "$dst"
 git init -q -b master   # sha1 is the default object format
 git config user.name  "$(git -C "$src" config user.name)"
-git config user.email "$(git -C "$src" config user.email)"
+git config user.email "$email"
 if [ -n "$key" ]; then
     git config user.signingkey "$key"
 fi
@@ -53,10 +58,10 @@ for c in $(git -C "$src" rev-list --reverse master); do
     git -C "$src" archive "$c" | tar -x
     git add -A
     GIT_AUTHOR_NAME="$(git -C "$src" log -1 --format=%an "$c")" \
-    GIT_AUTHOR_EMAIL="$(git -C "$src" log -1 --format=%ae "$c")" \
+    GIT_AUTHOR_EMAIL="$email" \
     GIT_AUTHOR_DATE="$(git -C "$src" log -1 --format=%aI "$c")" \
     GIT_COMMITTER_NAME="$(git -C "$src" log -1 --format=%cn "$c")" \
-    GIT_COMMITTER_EMAIL="$(git -C "$src" log -1 --format=%ce "$c")" \
+    GIT_COMMITTER_EMAIL="$email" \
     GIT_COMMITTER_DATE="$(git -C "$src" log -1 --format=%cI "$c")" \
     git commit -qS --no-verify -m "$(git -C "$src" log -1 --format=%B "$c")"
     echo "signed $(git rev-parse --short HEAD)  $(git -C "$src" log -1 --format=%s "$c")"
