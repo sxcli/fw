@@ -121,7 +121,7 @@ type world struct {
 func newWorld(t *testing.T, argv []string, files map[string]string, env map[string]string) *world {
 	t.Helper()
 	w := &world{c: &fail.Collector{}}
-	reg := registry.New(w.c, checkReservedID, checkAppletLifecycle, config.ValidateConfig)
+	reg := registry.New(w.c, checkReservedID, checkAppletLifecycle, config.ValidateConfig, checkMetadata)
 	w.rt = &runtime{
 		reg:  reg,
 		c:    w.c,
@@ -177,7 +177,7 @@ func foldOptions(opts []RegisterOption) registry.Options {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	return registry.Options{Interfaces: o.interfaces, Config: o.config}
+	return registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata}
 }
 
 // ---- tests -------------------------------------------------------------

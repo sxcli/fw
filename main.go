@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
 	"sxcli.dev/fw/internal/registry"
@@ -132,12 +133,30 @@ func (rt *runtime) usage(applets []*registry.Descriptor, reason string) {
 	}
 }
 
-// execute is the post-dispatch pipeline: configuration, resolution,
-// ejection, strict parse, then help/write-config short-circuits or the
-// lifecycle.
-func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Applet, args []string) int {
-	code := 2
-	src := config.Sources{
+// invocationPlan carries the products of the side-effect-free planning
+// steps of the pipeline: sources, loaded files, the effective core
+// config, controls, the resolved composition and the strict schema —
+// everything up to (and excluding) ejection and the strict parse. Both
+// the real run and Introspector.Arguments consume it, so introspection
+// truth cannot drift from execution truth.
+type invocationPlan struct {
+	src     config.Sources
+	files   *config.Files
+	core    config.Core
+	ctl     graph.Controls
+	res     graph.Result
+	members []*registry.Descriptor
+	sch     *config.Schema
+}
+
+// plan runs the pipeline's planning steps: lenient core peek (honoring
+// an in-line --config), file loading, core refill, controls, closure
+// resolution (with the console fallback), schema construction. It
+// records violations into c and performs no side effects: nothing is
+// written, ejected, injected, configured or started.
+func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invocationPlan {
+	p := &invocationPlan{}
+	p.src = config.Sources{
 		Args:         args,
 		LookupEnv:    rt.lookupEnv,
 		Locations:    rt.locations(appletID),
@@ -149,46 +168,58 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 		SuppressCore: rt.suppressed,
 		MaxSize:      rt.maxConfig,
 	}
-	peek := config.PeekCore(rt.c, appletID, src)
+	before := c.Len()
+	peek := config.PeekCore(c, appletID, p.src)
+	if c.Len() == before {
+		p.files = config.LoadFiles(c, p.src, rt.explicitPath(peek))
+	}
+	if c.Len() == before {
+		p.core = p.files.ApplyCore(c, appletID, p.src)
+		p.ctl = rt.controls(c, p.core)
+	}
+	if c.Len() == before {
+		seeds := append(rt.alwaysOnIDs(), rt.providerSeeds(p.files)...)
+		p.res = graph.Resolve(c, rt.reg, appletID, seeds, p.ctl)
+		if c.Len() == before && !closureHasSink(p.res) {
+			if _, registered := rt.reg.ByID("console"); registered && !contains(p.core.Disable, "console") {
+				p.ctl.Enable = append(p.ctl.Enable, "console")
+				p.res = graph.Resolve(c, rt.reg, appletID, seeds, p.ctl)
+			}
+		}
+	}
+	if c.Len() == before {
+		for _, m := range p.res.Ordered {
+			p.members = append(p.members, m.Desc)
+		}
+		p.sch = config.NewSchema(c, appletID, &p.core, p.members, rt.suppressed)
+	}
+	return p
+}
+
+// execute is the post-dispatch pipeline: planning, ejection, strict
+// parse, then help/write-config short-circuits or the lifecycle.
+func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Applet, args []string) int {
+	code := 2
+	p := rt.plan(rt.c, appletID, args)
 	if rt.c.Len() == 0 {
-		files := config.LoadFiles(rt.c, src, rt.explicitPath(peek))
+		keep := map[string]bool{}
+		for _, m := range p.res.Ordered {
+			keep[m.Desc.ID] = true
+		}
+		// an introspecting closure keeps the whole registry:
+		// enumerating the binary is the point
+		if !keep[introspectionID] {
+			rt.reg.Retain(keep)
+		}
+		loaded := p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 {
-			core := files.ApplyCore(rt.c, appletID, src)
-			ctl := rt.controls(core)
-			if rt.c.Len() == 0 {
-				seeds := append(rt.alwaysOnIDs(), rt.providerSeeds(files)...)
-				res := graph.Resolve(rt.c, rt.reg, appletID, seeds, ctl)
-				if rt.c.Len() == 0 && !closureHasSink(res) {
-					if _, registered := rt.reg.ByID("console"); registered && !contains(core.Disable, "console") {
-						ctl.Enable = append(ctl.Enable, "console")
-						res = graph.Resolve(rt.c, rt.reg, appletID, seeds, ctl)
-					}
-				}
-				if rt.c.Len() == 0 {
-					keep := map[string]bool{}
-					var members []*registry.Descriptor
-					for _, m := range res.Ordered {
-						keep[m.Desc.ID] = true
-						members = append(members, m.Desc)
-					}
-					// an introspecting closure keeps the whole registry:
-					// enumerating the binary is the point
-					if !keep[introspectionID] {
-						rt.reg.Retain(keep)
-					}
-					sch := config.NewSchema(rt.c, appletID, &core, members, rt.suppressed)
-					loaded := sch.Apply(rt.c, files, src)
-					if rt.c.Len() == 0 {
-						positionals = loaded.Positionals
-						if core.Help {
-							code = rt.help(sch)
-						} else if core.WriteConfig {
-							code = rt.writeConfig(sch, core.Config, src)
-						} else {
-							code = rt.lifecycle(buffer, res, applet, contains(core.Disable, "console"))
-						}
-					}
-				}
+			positionals = loaded.Positionals
+			if p.core.Help {
+				code = rt.help(p.sch)
+			} else if p.core.WriteConfig {
+				code = rt.writeConfig(p.sch, p.core.Config, p.src)
+			} else {
+				code = rt.lifecycle(buffer, p.res, applet, contains(p.core.Disable, "console"))
 			}
 		}
 	}
@@ -310,7 +341,7 @@ func (rt *runtime) explicitPath(peek config.Core) string {
 
 // controls builds the resolver controls from the core config; override
 // entries use the from=to form.
-func (rt *runtime) controls(core config.Core) graph.Controls {
+func (rt *runtime) controls(c *fail.Collector, core config.Core) graph.Controls {
 	ctl := graph.Controls{Disable: core.Disable, Enable: core.Enable}
 	for _, entry := range core.Override {
 		from, to, wellFormed := strings.Cut(entry, "=")
@@ -320,7 +351,7 @@ func (rt *runtime) controls(core config.Core) graph.Controls {
 			}
 			ctl.Override[from] = to
 		} else {
-			rt.c.Fail("override %q: expected from=to", entry)
+			c.Fail("override %q: expected from=to", entry)
 		}
 	}
 	return ctl

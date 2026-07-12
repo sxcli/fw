@@ -29,11 +29,12 @@ var defaultCollector = &fail.Collector{}
 
 // defaultRegistry is populated by Register calls from package init()
 // functions; Main validates and consumes it.
-var defaultRegistry = registry.New(defaultCollector, checkReservedID, checkAppletLifecycle, config.ValidateConfig)
+var defaultRegistry = registry.New(defaultCollector, checkReservedID, checkAppletLifecycle, config.ValidateConfig, checkMetadata)
 
 type registerOptions struct {
 	interfaces []reflect.Type
 	config     any
+	metadata   *Metadata
 }
 
 // RegisterOption configures a single Register call.
@@ -80,7 +81,7 @@ func Register(id string, instance any, opts ...RegisterOption) {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	defaultRegistry.Register(id, instance, registry.Options{Interfaces: o.interfaces, Config: o.config})
+	defaultRegistry.Register(id, instance, registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata})
 }
 
 // reservedCoreID is the service id under which the framework core's own

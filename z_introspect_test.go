@@ -45,6 +45,144 @@ func (p *fakeProvider) Extensions() []string                     { return []stri
 func (p *fakeProvider) ToJSON(in io.Reader) (io.Reader, error)   { return in, nil }
 func (p *fakeProvider) FromJSON(in io.Reader) (io.Reader, error) { return in, nil }
 
+// argsProbe is an applet whose Run executes test-provided behavior
+// against the injected Introspector.
+type argsProbe struct {
+	I  *Introspector `inject:""`
+	do func(i *Introspector)
+}
+
+func (p *argsProbe) Configured() error { return nil }
+func (p *argsProbe) Run() int {
+	p.do(p.I)
+	return 0
+}
+
+// extraService is cold unless enabled; its flag proves closure-true
+// argument introspection.
+type extraCfg struct {
+	Flag string `json:"flag" arg:"extra-flag" usage:"only visible when extra is enabled"`
+}
+
+type extraService struct {
+	cfg extraCfg
+}
+
+func longs(infos []ArgInfo) string {
+	var out []string
+	for _, a := range infos {
+		if a.Long != "" {
+			out = append(out, a.Long)
+		}
+	}
+	return "," + strings.Join(out, ",") + ","
+}
+
+func argsWorld(t *testing.T, files map[string]string, do func(i *Introspector)) *world {
+	t.Helper()
+	w := newWorld(t, []string{"bin", "meta"}, files, nil)
+	w.applet(0) // "app", with its optional dep field
+	probe := &argsProbe{do: do}
+	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
+	extra := &extraService{cfg: extraCfg{Flag: "default"}}
+	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{WithConfig(&extra.cfg)}))
+	return w
+}
+
+func TestArgumentsReportsClosureSchema(t *testing.T) {
+	var infos []ArgInfo
+	var err error
+	w := argsWorld(t, nil, func(i *Introspector) {
+		infos, err = i.Arguments("app", nil)
+	})
+	if code := run(w.rt); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	all := longs(infos)
+	if !strings.Contains(all, ",greeting,") || !strings.Contains(all, ",config,") {
+		t.Errorf("schema must contain the applet's and the core's arguments: %v", all)
+	}
+	if strings.Contains(all, ",extra-flag,") {
+		t.Errorf("cold service's arguments must be absent: %v", all)
+	}
+}
+
+func TestArgumentsHonorsInlineConfigAndControls(t *testing.T) {
+	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}}`}
+	var withC, withoutC []ArgInfo
+	w := argsWorld(t, files, func(i *Introspector) {
+		withC, _ = i.Arguments("app", []string{"-c", "/inline/cfg.json"})
+		withoutC, _ = i.Arguments("app", nil)
+	})
+	if code := run(w.rt); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if !strings.Contains(longs(withC), ",extra-flag,") {
+		t.Errorf("an in-line -c enabling a service must add its arguments: %v", longs(withC))
+	}
+	if strings.Contains(longs(withoutC), ",extra-flag,") {
+		t.Errorf("without the -c the service stays cold: %v", longs(withoutC))
+	}
+}
+
+func TestArgumentsBestEffortFallback(t *testing.T) {
+	var infos []ArgInfo
+	var err error
+	w := argsWorld(t, nil, func(i *Introspector) {
+		infos, err = i.Arguments("app", []string{"--disable", "ghost"})
+	})
+	if code := run(w.rt); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if err == nil {
+		t.Error("a poisoned control must surface as an error")
+	}
+	if !strings.Contains(longs(infos), ",greeting,") {
+		t.Errorf("fallback must still deliver the registration-level schema: %v", longs(infos))
+	}
+}
+
+func TestArgumentsIsSideEffectFree(t *testing.T) {
+	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}, "extra": {"flag": "changed"}}`}
+	w := newWorld(t, []string{"bin", "meta"}, files, nil)
+	w.applet(0)
+	extra := &extraService{cfg: extraCfg{Flag: "default"}}
+	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{WithConfig(&extra.cfg)}))
+	probe := &argsProbe{do: func(i *Introspector) {
+		i.Arguments("app", []string{"-c", "/inline/cfg.json", "--write-config"})
+	}}
+	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
+	if code := run(w.rt); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if extra.cfg.Flag != "default" {
+		t.Errorf("introspection must never fill live config structs: %q", extra.cfg.Flag)
+	}
+	if w.stdout.Len() != 0 {
+		t.Errorf("--write-config in introspected args must be inert:\n%s", w.stdout.String())
+	}
+}
+
+func TestArgumentsRejectsNonApplets(t *testing.T) {
+	var errService, errUnknown error
+	w := argsWorld(t, nil, func(i *Introspector) {
+		_, errService = i.Arguments("extra", nil)
+		_, errUnknown = i.Arguments("nope", nil)
+	})
+	if code := run(w.rt); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if errService == nil || !strings.Contains(errService.Error(), "not an applet") {
+		t.Errorf("plain service must be rejected: %v", errService)
+	}
+	if errUnknown == nil || !strings.Contains(errUnknown.Error(), "not registered") {
+		t.Errorf("unknown id must be rejected: %v", errUnknown)
+	}
+}
+
 func TestIntrospectorReportsComposition(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	a := &introApplet{}

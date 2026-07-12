@@ -197,7 +197,30 @@ func Register(id string, instance any, opts ...RegisterOption)
 func Provides[I any]() RegisterOption          // declares a provided interface
 func WithConfig(cfgPtr any) RegisterOption     // pointer to the Configuration struct;
                                                // its field values are the defaults
+func WithMetadata(md *Metadata) RegisterOption // optional declarative description
 ```
+
+**Metadata** is declarative — no interfaces on the instance or the
+config struct (a service is the instance+config pair; one Metadata
+covers both):
+
+```go
+type Metadata struct {
+    Description string         // long-form service/applet description
+    Fields      map[string]any // FieldMetadata[T] values, keyed by Go
+                               // field name ("Level", "TLS.Cert")
+}
+type FieldMetadata[T any] struct {
+    Allowed []T    // closed value domain; enforced by the framework
+    Doc     string // long-form field description; usage: stays the one-liner
+}
+```
+
+Validated at registration with everything else: an unknown field key, a
+non-FieldMetadata value, field metadata on a config-less service, or an
+Allowed element type that does not match the field's type (same kind
+and convertible; element type for slices) are violations. Description
+alone is fine for config-less services.
 
 Called from package `init()`; one package may register many services. The
 public `Register` delegates to a package-level default registry (tests build
@@ -248,11 +271,23 @@ any service. **A closure containing the Introspector is never
 ejected** — enumerating the binary requires the registry alive; only
 invocations that injected it pay that.
 
-v1 surface: `Applets()`, `Services()`, `ConfigExtensions()`. The
-planning-based `Arguments(appletID, args)` — the closure-true argument
-schema honoring an in-line `-c`, disable/enable/override from all
-sources, with best-effort fallback and no side effects — is designed
-and lands as its own pass (see Open Items).
+Surface: `Applets()`, `Services()`, `ConfigExtensions()`,
+`Describe(serviceID)` (the registration Metadata's long-form
+description), and
+`Arguments(appletID, args) ([]ArgInfo, error)` — the closure-true
+argument schema the applet would have if invoked with `args`. It runs
+the real planning pipeline (the shared `plan()` also used by
+execution, so introspection truth cannot drift): lenient core peek
+honoring an in-line `--config`, file loading, controls from every
+source, closure resolution including the console fallback, schema
+construction — with **zero side effects**: nothing is written, ejected
+or mutated; `--write-config`/`--help` inside `args` are inert data
+(beyond the write-config missing-target source selection). Callers
+pass the words *before* the completion cursor — a half-typed token
+passed as data would be planned as configuration. The result is
+best-effort: on planning violations, `Arguments` retries with no files
+and no controls (the registration-level schema) and returns it
+alongside the joined error.
 
 ### Dependency declaration
 
@@ -762,5 +797,4 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
 | Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
 | Logical/boolean `inject` expressions for single-valued fields (e.g. `inject:"mysql \|\| sqlite"` — a preference list letting the service express fallbacks without forcing user overrides) | future syntax extension; must compose with `override` remapping (each alternative remapped before resolution); until then a non-slice field names at most one id |
-| `Introspector.Arguments(appletID, args)` — planning-based schema introspection running the real config pipeline (lenient peek honoring an in-line `-c`, files, controls, resolve, schema) with a fresh collector, best-effort fallback on violations, zero side effects (never writes, never ejects) | pass 2 of introspection, designed 2026-07-12; extraction of a shared `plan()` from `execute()` |
-| Service self-description for richer introspection (value hints like level enums, positional declarations) — services describe *themselves*, the single core Introspector aggregates | future optional interfaces, same family as custom value parsers |
+| Positional declarations for introspection/completion | still open; field-level self-description landed as `WithMetadata` |

@@ -30,10 +30,13 @@ import (
 type Check func(d *Descriptor) error
 
 // Options carries the folded result of the root package's RegisterOption
-// values for a single Register call.
+// values for a single Register call. Metadata is opaque to the
+// registry: the root's metadata check validates it and normalizes it
+// into the representation the config machinery reads.
 type Options struct {
 	Interfaces []reflect.Type
 	Config     any
+	Metadata   any
 }
 
 // DepField describes one `inject`-annotated field of a registered
@@ -54,6 +57,7 @@ type Descriptor struct {
 	Concrete  reflect.Type   // the *Struct type of Instance
 	Provides  []reflect.Type // declared and verified interfaces
 	ConfigPtr any            // nil when the service has no configuration
+	Metadata  any            // opaque; normalized by the root's metadata check
 	Deps      []DepField
 }
 

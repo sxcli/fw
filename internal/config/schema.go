@@ -54,10 +54,11 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
 	}
-	s.add(c, "core", reflect.ValueOf(core), suppress)
+	s.add(c, "core", reflect.ValueOf(core), suppress, nil)
 	for _, d := range members {
 		if d.ConfigPtr != nil {
-			s.add(c, d.ID, reflect.ValueOf(d.ConfigPtr), nil)
+			meta, _ := d.Metadata.(*Meta)
+			s.add(c, d.ID, reflect.ValueOf(d.ConfigPtr), nil, meta)
 		}
 	}
 	env := map[string]*Field{}
@@ -92,10 +93,18 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 	return s
 }
 
-func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppress []string) {
+func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppress []string, meta *Meta) {
 	fields, errs := extract(id, cfgPtr.Type().Elem(), nil, nil, "", true)
 	for _, err := range errs {
 		c.Add(err)
+	}
+	if meta != nil {
+		for _, f := range fields {
+			if fm, annotated := meta.Fields[f.Name]; annotated {
+				f.Allowed = fm.Allowed
+				f.Doc = fm.Doc
+			}
+		}
 	}
 	if len(suppress) > 0 {
 		drop := map[string]bool{}
@@ -218,6 +227,22 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 		}
 	}
 	return fields, errs
+}
+
+// FieldTypes returns the settable fields of a config struct keyed by go
+// field name ("A.B" for nested), the value being the field's type — for
+// slices the element type, matching what Allowed values must convert
+// to. Extraction violations are ignored here; ValidateConfig reports
+// them.
+func FieldTypes(cfgPtr any) map[string]reflect.Type {
+	out := map[string]reflect.Type{}
+	if cfgPtr != nil {
+		fields, _ := extract("", reflect.TypeOf(cfgPtr).Elem(), nil, nil, "", true)
+		for _, f := range fields {
+			out[f.Name] = f.Type
+		}
+	}
+	return out
 }
 
 // HelpSections returns the schema's services and their fields for help

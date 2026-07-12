@@ -1,0 +1,117 @@
+// Copyright 2026 Plamen K. Kosseff
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package sxclifw
+
+import (
+	"fmt"
+	"reflect"
+
+	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/internal/registry"
+)
+
+// Metadata is the optional, declarative description of a service — the
+// instance and its config struct are one service, so one Metadata
+// covers both: a long-form Description of the service itself and
+// per-field annotations for its configuration. Attach it at
+// registration with WithMetadata; it is inert data with no methods to
+// implement, validated at registration like everything else and served
+// to meta consumers (completion, documentation) via the Introspector.
+type Metadata struct {
+	// Description is the long-form service/applet description; the
+	// usage: tags remain the one-liners.
+	Description string
+	// Fields annotates config struct fields, keyed by Go field name
+	// ("Level", "TLS.Cert" for nested). Every value must be a
+	// FieldMetadata[T] instance; anything else, an unknown key, or
+	// annotations on a service without a config struct are
+	// registration violations.
+	Fields map[string]any
+}
+
+// FieldMetadata annotates one config struct field. T carries the
+// allowed values in the field's own type: T must have the same kind as
+// (and be convertible to) the annotated field's type — for slice
+// fields, the element type. A mismatch is a registration violation.
+type FieldMetadata[T any] struct {
+	// Allowed enumerates the complete value domain. Non-empty means
+	// the domain is closed: the framework rejects any other value from
+	// any source at startup, and completion services can offer it.
+	Allowed []T
+	// Doc is the long-form field description; usage: stays the
+	// one-liner.
+	Doc string
+}
+
+// fieldMetadataMarker identifies FieldMetadata instantiations across
+// their type parameters.
+type fieldMetadataMarker interface{ fieldMetadata() }
+
+func (FieldMetadata[T]) fieldMetadata() {}
+
+// WithMetadata attaches a service's Metadata. md must be non-nil.
+func WithMetadata(md *Metadata) RegisterOption {
+	return func(o *registerOptions) {
+		o.metadata = md
+	}
+}
+
+// checkMetadata is the registry check validating and normalizing a
+// registration's Metadata: field keys must name config struct fields,
+// annotation value types must match the fields they annotate, and the
+// raw public structure is converted into the internal representation
+// the schema machinery consumes.
+func checkMetadata(d *registry.Descriptor) error {
+	var err error
+	if raw, has := d.Metadata.(*Metadata); has && raw != nil {
+		meta := &config.Meta{Description: raw.Description, Fields: map[string]config.FieldMeta{}}
+		var errs []error
+		if len(raw.Fields) > 0 && d.ConfigPtr == nil {
+			errs = append(errs, fmt.Errorf("service %q: field metadata without a config struct", d.ID))
+		} else {
+			types := config.FieldTypes(d.ConfigPtr)
+			for name, value := range raw.Fields {
+				fieldType, known := types[name]
+				if !known {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q names no config field", d.ID, name))
+				} else if _, isFieldMetadata := value.(fieldMetadataMarker); !isFieldMetadata {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q must be a FieldMetadata value, got %T", d.ID, name, value))
+				} else {
+					rv := reflect.ValueOf(value)
+					allowedValues := rv.FieldByName("Allowed")
+					elemType := allowedValues.Type().Elem()
+					if allowedValues.Len() > 0 && (elemType.Kind() != fieldType.Kind() || !elemType.ConvertibleTo(fieldType)) {
+						errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", d.ID, name, elemType, fieldType))
+					} else {
+						fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String()}
+						for i := 0; i < allowedValues.Len(); i++ {
+							fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(fieldType).Interface())
+						}
+						meta.Fields[name] = fm
+					}
+				}
+			}
+		}
+		if len(errs) > 0 {
+			err = errs[0]
+			for _, extra := range errs[1:] {
+				err = fmt.Errorf("%v; %v", err, extra)
+			}
+		} else {
+			d.Metadata = meta
+		}
+	}
+	return err
+}

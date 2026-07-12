@@ -14,8 +14,36 @@
 
 package sxclifw
 
+import (
+	"errors"
+	"fmt"
+	"reflect"
+
+	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/fw/internal/graph"
+	"sxcli.dev/fw/internal/registry"
+)
+
 // introspectionID is the reserved service id of the core's Introspector.
 const introspectionID = "introspection"
+
+// ArgInfo describes one config struct field of an applet's closure —
+// the schema unit completions and documentation generators consume. A
+// field with an empty Long is not settable from the command line; one
+// with an empty Env is not settable from the environment; both empty
+// means file-only. For slices, Type is the element type.
+type ArgInfo struct {
+	Service string       // owning service id, "core" included
+	Long    string       // long argument name, without dashes
+	Short   string       // single-character short form
+	Env     string       // environment variable name
+	Usage   string       // untranslated help text; render via Tr
+	Type    reflect.Type // field type; element type for slices
+	IsSlice bool         // repeatable argument, comma-separated env, json array
+	Allowed []any        // closed value domain from registration Metadata; values are of Type
+	Doc     string       // long-form description from registration Metadata
+}
 
 // Introspector is the core's read-only view of the binary's
 // composition, for services that implement completions, documentation
@@ -53,6 +81,88 @@ func (i *Introspector) Services() []string {
 	var out []string
 	for _, d := range i.rt.reg.All() {
 		out = append(out, d.ID)
+	}
+	return out
+}
+
+// Arguments returns the argument schema the given applet would have if
+// invoked with args: the real planning pipeline runs — lenient core
+// peek honoring an in-line --config, file loading, controls from every
+// source, closure resolution — with zero side effects (nothing is
+// written, ejected or mutated; --write-config and --help in args are
+// inert data). Suppressed features are absent, exactly as at execution.
+//
+// args must be the words BEFORE the completion cursor, not including
+// the word being completed: a half-typed token passed as data would be
+// planned as configuration.
+//
+// The result is best-effort: when planning collects violations (a
+// broken config file, an unknown id in a control), Arguments retries
+// with no files and no controls — the registration-level schema — and
+// returns that alongside the joined violations. A non-nil error
+// therefore does not mean an empty result; callers wanting candidates
+// may ignore it, callers wanting diagnostics must not.
+func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, error) {
+	var out []ArgInfo
+	var err error
+	if d, registered := i.rt.reg.ByID(appletID); !registered {
+		err = fmt.Errorf("introspection: %q is not registered", appletID)
+	} else if _, isApplet := d.Instance.(Applet); !isApplet {
+		err = fmt.Errorf("introspection: %q is not an applet", appletID)
+	} else {
+		c := &fail.Collector{}
+		p := i.rt.plan(c, appletID, args)
+		if c.Len() == 0 {
+			out = argInfos(p.sch)
+		} else {
+			err = errors.Join(c.All()...)
+			fallback := &fail.Collector{}
+			var core config.Core
+			res := graph.Resolve(fallback, i.rt.reg, appletID, i.rt.alwaysOnIDs(), graph.Controls{})
+			if fallback.Len() == 0 {
+				var members []*registry.Descriptor
+				for _, m := range res.Ordered {
+					members = append(members, m.Desc)
+				}
+				sch := config.NewSchema(fallback, appletID, &core, members, i.rt.suppressed)
+				if fallback.Len() == 0 {
+					out = argInfos(sch)
+				}
+			}
+		}
+	}
+	return out, err
+}
+
+// Describe returns the long-form description a service declared via
+// WithMetadata, or "" when it declared none (or the id is unknown).
+func (i *Introspector) Describe(serviceID string) string {
+	out := ""
+	if d, registered := i.rt.reg.ByID(serviceID); registered {
+		if meta, has := d.Metadata.(*config.Meta); has {
+			out = meta.Description
+		}
+	}
+	return out
+}
+
+// argInfos maps a schema to its public description.
+func argInfos(sch *config.Schema) []ArgInfo {
+	var out []ArgInfo
+	for _, section := range sch.HelpSections() {
+		for _, f := range section.Fields {
+			out = append(out, ArgInfo{
+				Service: f.ServiceID,
+				Long:    f.Long,
+				Short:   f.Short,
+				Env:     f.EnvName,
+				Usage:   f.Usage,
+				Type:    f.Type,
+				IsSlice: f.IsSlice,
+				Allowed: f.Allowed,
+				Doc:     f.Doc,
+			})
+		}
 	}
 	return out
 }

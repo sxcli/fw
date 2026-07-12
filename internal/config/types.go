@@ -85,6 +85,21 @@ type Core struct {
 	Override    []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
 }
 
+// Meta is the internal, normalized form of a service's registration
+// metadata (the root package's Metadata, validated and converted by
+// its metadata check).
+type Meta struct {
+	Description string
+	Fields      map[string]FieldMeta // keyed by go field name, "A.B" for nested
+}
+
+// FieldMeta annotates one config field. Allowed values are already
+// converted to the field's own type.
+type FieldMeta struct {
+	Allowed []any
+	Doc     string
+}
+
 // Field is one settable config struct field.
 type Field struct {
 	ServiceID string
@@ -98,7 +113,9 @@ type Field struct {
 	Usage     string
 	Type      reflect.Type
 	IsSlice   bool
-	Transient bool // dump:"-": run-scoped — excluded from --write-config output AND refused from config files
+	Transient bool  // dump:"-": run-scoped — excluded from --write-config output AND refused from config files
+	Allowed   []any // closed value domain from registration metadata; values are of the field's type (element type for slices)
+	Doc       string
 }
 
 // serviceSchema is the schema of one service's config struct.
