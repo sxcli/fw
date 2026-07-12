@@ -85,6 +85,15 @@ type Core struct {
 	Override    []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
 }
 
+// ProbedField describes one settable config field for registration-time
+// metadata validation: its type (element type for slices), slice-ness
+// and current (default) value.
+type ProbedField struct {
+	Type    reflect.Type
+	IsSlice bool
+	Value   reflect.Value
+}
+
 // Meta is the internal, normalized form of a service's registration
 // metadata (the root package's Metadata, validated and converted by
 // its metadata check).

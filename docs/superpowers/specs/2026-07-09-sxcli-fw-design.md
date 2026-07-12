@@ -217,10 +217,19 @@ type FieldMetadata[T any] struct {
 ```
 
 Validated at registration with everything else: an unknown field key, a
-non-FieldMetadata value, field metadata on a config-less service, or an
+non-FieldMetadata value, field metadata on a config-less service, an
 Allowed element type that does not match the field's type (same kind
-and convertible; element type for slices) are violations. Description
-alone is fine for config-less services.
+and convertible; element type for slices), or a **registered default
+outside its own declared domain** are violations. Description alone is
+fine for config-less services.
+
+A non-empty `Allowed` is **enforced, not advisory**: every write path —
+strict argument parse, environment application, config file
+application — rejects a value outside the domain as a loud startup
+violation naming the source and the allowed set (slice fields checked
+per element). Services may keep their own checks as defense in depth,
+but the declared contract is honored by the machinery, and completion
+services can trust it via `ArgInfo.Allowed`.
 
 Called from package `init()`; one package may register many services. The
 public `Register` delegates to a package-level default registry (tests build

@@ -113,6 +113,88 @@ func TestDescriptionAloneWithoutConfigIsFine(t *testing.T) {
 	}
 }
 
+func enforcementWorld(t *testing.T, argv []string, files, env map[string]string) (*world, *extraService) {
+	t.Helper()
+	w := newWorld(t, argv, files, env)
+	w.applet(0)
+	extra := &extraService{cfg: extraCfg{Flag: "fast"}}
+	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{
+		WithConfig(&extra.cfg),
+		WithMetadata(&Metadata{Fields: map[string]any{
+			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}},
+			"Tags": FieldMetadata[string]{Allowed: []string{"a", "b"}},
+		}}),
+	}))
+	return w, extra
+}
+
+func TestDomainEnforcedOnArguments(t *testing.T) {
+	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-flag", "turbo"}, nil, nil)
+	if code := run(w.rt); code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(w.stderr.String(), "not among the allowed values") {
+		t.Errorf("domain violation not reported:\n%s", w.stderr.String())
+	}
+	w2, extra := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-flag", "slow"}, nil, nil)
+	if code := run(w2.rt); code != 0 {
+		t.Fatalf("in-domain value must pass: exit %d\n%s", code, w2.stderr.String())
+	}
+	if extra.cfg.Flag != "slow" {
+		t.Errorf("value not applied: %q", extra.cfg.Flag)
+	}
+}
+
+func TestDomainEnforcedOnEnvironment(t *testing.T) {
+	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP_EXTRA_FLAG": "turbo"})
+	if code := run(w.rt); code != 2 {
+		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
+	}
+	if !strings.Contains(w.stderr.String(), "$APP_EXTRA_FLAG") {
+		t.Errorf("violation must name the env source:\n%s", w.stderr.String())
+	}
+}
+
+func TestDomainEnforcedOnFiles(t *testing.T) {
+	files := map[string]string{"/etc/app/config.json": `{"extra": {"flag": "turbo"}}`}
+	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, files, nil)
+	if code := run(w.rt); code != 2 {
+		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
+	}
+	if !strings.Contains(w.stderr.String(), "config extra.flag") {
+		t.Errorf("violation must name the file source:\n%s", w.stderr.String())
+	}
+}
+
+func TestSliceDomainEnforced(t *testing.T) {
+	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-tag", "a", "--extra-tag", "z"}, nil, nil)
+	if code := run(w.rt); code != 2 {
+		t.Fatalf("bad slice element must fail: exit %d", code)
+	}
+	w2, extra := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-tag", "a", "--extra-tag", "b"}, nil, nil)
+	if code := run(w2.rt); code != 0 {
+		t.Fatalf("in-domain elements must pass: exit %d\n%s", code, w2.stderr.String())
+	}
+	if strings.Join(extra.cfg.Tags, ",") != "a,b" {
+		t.Errorf("values not applied: %v", extra.cfg.Tags)
+	}
+}
+
+func TestDefaultOutsideDomainIsRegistrationViolation(t *testing.T) {
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	extra := &extraService{cfg: extraCfg{Flag: "turbo"}} // default not in the domain
+	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{
+		WithConfig(&extra.cfg),
+		WithMetadata(&Metadata{Fields: map[string]any{
+			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}},
+		}}),
+	}))
+	if w.c.Len() == 0 {
+		t.Fatal("a default outside its own declared domain must be a registration violation")
+	}
+}
+
 func TestNamedTypeAllowedValuesConvert(t *testing.T) {
 	type pace string
 	// []pace on a string field: same kind, convertible — legal

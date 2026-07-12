@@ -213,6 +213,7 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 					} else if sf.Type.Kind() == reflect.Slice {
 						if scalarOK(sf.Type.Elem()) {
 							f.IsSlice = true
+							f.Type = sf.Type.Elem() // Field.Type carries the element type for slices
 							fields = append(fields, f)
 						} else {
 							errs = append(errs, fmt.Errorf("service %q config field %s: unsupported slice element type %s", serviceID, name, sf.Type.Elem()))
@@ -229,17 +230,17 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 	return fields, errs
 }
 
-// FieldTypes returns the settable fields of a config struct keyed by go
-// field name ("A.B" for nested), the value being the field's type — for
-// slices the element type, matching what Allowed values must convert
-// to. Extraction violations are ignored here; ValidateConfig reports
-// them.
-func FieldTypes(cfgPtr any) map[string]reflect.Type {
-	out := map[string]reflect.Type{}
+// ProbeFields returns the settable fields of a config struct keyed by
+// go field name ("A.B" for nested), for registration-time metadata
+// validation. Extraction violations are ignored here; ValidateConfig
+// reports them.
+func ProbeFields(cfgPtr any) map[string]ProbedField {
+	out := map[string]ProbedField{}
 	if cfgPtr != nil {
 		fields, _ := extract("", reflect.TypeOf(cfgPtr).Elem(), nil, nil, "", true)
+		root := reflect.ValueOf(cfgPtr).Elem()
 		for _, f := range fields {
-			out[f.Name] = f.Type
+			out[f.Name] = ProbedField{Type: f.Type, IsSlice: f.IsSlice, Value: root.FieldByIndex(f.Path)}
 		}
 	}
 	return out

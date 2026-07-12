@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"sxcli.dev/fw/internal/fail"
 )
 
 // setFromString converts one environment- or argument-sourced string
@@ -157,6 +159,33 @@ func appendFromString(f reflect.Value, s string) error {
 		f.Set(reflect.Append(f, el))
 	}
 	return err
+}
+
+// checkDomain enforces a field's closed value domain after a source
+// wrote to it: every value must be among Allowed. source labels the
+// writer for the violation ("--level", "$APP_LEVEL", "config app.level").
+func checkDomain(c *fail.Collector, source string, f *Field, target reflect.Value) {
+	if len(f.Allowed) > 0 {
+		if f.IsSlice {
+			for i := 0; i < target.Len(); i++ {
+				if !domainHas(f, target.Index(i)) {
+					c.Fail("%s: value %v is not among the allowed values %v", source, target.Index(i).Interface(), f.Allowed)
+				}
+			}
+		} else if !domainHas(f, target) {
+			c.Fail("%s: value %v is not among the allowed values %v", source, target.Interface(), f.Allowed)
+		}
+	}
+}
+
+// domainHas reports membership; allowed values were converted to the
+// field's exact type at registration, so interface equality is sound.
+func domainHas(f *Field, v reflect.Value) bool {
+	out := false
+	for _, a := range f.Allowed {
+		out = out || a == v.Interface()
+	}
+	return out
 }
 
 // fieldValue renders one field's current value for serialization:

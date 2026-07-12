@@ -224,8 +224,13 @@ func applyObject(c *fail.Collector, svc *serviceSchema, fields []*Field, depth i
 			if leaf != nil {
 				if leaf.Transient {
 					c.Fail("config %s.%s: run-scoped, settable only by argument or environment", where, key)
-				} else if err := setFromJSON(svc.cfg.Elem().FieldByIndex(leaf.Path), value); err != nil {
-					c.Fail("config %s.%s: %v", where, key, err)
+				} else {
+					target := svc.cfg.Elem().FieldByIndex(leaf.Path)
+					if err := setFromJSON(target, value); err != nil {
+						c.Fail("config %s.%s: %v", where, key, err)
+					} else {
+						checkDomain(c, "config "+where+"."+key, leaf, target)
+					}
 				}
 			} else if len(nested) > 0 {
 				applyObject(c, svc, nested, depth+1, value, where+"."+key)

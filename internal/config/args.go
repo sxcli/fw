@@ -147,7 +147,7 @@ func (p *argParser) bundle(body string, rest []string) int {
 
 // set writes one argument value into its field. The first argument
 // occurrence of a slice field replaces any file/env-sourced content;
-// repetitions append.
+// repetitions append. Values outside a declared domain are violations.
 func (p *argParser) set(f *Field, display, value string) {
 	target := p.schema.owner[f].cfg.Elem().FieldByIndex(f.Path)
 	var err error
@@ -157,8 +157,14 @@ func (p *argParser) set(f *Field, display, value string) {
 			target.Set(reflect.MakeSlice(target.Type(), 0, 4))
 		}
 		err = appendFromString(target, value)
+		if err == nil && len(f.Allowed) > 0 && !domainHas(f, target.Index(target.Len()-1)) {
+			p.fail("%s: value %v is not among the allowed values %v", display, target.Index(target.Len()-1).Interface(), f.Allowed)
+		}
 	} else {
 		err = setFromString(target, value)
+		if err == nil {
+			checkDomain(p.c, display, f, target)
+		}
 	}
 	if err != nil {
 		p.fail("%s: %v", display, err)

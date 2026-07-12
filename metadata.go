@@ -68,6 +68,34 @@ func WithMetadata(md *Metadata) RegisterOption {
 	}
 }
 
+// defaultDomainViolations checks that a field's registered default —
+// the value the struct holds at registration — is itself inside the
+// declared domain: a default outside its own enum would be the first
+// lie the enforcement catches, so it is caught at registration instead.
+func defaultDomainViolations(serviceID, name string, allowed []any, probe config.ProbedField) []error {
+	var errs []error
+	if len(allowed) > 0 {
+		if probe.IsSlice {
+			for i := 0; i < probe.Value.Len(); i++ {
+				if !metaHas(allowed, probe.Value.Index(i).Interface()) {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q default element %v is not among the allowed values %v", serviceID, name, probe.Value.Index(i).Interface(), allowed))
+				}
+			}
+		} else if !metaHas(allowed, probe.Value.Interface()) {
+			errs = append(errs, fmt.Errorf("service %q metadata: %q default %v is not among the allowed values %v", serviceID, name, probe.Value.Interface(), allowed))
+		}
+	}
+	return errs
+}
+
+func metaHas(allowed []any, v any) bool {
+	out := false
+	for _, a := range allowed {
+		out = out || a == v
+	}
+	return out
+}
+
 // checkMetadata is the registry check validating and normalizing a
 // registration's Metadata: field keys must name config struct fields,
 // annotation value types must match the fields they annotate, and the
@@ -81,9 +109,9 @@ func checkMetadata(d *registry.Descriptor) error {
 		if len(raw.Fields) > 0 && d.ConfigPtr == nil {
 			errs = append(errs, fmt.Errorf("service %q: field metadata without a config struct", d.ID))
 		} else {
-			types := config.FieldTypes(d.ConfigPtr)
+			probes := config.ProbeFields(d.ConfigPtr)
 			for name, value := range raw.Fields {
-				fieldType, known := types[name]
+				probe, known := probes[name]
 				if !known {
 					errs = append(errs, fmt.Errorf("service %q metadata: %q names no config field", d.ID, name))
 				} else if _, isFieldMetadata := value.(fieldMetadataMarker); !isFieldMetadata {
@@ -92,13 +120,14 @@ func checkMetadata(d *registry.Descriptor) error {
 					rv := reflect.ValueOf(value)
 					allowedValues := rv.FieldByName("Allowed")
 					elemType := allowedValues.Type().Elem()
-					if allowedValues.Len() > 0 && (elemType.Kind() != fieldType.Kind() || !elemType.ConvertibleTo(fieldType)) {
-						errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", d.ID, name, elemType, fieldType))
+					if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
+						errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", d.ID, name, elemType, probe.Type))
 					} else {
 						fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String()}
 						for i := 0; i < allowedValues.Len(); i++ {
-							fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(fieldType).Interface())
+							fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
 						}
+						errs = append(errs, defaultDomainViolations(d.ID, name, fm.Allowed, probe)...)
 						meta.Fields[name] = fm
 					}
 				}

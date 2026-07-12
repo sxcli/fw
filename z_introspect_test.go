@@ -61,7 +61,8 @@ func (p *argsProbe) Run() int {
 // extraService is cold unless enabled; its flag proves closure-true
 // argument introspection.
 type extraCfg struct {
-	Flag string `json:"flag" arg:"extra-flag" usage:"only visible when extra is enabled"`
+	Flag string   `json:"flag" arg:"extra-flag" usage:"only visible when extra is enabled"`
+	Tags []string `json:"tags" arg:"extra-tag" usage:"repeatable, domain-checkable"`
 }
 
 type extraService struct {
