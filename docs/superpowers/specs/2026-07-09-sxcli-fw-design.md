@@ -209,7 +209,8 @@ config schema (reflected from the config struct's tags), and dependency
 fields. Registration **never panics** — every violation is recorded and
 startup fails reporting *all* problems at once:
 
-- invalid ID (must be lowercase, Go-identifier style; `core` is reserved),
+- invalid ID (must be lowercase, Go-identifier style; `core` and
+  `introspection` are reserved),
 - duplicate ID,
 - the same concrete struct type registered more than once (forbidden),
 - instance does not implement a declared interface,
@@ -227,6 +228,31 @@ literal (`Register("x", &X{}, …)`) and keep no references. Once the
 closure is resolved, services outside it are **ejected** from the
 registry so their instances can be garbage collected before `Configured`
 ever runs (best effort — a kept package-level reference defeats it).
+
+### Introspection
+
+The core registers exactly one **`Introspector`** service itself, under
+the reserved id `introspection` (reserved like `core`: the id is
+rejected for any other concrete type, and registering the core's type
+under another id collides with the core's own registration — squatting
+always fails startup loudly). It is the read-only composition view for
+services implementing completions, documentation generators and similar
+meta features *outside* the core; there is exactly one because it
+reports composition truth, and truth does not federate. Services may
+not provide their own introspectors — future extensibility goes the
+other way: optional self-description interfaces whose data the single
+core Introspector aggregates (see Open Items).
+
+Consumers inject it by concrete type (`*fw.Introspector`), cold like
+any service. **A closure containing the Introspector is never
+ejected** — enumerating the binary requires the registry alive; only
+invocations that injected it pay that.
+
+v1 surface: `Applets()`, `Services()`, `ConfigExtensions()`. The
+planning-based `Arguments(appletID, args)` — the closure-true argument
+schema honoring an in-line `-c`, disable/enable/override from all
+sources, with best-effort fallback and no side effects — is designed
+and lands as its own pass (see Open Items).
 
 ### Dependency declaration
 
@@ -736,3 +762,5 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
 | Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
 | Logical/boolean `inject` expressions for single-valued fields (e.g. `inject:"mysql \|\| sqlite"` — a preference list letting the service express fallbacks without forcing user overrides) | future syntax extension; must compose with `override` remapping (each alternative remapped before resolution); until then a non-slice field names at most one id |
+| `Introspector.Arguments(appletID, args)` — planning-based schema introspection running the real config pipeline (lenient peek honoring an in-line `-c`, files, controls, resolve, schema) with a fresh collector, best-effort fallback on violations, zero side effects (never writes, never ejects) | pass 2 of introspection, designed 2026-07-12; extraction of a shared `plan()` from `execute()` |
+| Service self-description for richer introspection (value hints like level enums, positional declarations) — services describe *themselves*, the single core Introspector aggregates | future optional interfaces, same family as custom value parsers |

@@ -91,6 +91,8 @@ func checkReservedID(d *registry.Descriptor) error {
 	var err error
 	if d.ID == reservedCoreID {
 		err = fmt.Errorf("service id %q is reserved for the framework core", d.ID)
+	} else if d.ID == introspectionID && d.Concrete != reflect.TypeOf(&Introspector{}) {
+		err = fmt.Errorf("service id %q is reserved for the core's Introspector", d.ID)
 	}
 	return err
 }

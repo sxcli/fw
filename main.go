@@ -61,6 +61,9 @@ func run(rt *runtime) int {
 	defer slog.SetDefault(previous)
 	buffer := logging.NewBuffer()
 	slog.SetDefault(slog.New(buffer))
+	// the core's own service: the read-only composition view, cold
+	// unless something injects it
+	rt.reg.Register(introspectionID, &Introspector{rt: rt}, registry.Options{})
 	if rt.c.Len() > 0 {
 		rt.report(buffer)
 	} else if appletID, applet, args, ok := rt.dispatch(); ok {
@@ -168,7 +171,11 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 						keep[m.Desc.ID] = true
 						members = append(members, m.Desc)
 					}
-					rt.reg.Retain(keep)
+					// an introspecting closure keeps the whole registry:
+					// enumerating the binary is the point
+					if !keep[introspectionID] {
+						rt.reg.Retain(keep)
+					}
 					sch := config.NewSchema(rt.c, appletID, &core, members, rt.suppressed)
 					loaded := sch.Apply(rt.c, files, src)
 					if rt.c.Len() == 0 {
