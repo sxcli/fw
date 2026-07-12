@@ -30,6 +30,18 @@ func init() {
 		sxclifw.Provides[slog.Handler](),
 		sxclifw.Provides[sxclifw.AlwaysOn](),
 		sxclifw.WithConfig(&c.cfg),
+		sxclifw.WithMetadata(&sxclifw.Metadata{
+			Description: "console log sink: writes slog records to stderr (default) or stdout; always-on so a binary has sane log output with no wiring",
+			Fields: map[string]any{
+				"Level": sxclifw.FieldMetadata[string]{
+					// deliberately no Allowed: slog accepts offsets like
+					// "warn+2" and any case, so the domain is open
+					Doc: "any form slog.Level understands: debug, info, warn, error, case-insensitive, offsets like warn+2",
+				},
+				"Format": sxclifw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
+				"Output": sxclifw.FieldMetadata[string]{Allowed: []string{"stderr", "stdout"}},
+			},
+		}),
 	)
 }
 

@@ -31,6 +31,33 @@ func init() {
 	sxclifw.Register("syslog", s,
 		sxclifw.Provides[slog.Handler](),
 		sxclifw.WithConfig(&s.cfg),
+		sxclifw.WithMetadata(&sxclifw.Metadata{
+			Description: "syslog sink: writes slog records to the local syslog socket (journald under systemd) or a remote server; cold until enabled",
+			Fields: map[string]any{
+				"Level": sxclifw.FieldMetadata[string]{
+					Doc: "any form slog.Level understands: debug, info, warn, error, case-insensitive, offsets like warn+2",
+				},
+				"Format": sxclifw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
+				"Facility": sxclifw.FieldMetadata[string]{Allowed: []string{
+					"kern", "user", "mail", "daemon", "auth", "syslog",
+					"lpr", "news", "uucp", "cron", "authpriv", "ftp",
+					"local0", "local1", "local2", "local3",
+					"local4", "local5", "local6", "local7",
+				}},
+				"Network": sxclifw.FieldMetadata[string]{
+					// open domain: any network syslog.Dial accepts
+					// (udp, tcp, unixgram, ...); empty means the local
+					// socket
+					Doc: "remote syslog network; empty for the local socket, otherwise anything syslog.Dial accepts (udp, tcp, ...)",
+				},
+				"Tag": sxclifw.FieldMetadata[string]{
+					Doc: "syslog tag; empty defaults to the process name",
+				},
+				"Address": sxclifw.FieldMetadata[string]{
+					Doc: "host:port of the remote server; set together with network",
+				},
+			},
+		}),
 	)
 }
 

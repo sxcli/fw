@@ -316,6 +316,21 @@ func TestLogfileSinkEndToEnd(t *testing.T) {
 	}
 }
 
+func TestSinkEnumsAreEnforced(t *testing.T) {
+	r := box(t, "single", nil, "", "--console-output", "printer")
+	if r.code != 2 || !strings.Contains(r.stderr, "not among the allowed values") {
+		t.Errorf("console output domain must be enforced: exit %d\n%s", r.code, r.stderr)
+	}
+	r = box(t, "single", nil, "", "--enable", "logfile", "--logfile-path", filepath.Join(t.TempDir(), "x.log"), "--logfile-format", "xml")
+	if r.code != 2 || !strings.Contains(r.stderr, "not among the allowed values") {
+		t.Errorf("logfile format domain must be enforced: exit %d\n%s", r.code, r.stderr)
+	}
+	// open domains stay open: slog level offsets still work
+	if r = box(t, "single", nil, "", "--console-level", "warn+2"); r.code != 0 {
+		t.Errorf("level must remain an open domain: exit %d\n%s", r.code, r.stderr)
+	}
+}
+
 func TestSuppressedConfigFlagIsRefused(t *testing.T) {
 	r := box(t, "hardened", nil, "", "--config", "/tmp/x.json")
 	if r.code == 0 || !strings.Contains(r.stderr, "unknown argument --config") {

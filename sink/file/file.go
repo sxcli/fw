@@ -29,6 +29,21 @@ func init() {
 	sxclifw.Register("logfile", f,
 		sxclifw.Provides[slog.Handler](),
 		sxclifw.WithConfig(&f.cfg),
+		sxclifw.WithMetadata(&sxclifw.Metadata{
+			Description: "log-file sink: appends slog records to a file; no rotation (logrotate copytruncate works as-is); cold until enabled",
+			Fields: map[string]any{
+				"Path": sxclifw.FieldMetadata[string]{
+					Doc: "required when the sink is enabled; opened append-only, created if missing",
+				},
+				"Level": sxclifw.FieldMetadata[string]{
+					Doc: "any form slog.Level understands: debug, info, warn, error, case-insensitive, offsets like warn+2",
+				},
+				"Format": sxclifw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
+				"Mode": sxclifw.FieldMetadata[string]{
+					Doc: "octal permissions applied when the file is created, e.g. 0600; an existing file keeps its mode",
+				},
+			},
+		}),
 	)
 }
 

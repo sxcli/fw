@@ -27,6 +27,9 @@ import (
 func init() {
 	sxclifw.Register("yaml", &YAML{},
 		sxclifw.Provides[sxclifw.ConfigFormatProvider](),
+		sxclifw.WithMetadata(&sxclifw.Metadata{
+			Description: "YAML config format provider: transcodes .yaml/.yml configuration files to and from the core's native JSON",
+		}),
 	)
 }
 
