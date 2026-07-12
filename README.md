@@ -12,6 +12,10 @@ ordered lifecycle, `log/slog` logging with pluggable sinks, translation
 hooks, Windows service support — and, when you want it, busybox-style
 multi-applet binaries.
 
+Guides, demos and the [API reference](https://sxcli.dev/s/api) live at
+[sxcli.dev](https://sxcli.dev); the package documentation is also on
+[pkg.go.dev](https://pkg.go.dev/sxcli.dev/fw).
+
 ```go
 package main
 
