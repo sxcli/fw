@@ -198,7 +198,32 @@ func Provides[I any]() RegisterOption          // declares a provided interface
 func WithConfig(cfgPtr any) RegisterOption     // pointer to the Configuration struct;
                                                // its field values are the defaults
 func WithMetadata(md *Metadata) RegisterOption // optional declarative description
+func Hidden() RegisterOption                   // applet: absent from listings and
+                                               // basename dispatch; explicit
+                                               // first-token selection only
+func System() RegisterOption                   // applet: binary machinery, not a
+                                               // user command; implies Hidden and
+                                               // is ignored by single-applet counting
 ```
+
+**Applet visibility** is registration-time policy, not a capability —
+hence options, not interfaces (interfaces declare what a service can
+do; options declare how the framework treats it). The progression: a
+plain applet is a public command; `Hidden` keeps it selectable by an
+explicit first token but removes it from usage listings, the future
+`--applets` enumeration and basename/symlink dispatch (hidden debug or
+maintenance commands); `System` declares machinery of the binary that
+a human is never meant to type — a shell-completion query endpoint is
+the canonical case — and additionally excludes the applet from
+single-applet counting, so a module registering one cannot flip an
+existing binary's dispatch mode. `System` implies `Hidden`. Whether
+the registering package arrived by blank import or was written in
+`main.go` is irrelevant — the options describe what the applet *is*,
+not how it got there: a blank-imported library of ordinary applets
+registers them plain, and they count and list like any command. In
+every other respect Hidden/System applets are ordinary: id rules, the
+`APPLETID_` env prefix, config files, closure resolution and the
+lifecycle are unchanged.
 
 **Metadata** is declarative — no interfaces on the instance or the
 config struct (a service is the instance+config pair; one Metadata
@@ -249,7 +274,8 @@ startup fails reporting *all* problems at once:
 - applet implementing Starter/Stopper,
 - malformed tags / unsupported config field types,
 - `inject` tag on an unexported field,
-- slice-of-concrete-struct `inject` field.
+- slice-of-concrete-struct `inject` field,
+- `Hidden`/`System` on a service that is not an applet.
 
 The concrete struct type is recorded automatically — no option needed —
 so dependents may require the service by `*Struct` or by any declared
@@ -280,7 +306,9 @@ any service. **A closure containing the Introspector is never
 ejected** — enumerating the binary requires the registry alive; only
 invocations that injected it pay that.
 
-Surface: `Applets()`, `Services()`, `ConfigExtensions()`,
+Surface: `Applets()` (public applets only — `Hidden` and `System`
+applets are omitted: a completion must not offer what a human should
+not type), `Services()`, `ConfigExtensions()`,
 `Describe(serviceID)` (the registration Metadata's long-form
 description), and
 `Arguments(appletID, args) ([]ArgInfo, error)` — the closure-true
@@ -348,17 +376,25 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
 ### Dispatch rules
 
 1. Obtain argv from the platform layer.
-2. **Single-applet mode:** if exactly one applet is registered, it is
-   always dispatched. argv[0] is ignored and *no applet-selector
-   consumption happens at all* — the entire argument vector (after the
-   binary name) belongs to the applet as ordinary flags/positionals. This
-   lets the framework serve simple applications with no thought given to
-   binary names, symlinks, or subcommands. Notes:
+2. **Single-applet mode:** if exactly one non-`System` applet is
+   registered, it is always dispatched. argv[0] is ignored and *no
+   applet-selector consumption happens* — the entire argument vector
+   (after the binary name) belongs to the applet as ordinary
+   flags/positionals — with one carve-out: a first bare token equal to
+   a registered `System` applet's id selects that applet instead
+   (rule 3 applies to it). Consequence, documented: with `System`
+   applets present, not every start of the binary runs the main
+   applet, and a genuine positional colliding with a `System` id needs
+   the standard leading `--` escape. This lets the framework serve
+   simple applications with no thought given to binary names,
+   symlinks, or subcommands. Notes:
    - `binary myapplet --args` does **not** treat `myapplet` as a selector
      even when it matches the sole applet's ID — it is a leading bare
-     token under normal arg parsing. Selector logic is fully off; no
-     "data or selector?" ambiguity.
-   - Registering a second applet re-enables selector logic (rules 3–4),
+     token under normal arg parsing. Selector logic is off for the main
+     applet; only `System` ids are consulted, so there is no
+     "data or selector?" ambiguity beyond that carve-out.
+   - Registering a second non-`System` applet re-enables selector logic
+     (rules 3–4),
      changing the binary's command-line contract. That breaking change is
      the developer's responsibility to manage.
    - Only dispatch changes. The sole applet's ID still anchors the
@@ -367,12 +403,17 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
 3. **If the first argument exists and does not start with `-`:** it is
    always an applet selector. Look it up, dispatch with the remaining args,
    overriding argv[0]. Unknown name → dispatch failure — even if
-   basename(argv[0]) is itself a valid applet. No fallback.
-4. **Otherwise:** basename(argv[0]) must name a registered applet; dispatch
-   with all args. On Windows the `.exe` suffix is stripped before
+   basename(argv[0]) is itself a valid applet. No fallback. `Hidden`
+   and `System` applets are selectable here like any other — explicit
+   selection always works; only listings and basename matching exclude
+   them.
+4. **Otherwise:** basename(argv[0]) must name a registered non-`Hidden`
+   applet; dispatch with all args (`Hidden`/`System` applets are never
+   matched by basename). On Windows the `.exe` suffix is stripped before
    matching.
 5. Every dispatch failure (including a binary with zero registered applets)
-   prints usage — including the list of registered applet IDs — to stderr
+   prints usage — including the list of registered applet IDs, `Hidden`
+   and `System` ones omitted — to stderr
    and exits non-zero. In single-applet mode the applet list is dropped
    from the usage output. `--help` renders only the dispatched applet's
    argument schema (core + closure, grouped by service ID) and never an
@@ -382,7 +423,9 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
 Consequence (documented): in multi-applet binaries a leading bare token is
 *never* applet data. Scripts must know `binary appletName --args`
 dispatches to `appletName`, and a symlinked applet cannot take a bare first
-positional.
+positional. In single-applet binaries the same reservation exists only
+for `System` ids — the intended consumers (shell completion scripts)
+call `binary systemid --args` and never rely on basename dispatch.
 
 ### Pipeline
 
@@ -807,3 +850,5 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
 | Logical/boolean `inject` expressions for single-valued fields (e.g. `inject:"mysql \|\| sqlite"` — a preference list letting the service express fallbacks without forcing user overrides) | future syntax extension; must compose with `override` remapping (each alternative remapped before resolution); until then a non-slice field names at most one id |
 | Positional declarations for introspection/completion | still open; field-level self-description landed as `WithMetadata` |
+| Shell completion service | decided: a SEPARATE module (`sxcli.dev` namespace), never in core — the first external Introspector consumer; registers per-shell `System` applets (invoked `binary <id> …` by the generated scripts); any capability gap it hits is fixed as a core API improvement, never a backdoor |
+| Disabling first-token applet dispatch entirely (build-time policy for binaries that want basename/single-applet behavior only) | idea noted while designing Hidden/System — registration/`Suppress`-style knob, unscheduled; interaction with System selectors must be resolved when designed |
