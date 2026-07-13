@@ -63,12 +63,14 @@ type Introspector struct {
 	rt *runtime
 }
 
-// Applets returns the ids of every registered applet, in registration
-// order.
+// Applets returns the ids of every registered public applet, in
+// registration order. Hidden and System applets are omitted: they are
+// not commands offered to a human, and a completion must not offer
+// what a human should not type.
 func (i *Introspector) Applets() []string {
 	var out []string
 	for _, d := range i.rt.reg.All() {
-		if _, isApplet := d.Instance.(Applet); isApplet {
+		if _, isApplet := d.Instance.(Applet); isApplet && !d.Hidden {
 			out = append(out, d.ID)
 		}
 	}

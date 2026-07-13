@@ -50,7 +50,7 @@ func (r *Registry) Register(id string, instance any, opts Options) {
 			t := reflect.TypeOf(instance)
 			if instance != nil && t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct && !reflect.ValueOf(instance).IsNil() {
 				if prev, taken := r.concrete[t]; !taken {
-					d := &Descriptor{ID: id, Instance: instance, Concrete: t, Metadata: opts.Metadata}
+					d := &Descriptor{ID: id, Instance: instance, Concrete: t, Metadata: opts.Metadata, Hidden: opts.Hidden, System: opts.System}
 					r.validateProvides(d, opts.Interfaces)
 					r.validateConfig(d, opts.Config)
 					r.collectDeps(d)

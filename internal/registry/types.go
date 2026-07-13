@@ -37,6 +37,8 @@ type Options struct {
 	Interfaces []reflect.Type
 	Config     any
 	Metadata   any
+	Hidden     bool // applet visibility policy; semantics enforced by root checks
+	System     bool
 }
 
 // DepField describes one `inject`-annotated field of a registered
@@ -58,6 +60,8 @@ type Descriptor struct {
 	Provides  []reflect.Type // declared and verified interfaces
 	ConfigPtr any            // nil when the service has no configuration
 	Metadata  any            // opaque; normalized by the root's metadata check
+	Hidden    bool           // absent from listings and basename dispatch
+	System    bool           // binary machinery; ignored by single-applet counting
 	Deps      []DepField
 }
 

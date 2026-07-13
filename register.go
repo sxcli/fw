@@ -29,12 +29,14 @@ var defaultCollector = &fail.Collector{}
 
 // defaultRegistry is populated by Register calls from package init()
 // functions; Main validates and consumes it.
-var defaultRegistry = registry.New(defaultCollector, checkReservedID, checkAppletLifecycle, config.ValidateConfig, checkMetadata)
+var defaultRegistry = registry.New(defaultCollector, checkReservedID, checkAppletLifecycle, checkVisibility, config.ValidateConfig, checkMetadata)
 
 type registerOptions struct {
 	interfaces []reflect.Type
 	config     any
 	metadata   *Metadata
+	hidden     bool
+	system     bool
 }
 
 // RegisterOption configures a single Register call.
@@ -64,6 +66,30 @@ func WithConfig(cfgPtr any) RegisterOption {
 	}
 }
 
+// Hidden marks a registered applet as a hidden command: it stays
+// selectable by an explicit first-token selector, but is absent from
+// usage listings and is never matched by basename/symlink dispatch.
+// Visibility is registration-time policy, not a capability, hence an
+// option rather than an interface. Valid only on applets.
+func Hidden() RegisterOption {
+	return func(o *registerOptions) {
+		o.hidden = true
+	}
+}
+
+// System marks a registered applet as machinery of the binary — an
+// entry point invoked by tooling (a shell completion script, a
+// diagnostic harness), never typed by a human. System implies Hidden
+// and additionally excludes the applet from single-applet counting, so
+// registering one never flips an existing binary's dispatch mode; its
+// id remains selectable as a first token in every mode, including
+// single-applet mode. Valid only on applets.
+func System() RegisterOption {
+	return func(o *registerOptions) {
+		o.system = true
+	}
+}
+
 // Register registers a service instance under a unique id. It is meant
 // to be called from package init() functions; one package may register
 // many services. The id must be a non-empty, all-lowercase go identifier
@@ -81,7 +107,7 @@ func Register(id string, instance any, opts ...RegisterOption) {
 	for _, opt := range opts {
 		opt(&o)
 	}
-	defaultRegistry.Register(id, instance, registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata})
+	defaultRegistry.Register(id, instance, registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata, Hidden: o.hidden || o.system, System: o.system})
 }
 
 // reservedCoreID is the service id under which the framework core's own
@@ -103,6 +129,19 @@ func checkAppletLifecycle(d *registry.Descriptor) error {
 	if _, applet := d.Instance.(Applet); applet {
 		if _, hasLifecycle := d.Instance.(Stopper); hasLifecycle {
 			err = fmt.Errorf("service %q: an applet must not implement Starter or Stopper", d.ID)
+		}
+	}
+	return err
+}
+
+// checkVisibility rejects the Hidden/System applet-visibility options
+// on services that are not applets — visibility is dispatch policy and
+// only applets are dispatched.
+func checkVisibility(d *registry.Descriptor) error {
+	var err error
+	if d.Hidden || d.System {
+		if _, applet := d.Instance.(Applet); !applet {
+			err = fmt.Errorf("service %q: Hidden/System apply only to applets", d.ID)
 		}
 	}
 	return err

@@ -73,13 +73,26 @@ func run(rt *runtime) int {
 	return code
 }
 
-// dispatch picks the applet per the spec rules: single-applet mode,
-// else first-bare-argument selector, else basename(argv[0]).
+// dispatch picks the applet per the spec rules: single-applet mode
+// (only non-System applets count, with the System-selector carve-out),
+// else first-bare-argument selector (Hidden and System applets are
+// selectable like any other), else basename(argv[0]) among non-Hidden
+// applets.
 func (rt *runtime) dispatch() (string, Applet, []string, bool) {
-	var applets []*registry.Descriptor
+	var applets []*registry.Descriptor // every applet, any visibility
+	var public []*registry.Descriptor  // non-Hidden: what usage may list
+	var sole *registry.Descriptor      // the single non-System applet, when nMain == 1
+	nMain := 0
 	for _, d := range rt.reg.All() {
 		if _, isApplet := d.Instance.(Applet); isApplet {
 			applets = append(applets, d)
+			if !d.Hidden {
+				public = append(public, d)
+			}
+			if !d.System {
+				nMain++
+				sole = d
+			}
 		}
 	}
 	id := ""
@@ -91,9 +104,21 @@ func (rt *runtime) dispatch() (string, Applet, []string, bool) {
 	}
 	ok := false
 	if len(applets) == 0 {
-		rt.usage(applets, Tr("no applets are registered in this binary"))
-	} else if len(applets) == 1 {
-		id, applet, args, ok = applets[0].ID, applets[0].Instance.(Applet), rest, true
+		rt.usage(public, Tr("no applets are registered in this binary"))
+	} else if nMain == 1 {
+		// Single-applet mode: the sole non-System applet always runs
+		// and the whole vector is its data — except a first bare token
+		// naming a System applet, the tooling entry path.
+		if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
+			if d, found := rt.reg.ByID(rest[0]); found && d.System {
+				if a, isApplet := d.Instance.(Applet); isApplet {
+					id, applet, args, ok = d.ID, a, rest[1:], true
+				}
+			}
+		}
+		if !ok {
+			id, applet, args, ok = sole.ID, sole.Instance.(Applet), rest, true
+		}
 	} else if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
 		if d, found := rt.reg.ByID(rest[0]); found {
 			if a, isApplet := d.Instance.(Applet); isApplet {
@@ -101,33 +126,34 @@ func (rt *runtime) dispatch() (string, Applet, []string, bool) {
 			}
 		}
 		if !ok {
-			rt.usage(applets, Tr("{name} does not name an applet", "name", rest[0]))
+			rt.usage(public, Tr("{name} does not name an applet", "name", rest[0]))
 		}
 	} else {
 		name := ""
 		if len(rt.argv) > 0 {
 			name = binaryBasename(rt.argv[0])
 		}
-		if d, found := rt.reg.ByID(name); found {
+		if d, found := rt.reg.ByID(name); found && !d.Hidden {
 			if a, isApplet := d.Instance.(Applet); isApplet {
 				id, applet, args, ok = d.ID, a, rest, true
 			}
 		}
 		if !ok {
-			rt.usage(applets, Tr("{name} does not name an applet", "name", name))
+			rt.usage(public, Tr("{name} does not name an applet", "name", name))
 		}
 	}
 	return id, applet, args, ok
 }
 
-// usage prints the dispatch-failure usage to stderr; in single-applet
-// mode the applet list is dropped.
-func (rt *runtime) usage(applets []*registry.Descriptor, reason string) {
+// usage prints the dispatch-failure usage to stderr; Hidden and System
+// applets are omitted from the list (single-applet mode never fails
+// dispatch, so the list rendering only ever runs in selector modes).
+func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 	fmt.Fprintln(rt.stderr, reason)
 	fmt.Fprintln(rt.stderr, Tr("usage: <binary> <applet> [arguments]"))
-	if len(applets) > 1 {
+	if len(public) > 0 {
 		fmt.Fprintln(rt.stderr, Tr("applets:"))
-		for _, d := range applets {
+		for _, d := range public {
 			fmt.Fprintf(rt.stderr, "  %s\n", d.ID)
 		}
 	}
