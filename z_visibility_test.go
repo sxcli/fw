@@ -133,3 +133,23 @@ func TestIntrospectorAppletsOmitHiddenAndSystem(t *testing.T) {
 		t.Errorf("Applets() = %q, want %q", got, "app")
 	}
 }
+
+// SingleApplet reports dispatch-mode truth: System applets don't
+// count, Hidden non-System applets do — even though Applets() omits
+// both.
+func TestSingleAppletReportsDispatchTruth(t *testing.T) {
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	w.rt.reg.Register("second", &secondApplet{log: &w.log}, foldOptions([]RegisterOption{System()}))
+	i := &Introspector{rt: w.rt}
+	if id, ok := i.SingleApplet(); !ok || id != "app" {
+		t.Errorf("System applet must not break single-applet mode: %q %v", id, ok)
+	}
+	w2 := newWorld(t, []string{"bin"}, nil, nil)
+	w2.applet(0)
+	w2.rt.reg.Register("second", &secondApplet{log: &w2.log}, foldOptions([]RegisterOption{Hidden()}))
+	i2 := &Introspector{rt: w2.rt}
+	if id, ok := i2.SingleApplet(); ok || id != "" {
+		t.Errorf("Hidden non-System applet must count for the mode: %q %v", id, ok)
+	}
+}

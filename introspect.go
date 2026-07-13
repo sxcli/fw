@@ -78,6 +78,30 @@ func (i *Introspector) Applets() []string {
 	return out
 }
 
+// SingleApplet reports the applet that would run with no selector
+// word: in single-applet mode — exactly one non-System applet
+// registered — its id and true, otherwise "" and false. This is
+// dispatch-mode truth straight from the dispatch rules, and consumers
+// must not re-derive it from Applets: that listing is public-only,
+// while a Hidden non-System applet still counts for the mode.
+func (i *Introspector) SingleApplet() (string, bool) {
+	id := ""
+	n := 0
+	for _, d := range i.rt.reg.All() {
+		if _, isApplet := d.Instance.(Applet); isApplet {
+			if !d.System {
+				n++
+				id = d.ID
+			}
+		}
+	}
+	ok := n == 1
+	if !ok {
+		id = ""
+	}
+	return id, ok
+}
+
 // Services returns the ids of every registered service — applets
 // included — in registration order.
 func (i *Introspector) Services() []string {

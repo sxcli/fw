@@ -327,7 +327,11 @@ invocations that injected it pay that.
 
 Surface: `Applets()` (public applets only — `Hidden` and `System`
 applets are omitted: a completion must not offer what a human should
-not type), `Services()`, `ConfigExtensions()`,
+not type), `SingleApplet()` (the applet that would run with no
+selector word — dispatch-mode truth from the dispatch rules
+themselves; consumers must not re-derive it from `Applets`, which is
+public-only while a Hidden non-System applet still counts for the
+mode), `Services()`, `ConfigExtensions()`,
 `Describe(serviceID)` (the registration Metadata's long-form
 description), and
 `Arguments(appletID, args) ([]ArgInfo, error)` — the closure-true
