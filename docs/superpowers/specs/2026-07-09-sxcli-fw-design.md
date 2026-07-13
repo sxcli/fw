@@ -236,17 +236,29 @@ type Metadata struct {
                                // field name ("Level", "TLS.Cert")
 }
 type FieldMetadata[T any] struct {
-    Allowed []T    // closed value domain; enforced by the framework
-    Doc     string // long-form field description; usage: stays the one-liner
+    Allowed []T       // closed value domain; enforced by the framework
+    Doc     string    // long-form field description; usage: stays the one-liner
+    Hint    ValueHint // advisory: what the value denotes (HintFile,
+                      // HintDirectory) — for tooling, never enforced
 }
 ```
+
+A **Hint** declares what a value *denotes* so tooling (completion,
+documentation) can act on it — `HintFile` says "this names a file",
+which the core cannot and must not enforce: `--config new.yaml` names
+a file that does not exist yet. Hints are the advisory sibling of the
+enforced `Allowed` domain, in the same trust class as `Doc`. The core
+dogfoods the mechanism: its own `--config` field declares `HintFile`.
 
 Validated at registration with everything else: an unknown field key, a
 non-FieldMetadata value, field metadata on a config-less service, an
 Allowed element type that does not match the field's type (same kind
-and convertible; element type for slices), or a **registered default
-outside its own declared domain** are violations. Description alone is
-fine for config-less services.
+and convertible; element type for slices), a **registered default
+outside its own declared domain**, a hint on a non-string field (paths
+are strings), an unknown hint value, or a hint combined with a
+non-empty Allowed on the same field (a closed enum and "it's a file"
+contradict each other — declare one) are violations. Description alone
+is fine for config-less services.
 
 A non-empty `Allowed` is **enforced, not advisory**: every write path —
 strict argument parse, environment application, config file
@@ -254,7 +266,8 @@ application — rejects a value outside the domain as a loud startup
 violation naming the source and the allowed set (slice fields checked
 per element). Services may keep their own checks as defense in depth,
 but the declared contract is honored by the machinery, and completion
-services can trust it via `ArgInfo.Allowed`.
+services can trust it via `ArgInfo.Allowed`; the advisory hint travels
+the same road as `ArgInfo.Hint`.
 
 Called from package `init()`; one package may register many services. The
 public `Register` delegates to a package-level default registry (tests build
