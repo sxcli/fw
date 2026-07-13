@@ -347,3 +347,82 @@ func TestNamedTypeAllowedValuesConvert(t *testing.T) {
 		t.Fatalf("same-kind convertible allowed values must be accepted: %v", w.c.All())
 	}
 }
+
+func TestHintViolations(t *testing.T) {
+	cases := []struct {
+		name string
+		md   *Metadata
+		want string
+	}{
+		{"hint plus allowed", &Metadata{Fields: map[string]any{
+			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}, Hint: HintFile},
+		}}, "declares both a hint and an Allowed domain"},
+		{"unknown hint", &Metadata{Fields: map[string]any{
+			"Flag": FieldMetadata[string]{Hint: ValueHint(42)},
+		}}, "unknown hint"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w, _ := annotatedWorld(t, tc.md)
+			if w.c.Len() == 0 {
+				t.Fatal("expected a registration violation")
+			}
+			joined := ""
+			for _, err := range w.c.All() {
+				joined += err.Error() + "\n"
+			}
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("want %q in:\n%s", tc.want, joined)
+			}
+		})
+	}
+}
+
+func TestHintOnNonStringFieldIsViolation(t *testing.T) {
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	svc := &intService{cfg: intCfg{Retries: 1}}
+	w.rt.reg.Register("intsvc", svc, foldOptions([]RegisterOption{
+		WithConfig(&svc.cfg),
+		WithMetadata(&Metadata{Fields: map[string]any{
+			"Retries": FieldMetadata[int]{Hint: HintFile},
+		}}),
+	}))
+	if w.c.Len() == 0 {
+		t.Fatal("hint on an int field must be a violation")
+	}
+	if !strings.Contains(w.c.All()[0].Error(), "not a string") {
+		t.Errorf("violation text wrong: %v", w.c.All())
+	}
+}
+
+// The hint travels to ArgInfo, and the core dogfoods the mechanism:
+// its own --config declares HintFile.
+func TestHintFlowsIntoIntrospection(t *testing.T) {
+	md := &Metadata{Fields: map[string]any{
+		"Flag": FieldMetadata[string]{Hint: HintFile, Doc: "some path"},
+	}}
+	var flagHint, configHint ValueHint
+	w, _ := annotatedWorld(t, md)
+	probe := &argsProbe{do: func(i *Introspector) {
+		infos, _ := i.Arguments("app", []string{"--enable", "extra"})
+		for _, a := range infos {
+			if a.Long == "extra-flag" {
+				flagHint = a.Hint
+			}
+			if a.Service == "core" && a.Long == "config" {
+				configHint = a.Hint
+			}
+		}
+	}}
+	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
+	if code := run(w.rt); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if flagHint != HintFile {
+		t.Errorf("service field hint not exposed: %v", flagHint)
+	}
+	if configHint != HintFile {
+		t.Errorf("core --config must declare HintFile: %v", configHint)
+	}
+}

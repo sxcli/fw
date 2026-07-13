@@ -39,6 +39,15 @@ func ValidateConfig(d *registry.Descriptor) error {
 	return err
 }
 
+// coreMeta is the core's own field metadata — the same declarative
+// channel services use via WithMetadata, built directly since the core
+// is not registered: --config names a file (which may not exist yet
+// when --write-config creates it), so the hint is advisory like every
+// hint.
+var coreMeta = &Meta{Fields: map[string]FieldMeta{
+	"Config": {Hint: HintFile},
+}}
+
 // NewSchema builds the full schema of one invocation: the core config
 // first (so its short forms win), then every member owning a config
 // struct. Core fields whose long name appears in suppress are removed
@@ -54,7 +63,7 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
 	}
-	s.add(c, "core", reflect.ValueOf(core), suppress, nil)
+	s.add(c, "core", reflect.ValueOf(core), suppress, coreMeta)
 	for _, d := range members {
 		if d.ConfigPtr != nil {
 			meta, _ := d.Metadata.(*Meta)
@@ -103,6 +112,7 @@ func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppres
 			if fm, annotated := meta.Fields[f.Name]; annotated {
 				f.Allowed = fm.Allowed
 				f.Doc = fm.Doc
+				f.Hint = fm.Hint
 			}
 		}
 	}

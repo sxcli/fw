@@ -102,11 +102,25 @@ type Meta struct {
 	Fields      map[string]FieldMeta // keyed by go field name, "A.B" for nested
 }
 
+// ValueHint is the advisory declaration of what a field's value
+// denotes. Unlike Allowed it is never enforced — a hinted file may not
+// exist yet (--config with --write-config creates it); it travels the
+// schema so tooling (completion, documentation) can act on it. The
+// root package re-exports the constants under the same names.
+type ValueHint int
+
+const (
+	HintNone ValueHint = iota
+	HintFile
+	HintDirectory
+)
+
 // FieldMeta annotates one config field. Allowed values are already
 // converted to the field's own type.
 type FieldMeta struct {
 	Allowed []any
 	Doc     string
+	Hint    ValueHint
 }
 
 // Field is one settable config struct field.
@@ -123,8 +137,9 @@ type Field struct {
 	Type      reflect.Type
 	IsSlice   bool
 	Transient bool  // dump:"-": run-scoped — excluded from --write-config output AND refused from config files
-	Allowed   []any // closed value domain from registration metadata; values are of the field's type (element type for slices)
+	Allowed   []any     // closed value domain from registration metadata; values are of the field's type (element type for slices)
 	Doc       string
+	Hint      ValueHint // advisory value denotation from registration metadata
 }
 
 // serviceSchema is the schema of one service's config struct.

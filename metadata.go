@@ -41,6 +41,22 @@ type Metadata struct {
 	Fields map[string]any
 }
 
+// ValueHint is the advisory declaration of what a field's value
+// denotes, for tooling (completion, documentation). Unlike Allowed a
+// hint is never enforced — a hinted file may not exist yet (--config
+// names the file --write-config is about to create); it is data in the
+// same trust class as Doc. The core's own --config declares HintFile.
+type ValueHint int
+
+const (
+	// HintNone declares nothing; the zero value.
+	HintNone ValueHint = ValueHint(config.HintNone)
+	// HintFile: the value names a file, existing or to be created.
+	HintFile ValueHint = ValueHint(config.HintFile)
+	// HintDirectory: the value names a directory.
+	HintDirectory ValueHint = ValueHint(config.HintDirectory)
+)
+
 // FieldMetadata annotates one config struct field. T carries the
 // allowed values in the field's own type: T must have the same kind as
 // (and be convertible to) the annotated field's type — for slice
@@ -53,6 +69,11 @@ type FieldMetadata[T any] struct {
 	// Doc is the long-form field description; usage: stays the
 	// one-liner.
 	Doc string
+	// Hint declares what the value denotes. Valid only on string
+	// fields (paths are strings; element type for slices) and mutually
+	// exclusive with a non-empty Allowed — a closed enum and "it's a
+	// file" contradict each other.
+	Hint ValueHint
 }
 
 // fieldMetadataMarker identifies FieldMetadata instantiations across
@@ -120,10 +141,17 @@ func checkMetadata(d *registry.Descriptor) error {
 					rv := reflect.ValueOf(value)
 					allowedValues := rv.FieldByName("Allowed")
 					elemType := allowedValues.Type().Elem()
+					hint := ValueHint(rv.FieldByName("Hint").Int())
 					if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
 						errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", d.ID, name, elemType, probe.Type))
+					} else if hint < HintNone || hint > HintDirectory {
+						errs = append(errs, fmt.Errorf("service %q metadata: %q declares an unknown hint %d", d.ID, name, hint))
+					} else if hint != HintNone && allowedValues.Len() > 0 {
+						errs = append(errs, fmt.Errorf("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", d.ID, name))
+					} else if hint != HintNone && probe.Type.Kind() != reflect.String {
+						errs = append(errs, fmt.Errorf("service %q metadata: %q declares a hint but the field takes %s, not a string", d.ID, name, probe.Type))
 					} else {
-						fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String()}
+						fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: config.ValueHint(hint)}
 						for i := 0; i < allowedValues.Len(); i++ {
 							fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
 						}

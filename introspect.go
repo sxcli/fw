@@ -43,6 +43,7 @@ type ArgInfo struct {
 	IsSlice bool         // repeatable argument, comma-separated env, json array
 	Allowed []any        // closed value domain from registration Metadata; values are of Type
 	Doc     string       // long-form description from registration Metadata
+	Hint    ValueHint    // advisory value denotation from registration Metadata; never enforced
 }
 
 // Introspector is the core's read-only view of the binary's
@@ -163,6 +164,7 @@ func argInfos(sch *config.Schema) []ArgInfo {
 				IsSlice: f.IsSlice,
 				Allowed: f.Allowed,
 				Doc:     f.Doc,
+				Hint:    ValueHint(f.Hint),
 			})
 		}
 	}
