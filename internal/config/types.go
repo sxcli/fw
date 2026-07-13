@@ -113,6 +113,7 @@ const (
 	HintNone ValueHint = iota
 	HintFile
 	HintDirectory
+	HintServiceID
 )
 
 // FieldMeta annotates one config field. Allowed values are already

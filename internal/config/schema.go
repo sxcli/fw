@@ -45,7 +45,12 @@ func ValidateConfig(d *registry.Descriptor) error {
 // when --write-config creates it), so the hint is advisory like every
 // hint.
 var coreMeta = &Meta{Fields: map[string]FieldMeta{
-	"Config": {Hint: HintFile},
+	"Config":  {Hint: HintFile},
+	"Disable": {Hint: HintServiceID},
+	"Enable":  {Hint: HintServiceID},
+	// Override takes from=to pairs, not plain service ids — no honest
+	// hint fits; tooling that understands the pair form can still act
+	// on the field by name.
 }}
 
 // NewSchema builds the full schema of one invocation: the core config

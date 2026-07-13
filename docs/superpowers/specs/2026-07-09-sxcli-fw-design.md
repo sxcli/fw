@@ -239,7 +239,8 @@ type FieldMetadata[T any] struct {
     Allowed []T       // closed value domain; enforced by the framework
     Doc     string    // long-form field description; usage: stays the one-liner
     Hint    ValueHint // advisory: what the value denotes (HintFile,
-                      // HintDirectory) — for tooling, never enforced
+                      // HintDirectory, HintServiceID) — for tooling,
+                      // never enforced
 }
 ```
 
@@ -247,8 +248,13 @@ A **Hint** declares what a value *denotes* so tooling (completion,
 documentation) can act on it — `HintFile` says "this names a file",
 which the core cannot and must not enforce: `--config new.yaml` names
 a file that does not exist yet. Hints are the advisory sibling of the
-enforced `Allowed` domain, in the same trust class as `Doc`. The core
-dogfoods the mechanism: its own `--config` field declares `HintFile`.
+enforced `Allowed` domain, in the same trust class as `Doc`.
+`HintServiceID` says "this names a service registered in this binary"
+— completable from the Introspector, again advisory (resolution may
+still reject an unknown id with its own, better error). The core
+dogfoods the mechanism: `--config` declares `HintFile`; `--disable`
+and `--enable` declare `HintServiceID` (`--override` takes `from=to`
+pairs — no honest hint fits).
 
 Validated at registration with everything else: an unknown field key, a
 non-FieldMetadata value, field metadata on a config-less service, an

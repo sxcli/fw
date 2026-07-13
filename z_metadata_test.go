@@ -402,7 +402,7 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 	md := &Metadata{Fields: map[string]any{
 		"Flag": FieldMetadata[string]{Hint: HintFile, Doc: "some path"},
 	}}
-	var flagHint, configHint ValueHint
+	var flagHint, configHint, disableHint ValueHint
 	w, _ := annotatedWorld(t, md)
 	probe := &argsProbe{do: func(i *Introspector) {
 		infos, _ := i.Arguments("app", []string{"--enable", "extra"})
@@ -412,6 +412,9 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 			}
 			if a.Service == "core" && a.Long == "config" {
 				configHint = a.Hint
+			}
+			if a.Service == "core" && a.Long == "disable" {
+				disableHint = a.Hint
 			}
 		}
 	}}
@@ -424,5 +427,8 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 	}
 	if configHint != HintFile {
 		t.Errorf("core --config must declare HintFile: %v", configHint)
+	}
+	if disableHint != HintServiceID {
+		t.Errorf("core --disable must declare HintServiceID: %v", disableHint)
 	}
 }
