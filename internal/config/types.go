@@ -138,7 +138,7 @@ type Field struct {
 	Type      reflect.Type
 	IsSlice   bool
 	Transient bool  // dump:"-": run-scoped — excluded from --write-config output AND refused from config files
-	Allowed   []any     // closed value domain from registration metadata; values are of the field's type (element type for slices)
+	Allowed   []any // closed value domain from registration metadata; values are of the field's type (element type for slices)
 	Doc       string
 	Hint      ValueHint // advisory value denotation from registration metadata
 }
