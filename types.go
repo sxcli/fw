@@ -81,6 +81,32 @@ type Configurable interface {
 	Configured() error
 }
 
+// Translator is the seam between Tr/TrN and an i18n catalog service.
+// The core itself depends on it: a service declares
+// Provides[Translator], and the core seeds it into every closure and
+// runs its dependency subtree's Configured before anything renders —
+// on the --help and --write-config short-circuits too, which
+// otherwise run no lifecycle at all. Exactly one Translator may be
+// registered; more than one is a startup violation. --disable still
+// wins: the operator can force raw msgids.
+//
+// The contract mirrors the sink contract: the Translator must be
+// operational when Configured returns. Start and Stop are not part of
+// a Translator's job. If Configured fails, the core logs one buffered
+// warning and proceeds untranslated — translations never fail a
+// startup and never change an exit code.
+type Translator interface {
+	// Translate returns the msgid's translation for the active
+	// locale. ok == false means untranslated: Tr renders the msgid
+	// verbatim — msgids are the default text, gettext-style.
+	Translate(msgid string) (translated string, ok bool)
+	// TranslateN returns the translation of the plural pair for
+	// quantity n; the catalog's plural formula picks the form. ok ==
+	// false falls back to English rules over the msgids (n != 1
+	// selects the plural).
+	TranslateN(msgid, msgidPlural string, n int) (translated string, ok bool)
+}
+
 // ConfigurationUpdater is reserved: it will notify a service that its
 // configuration struct has been re-filled with updated values. What
 // triggers an update (file watch, signal, API) is deliberately undecided;

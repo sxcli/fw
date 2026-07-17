@@ -19,11 +19,31 @@ import (
 	"strings"
 )
 
+// activeTranslator is the Translator chosen and configured by the
+// pipeline (spec §7); nil means raw msgids. It is set during the
+// translator-first Configured pass — before any other service's
+// Configured and before anything renders — and never mutated after,
+// so goroutines started later inherit the happens-before edge from
+// the sequential lifecycle.
+var activeTranslator Translator
+
+// translate looks the msgid up in the active translator; a miss — or
+// no translator — returns the msgid itself, gettext-style.
+func translate(msgid string) string {
+	out := msgid
+	if activeTranslator != nil {
+		if s, ok := activeTranslator.Translate(msgid); ok {
+			out = s
+		}
+	}
+	return out
+}
+
 // Tr translates and formats a user-facing message. The format string is
-// the gettext msgid: translation is translate-then-format, so when
-// catalogs arrive the format is looked up first and the placeholders are
-// substituted into the translation. In the current version no catalogs
-// exist and the lookup is the identity — Tr is pure formatting — but
+// the gettext msgid: translation is translate-then-format — the format
+// is looked up in the registered Translator (when one is configured)
+// and the placeholders are substituted into the translation. Without a
+// translator the lookup is the identity — Tr is pure formatting — so
 // write formats as final, translatable English sentences.
 //
 // args are name/value pairs resolving the {name} placeholders:
@@ -41,6 +61,45 @@ import (
 // the standard tooling (msgfmt --check, Poedit, Weblate) validates
 // placeholders in translations once catalogs exist.
 func Tr(format string, args ...any) string {
+	return trFormat(translate(format), args...)
+}
+
+// TrN translates and formats a message whose shape depends on a
+// quantity: msgid is the singular form, msgidPlural the plural, both
+// English (msgids are the default text). The registered Translator's
+// catalog formula picks the target language's form — Bulgarian its
+// count form, Russian its three, Arabic its six; without a translator,
+// on a lookup miss, or when translation is degraded, the English rule
+// (n != 1) picks between the two msgids.
+//
+// The placeholder {n} is implicitly bound to n — the name "n" is
+// reserved in TrN formats, and a caller-supplied "n" pair is shadowed.
+// Other args are name/value pairs exactly as in Tr.
+//
+//	TrN("{n} window closed", "{n} windows closed", k)
+func TrN(msgid, msgidPlural string, n int, args ...any) string {
+	format := ""
+	found := false
+	if activeTranslator != nil {
+		if s, ok := activeTranslator.TranslateN(msgid, msgidPlural, n); ok {
+			format, found = s, true
+		}
+	}
+	if !found {
+		if n != 1 {
+			format = msgidPlural
+		} else {
+			format = msgid
+		}
+	}
+	// appended last: later pairs win in trFormat, so the implicit
+	// binding shadows any caller-supplied "n"
+	return trFormat(format, append(args, "n", n)...)
+}
+
+// trFormat is the placeholder scanner shared by Tr and TrN; format is
+// already translated.
+func trFormat(format string, args ...any) string {
 	var values map[string]any
 	for i := 0; i+1 < len(args); i += 2 {
 		if name, ok := args[i].(string); ok {

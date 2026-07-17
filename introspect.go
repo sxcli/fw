@@ -145,7 +145,7 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 			err = errors.Join(c.All()...)
 			fallback := &fail.Collector{}
 			var core config.Core
-			res := graph.Resolve(fallback, i.rt.reg, appletID, i.rt.alwaysOnIDs(), graph.Controls{})
+			res := graph.Resolve(fallback, i.rt.reg, appletID, i.rt.seedIDs(), graph.Controls{})
 			if fallback.Len() == 0 {
 				var members []*registry.Descriptor
 				for _, m := range res.Ordered {

@@ -155,7 +155,7 @@ func newWorld(t *testing.T, argv []string, files map[string]string, env map[stri
 		},
 		openPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
 	}
-	t.Cleanup(func() { positionals = nil })
+	t.Cleanup(func() { positionals = nil; activeTranslator = nil })
 	return w
 }
 

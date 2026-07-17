@@ -52,6 +52,7 @@ func Positionals() []string {
 var alwaysOnType = reflect.TypeOf((*AlwaysOn)(nil)).Elem()
 var handlerType = reflect.TypeOf((*slog.Handler)(nil)).Elem()
 var providerType = reflect.TypeOf((*ConfigFormatProvider)(nil)).Elem()
+var translatorType = reflect.TypeOf((*Translator)(nil)).Elem()
 
 // run is the whole pipeline; Main wraps it with the process exit.
 // Framework-level failures exit 2; otherwise the exit code is the
@@ -65,6 +66,18 @@ func run(rt *runtime) int {
 	// the core's own service: the read-only composition view, cold
 	// unless something injects it
 	rt.reg.Register(introspectionID, &Introspector{rt: rt}, registry.Options{})
+	// the core's translator dependency: exactly one service may
+	// provide it (spec §7); two catalog systems in one binary is a
+	// developer error, reported like every other violation
+	for _, d := range rt.reg.All() {
+		if providesType(d, translatorType) {
+			if rt.translatorID == "" {
+				rt.translatorID = d.ID
+			} else {
+				rt.c.Fail("services %q and %q both provide Translator; a binary has exactly one", rt.translatorID, d.ID)
+			}
+		}
+	}
 	if rt.c.Len() > 0 {
 		rt.report(buffer)
 	} else if appletID, applet, args, ok := rt.dispatch(); ok {
@@ -204,7 +217,7 @@ func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invo
 		p.ctl = rt.controls(c, p.core)
 	}
 	if c.Len() == before {
-		seeds := append(rt.alwaysOnIDs(), rt.providerSeeds(p.files)...)
+		seeds := append(rt.seedIDs(), rt.providerSeeds(p.files)...)
 		p.res = graph.Resolve(c, rt.reg, appletID, seeds, p.ctl)
 		if c.Len() == before && !closureHasSink(p.res) {
 			if _, registered := rt.reg.ByID("console"); registered && !contains(p.core.Disable, "console") {
@@ -240,12 +253,13 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 		loaded := p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 {
 			positionals = loaded.Positionals
+			pre := rt.prepareTranslator(p.res, p.ctl)
 			if p.core.Help {
 				code = rt.help(p.sch)
 			} else if p.core.WriteConfig {
 				code = rt.writeConfig(p.sch, p.core.Config, p.src)
 			} else {
-				code = rt.lifecycle(buffer, p.res, applet, contains(p.core.Disable, "console"))
+				code = rt.lifecycle(buffer, p.res, applet, contains(p.core.Disable, "console"), pre)
 			}
 		}
 	}
@@ -255,18 +269,93 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 	return code
 }
 
+// prepared records the outcome of the translator-first Configured
+// pass: members already configured (skipped by the lifecycle's own
+// Configured loop) and the degraded translator itself (skipped
+// entirely — an unconfigured translator must not be started).
+type prepared struct {
+	configured map[string]bool
+	skip       map[string]bool
+}
+
+func (p *prepared) isConfigured(id string) bool {
+	return p != nil && p.configured[id]
+}
+
+func (p *prepared) isSkipped(id string) bool {
+	return p != nil && p.skip[id]
+}
+
+// prepareTranslator runs Inject + Configured over the registered
+// Translator's dependency subtree before anything renders — on the
+// help/write-config short-circuits this is the only lifecycle that
+// happens (spec §7). The translator's own failure degrades quietly:
+// one buffered warning, raw msgids, never a failed startup. A failing
+// subtree DEPENDENCY is left unmarked — the main lifecycle re-runs
+// its Configured and reports the failure under the normal fatal
+// rules; only translation degrades silently, not services. The main
+// Inject re-injects subtree members harmlessly (same instances into
+// the same fields, resolved under the same controls).
+func (rt *runtime) prepareTranslator(res graph.Result, ctl graph.Controls) *prepared {
+	var out *prepared
+	inClosure := false
+	for _, m := range res.Ordered {
+		if m.Desc.ID == rt.translatorID {
+			inClosure = true
+		}
+	}
+	if rt.translatorID != "" && inClosure {
+		sub := &fail.Collector{}
+		subRes := graph.Resolve(sub, rt.reg, rt.translatorID, nil, ctl)
+		subRes.Inject(sub)
+		if sub.Len() == 0 {
+			out = &prepared{configured: map[string]bool{}, skip: map[string]bool{}}
+			ok := true
+			for i := 0; i < len(subRes.Ordered) && ok; i++ {
+				m := subRes.Ordered[i]
+				if c, isConfigurable := m.Desc.Instance.(Configurable); isConfigurable {
+					if err := c.Configured(); err == nil {
+						out.configured[m.Desc.ID] = true
+					} else {
+						ok = false
+						if m.Desc.ID == rt.translatorID {
+							slog.Warn("translator unavailable, proceeding untranslated", "service", m.Desc.ID, "error", err)
+							out.skip[m.Desc.ID] = true
+						}
+					}
+				}
+			}
+			if ok {
+				for _, m := range subRes.Ordered {
+					if m.Desc.ID == rt.translatorID {
+						if tr, isTranslator := m.Desc.Instance.(Translator); isTranslator {
+							activeTranslator = tr
+						}
+					}
+				}
+			}
+		} else {
+			slog.Warn("translator subtree unresolvable, proceeding untranslated", "service", rt.translatorID)
+		}
+	}
+	return out
+}
+
 // lifecycle drives inject → Configured → log swap → Start → applet →
 // reverse Stop. Failures before the swap are collected and reported
-// with the buffered logs; failures after it are logged live.
-func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Applet, silence bool) int {
+// with the buffered logs; failures after it are logged live. Members
+// the translator-first pass already configured are not re-Configured;
+// a degraded translator is skipped entirely.
+func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Applet, silence bool, pre *prepared) int {
 	code := 2
 	res.Inject(rt.c)
 	if rt.c.Len() == 0 {
 		configured := true
 		for i := 0; i < len(res.Ordered) && configured; i++ {
-			if c, ok := res.Ordered[i].Desc.Instance.(Configurable); ok {
+			id := res.Ordered[i].Desc.ID
+			if c, ok := res.Ordered[i].Desc.Instance.(Configurable); ok && !pre.isConfigured(id) && !pre.isSkipped(id) {
 				if err := c.Configured(); err != nil {
-					rt.c.Fail("service %q: %v", res.Ordered[i].Desc.ID, err)
+					rt.c.Fail("service %q: %v", id, err)
 					configured = false
 				}
 			}
@@ -286,7 +375,7 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 			var started []*graph.Member
 			healthy := true
 			for i := 0; i < len(res.Ordered) && healthy; i++ {
-				if s, ok := res.Ordered[i].Desc.Instance.(Starter); ok {
+				if s, ok := res.Ordered[i].Desc.Instance.(Starter); ok && !pre.isSkipped(res.Ordered[i].Desc.ID) {
 					if err := s.Start(); err == nil {
 						started = append(started, &res.Ordered[i])
 					} else {
@@ -408,6 +497,17 @@ func (rt *runtime) providerSeeds(files *config.Files) []string {
 				out = append(out, d.ID)
 			}
 		}
+	}
+	return out
+}
+
+// seedIDs returns the closure seeds every invocation gets: AlwaysOn
+// services plus the registered Translator, which is the core's own
+// dependency (spec §7).
+func (rt *runtime) seedIDs() []string {
+	out := rt.alwaysOnIDs()
+	if rt.translatorID != "" {
+		out = append(out, rt.translatorID)
 	}
 	return out
 }

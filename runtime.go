@@ -29,21 +29,22 @@ import (
 // hermetic tests. Main builds the production one from the package
 // globals and the platform layer.
 type runtime struct {
-	reg        *registry.Registry
-	c          *fail.Collector
-	argv       []string
-	lookupEnv  func(string) (string, bool)
-	stdout     io.Writer
-	stderr     io.Writer
-	locations  func(appletID string) []config.Location
-	stat       func(string) (int64, error)
-	lstat      func(string) error
-	open       func(string) (io.ReadCloser, error)
-	openPinned func(string) (io.ReadCloser, error)
-	suppressed []string
-	maxConfig  int64            // config file size cap; <=0 → the 1 MiB default
-	execApplet func(Applet) int // nil → applet.Run(); the SCM handler overrides
-	reported   bool
+	reg          *registry.Registry
+	c            *fail.Collector
+	argv         []string
+	lookupEnv    func(string) (string, bool)
+	stdout       io.Writer
+	stderr       io.Writer
+	locations    func(appletID string) []config.Location
+	stat         func(string) (int64, error)
+	lstat        func(string) error
+	open         func(string) (io.ReadCloser, error)
+	openPinned   func(string) (io.ReadCloser, error)
+	suppressed   []string
+	maxConfig    int64            // config file size cap; <=0 → the 1 MiB default
+	execApplet   func(Applet) int // nil → applet.Run(); the SCM handler overrides
+	reported     bool
+	translatorID string // id of the sole Provides[Translator] service, "" = none
 }
 
 func productionRuntime(argv []string, execApplet func(Applet) int) *runtime {
