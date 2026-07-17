@@ -470,13 +470,21 @@ init() registrations → Main()
      (core + every closure member); unknown argument = error
   7. fill each closure member's config struct (in place, merged values)
   8. inject dependency fields
-  9. Configured() on each Configurable, dependency order
+  9. Configured() on each Configurable, dependency order — the
+    registered Translator's dependency subtree always first (§7),
+    so every later Configured may already render translated text
  10. assemble log multihandler, replay startup buffer, swap slog default
  11. Start() on each Starter, dependency order, sequential
  12. code = applet.Run()          (SCM mode: applet.Execute(...))
  13. Stop() on each started Starter, reverse start order
  14. os.Exit(code)
 ```
+
+Both short-circuit paths below first run Inject + `Configured` for
+the registered Translator's dependency subtree (§7) — the only
+lifecycle they execute — so their output renders translated; a
+translator failure degrades quietly to msgids and the short-circuit
+proceeds.
 
 `--write-config` short-circuits after step 7's merge: write the merged
 config to the `--config` target (format chosen by the file extension via a
@@ -830,9 +838,68 @@ up before substitution, and locale selection follows gettext conventions
 (`LANGUAGE`/`LC_ALL`/`LANG`). The `{name}` placeholder syntax matches
 gettext's `python-brace-format` flag, so standard tooling (`msgfmt
 --check`, Poedit, Weblate) validates placeholders in translations.
-`usage:` strings join the same `.pot` extraction set. v1 ships the
-identity lookup — pure formatting. Plural support (`TrN`, gettext
-`ngettext`/`Plural-Forms`) is a future addition.
+`usage:` strings join the same `.pot` extraction set.
+
+### The Translator seam
+
+```go
+type Translator interface {
+    Translate(msgid string) (translated string, ok bool)
+    TranslateN(msgid, msgidPlural string, n int) (translated string, ok bool)
+}
+
+func TrN(msgid, msgidPlural string, n int, args ...any) string
+```
+
+The core itself depends on the translator — it is a core facility
+discovered through the registry, not an applet dependency:
+
+- A service declares `Provides[Translator]`. **Exactly one** may be
+  registered — more than one is a startup violation (a developer
+  error: two catalog systems linked into one binary).
+- If present, the core **seeds it into every closure**; no `AlwaysOn`
+  declaration is needed or wanted. `--disable` still wins: the
+  operator can force raw msgids, exactly as sinks can be silenced.
+- **Configured-first, everywhere output renders**: the translator's
+  dependency subtree gets Inject + `Configured` before anything is
+  printed — first in the ordering on normal runs, and on both
+  short-circuit paths (`--help`, `--write-config`), which otherwise
+  run no lifecycle at all. Full config citizenship follows: locale
+  overrides and catalog knobs are ordinary config fields with args/
+  env/file precedence, visible in help, written by write-config.
+- The contract mirrors the sink contract: **operational when
+  Configured returns**. `Start`/`Stop` are not part of a Translator's
+  job.
+- **Failure is quiet degradation**: if the translator's `Configured`
+  fails, the core logs one buffered warning and proceeds untranslated
+  — translations never fail a startup and never change an exit code.
+  (The multiplicity violation stays fatal; that one is a developer
+  mistake, not a locale problem.)
+- Lookup is translate-then-format: `Tr` looks the raw format string
+  up as the msgid and runs the placeholder scan over the translation;
+  a translation with wrong placeholders degrades to verbatim braces,
+  never breaks.
+- `TrN` is the plural authoring surface, present from day one so no
+  message is ever written singular-only (retrofitting plurals means
+  touching every call site and invalidating catalogs). gettext
+  parameter order; `{n}` is implicitly bound to the quantity (a
+  caller-supplied "n" pair is shadowed; documented as reserved); on a
+  missing translator, a `TranslateN` miss, or degradation the English
+  rule picks between the msgids (`n != 1`) — msgids are
+  English-shaped by doctrine, so the fallback is always coherent. The
+  catalog's `Plural-Forms` formula (evaluated by the i18n module, not
+  the core) picks the form otherwise — Bulgarian gets its count form,
+  Russian its three forms, Arabic its six.
+
+Documented edges: dispatch-failure usage renders msgids (no applet id
+yet — nothing to fill or configure); `Introspector.Arguments` stays
+zero-side-effect and never runs `Configured`, so completion
+descriptions use whatever translator state exists at query time.
+
+Catalog loading (`.mo` parsing, locale-chain selection, embedded-FS
+handoff, the `Plural-Forms` expression evaluator) is the separate
+`sxcli.dev/i18n` module — the ecosystem pattern, again: the core owns
+the seam, the module owns gettext.
 
 ## 8. Testing Strategy
 
@@ -860,8 +927,7 @@ identity lookup — pure formatting. Plural support (`TrN`, gettext
 | --- | --- |
 | `ConfigurationUpdated` trigger (file watch? signal? API?) | interface reserved, semantics open — but constrained: a reload only re-fills config values of closure members; the graph is immutable once resolved (no add/remove/rewire, ever) |
 | Terminal UI provider | concept named, comes after v1 |
-| i18n providers (gettext `.po`/`.mo` catalog loading, locale selection) | gettext is the decided model; `Tr()`/`usage` are the extraction sources, format strings are msgids |
-| `TrN` plural support (gettext `ngettext`/`Plural-Forms`) | future addition alongside catalog providers |
+| i18n catalog module (gettext `.po`/`.mo` loading, locale chain, `Plural-Forms` evaluator, embedded-FS handoff) | the core seam (Translator, TrN, seeding, Configured-first) is DONE — see §7; the catalog implementation is the separate `sxcli.dev/i18n` module, next in line |
 | Demo applet | undecided; will not mirror busybox applets |
 | Positional parsing/routing | positionals collected, routing open |
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
