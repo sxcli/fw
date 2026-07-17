@@ -178,7 +178,7 @@ func TestSliceGathersLateJoiners(t *testing.T) {
 	r := newRegistry()
 	r.Register("appseeded", &appSeeded{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType)) // joins via always-on, not via the seed list
+	r.Register("workerb", &workerB{}, provides(workerType)) // joins via injection, not via the seed list
 	r.Register("storea", &storeA{}, provides(storageType))
 	res := mustResolve(t, r, "appseeded", []string{"workerb"}, Controls{})
 	m := res.Ordered[position(t, res, "appseeded")]
@@ -369,18 +369,18 @@ func TestSelfLoopIsReported(t *testing.T) {
 	}
 }
 
-func TestAlwaysOnJoinsAndDisabledAlwaysOnSkips(t *testing.T) {
+func TestSeedsJoinAndDisabledSeedsSkip(t *testing.T) {
 	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
 	res := mustResolve(t, r, "app", []string{"storea"}, Controls{})
 	if len(res.Ordered) != 3 {
-		t.Errorf("always-on must join the closure: %v", ids(res))
+		t.Errorf("a seed must join the closure: %v", ids(res))
 	}
 	res = mustResolve(t, r, "app", []string{"storea"}, Controls{Disable: []string{"storea"}})
 	if len(res.Ordered) != 2 {
-		t.Errorf("disabled always-on must be skipped: %v", ids(res))
+		t.Errorf("a disabled seed must be skipped: %v", ids(res))
 	}
 }
 

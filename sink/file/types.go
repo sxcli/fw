@@ -15,7 +15,7 @@
 // Package file provides the log-file sink: a slog.Handler service
 // writing text or json records to an append-only file. It is an
 // ordinary service — cold until an applet requires it or the operator
-// enables it (core `enable`) — never always-on:
+// enables it (core `enable`), exactly like the console sink now:
 //
 //	import _ "sxcli.dev/fw/sink/file"
 //	// then: mybox applet --enable logfile --logfile-path /var/log/box.log

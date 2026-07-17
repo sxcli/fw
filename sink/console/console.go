@@ -28,10 +28,9 @@ func init() {
 	c := &Console{cfg: Config{Level: "info", Format: "text", Output: "stderr"}}
 	sxclifw.Register("console", c,
 		sxclifw.Provides[slog.Handler](),
-		sxclifw.Provides[sxclifw.AlwaysOn](),
 		sxclifw.WithConfig(&c.cfg),
 		sxclifw.WithMetadata(&sxclifw.Metadata{
-			Description: "console log sink: writes slog records to stderr (default) or stdout; always-on so a binary has sane log output with no wiring",
+			Description: "console log sink: writes slog records to stderr (default) or stdout; opt-in — enable it with --enable console or a dependency, otherwise the framework's raw stderr fallback applies",
 			Fields: map[string]any{
 				"Level": sxclifw.FieldMetadata[string]{
 					// deliberately no Allowed: slog accepts offsets like

@@ -49,7 +49,6 @@ func Positionals() []string {
 	return positionals
 }
 
-var alwaysOnType = reflect.TypeOf((*AlwaysOn)(nil)).Elem()
 var handlerType = reflect.TypeOf((*slog.Handler)(nil)).Elem()
 var providerType = reflect.TypeOf((*ConfigFormatProvider)(nil)).Elem()
 var translatorType = reflect.TypeOf((*Translator)(nil)).Elem()
@@ -219,12 +218,6 @@ func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invo
 	if c.Len() == before {
 		seeds := append(rt.seedIDs(), rt.providerSeeds(p.files)...)
 		p.res = graph.Resolve(c, rt.reg, appletID, seeds, p.ctl)
-		if c.Len() == before && !closureHasSink(p.res) {
-			if _, registered := rt.reg.ByID("console"); registered && !contains(p.core.Disable, "console") {
-				p.ctl.Enable = append(p.ctl.Enable, "console")
-				p.res = graph.Resolve(c, rt.reg, appletID, seeds, p.ctl)
-			}
-		}
 	}
 	if c.Len() == before {
 		for _, m := range p.res.Ordered {
@@ -259,7 +252,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 			} else if p.core.WriteConfig {
 				code = rt.writeConfig(p.sch, p.core.Config, p.src)
 			} else {
-				code = rt.lifecycle(buffer, p.res, applet, contains(p.core.Disable, "console"), pre)
+				code = rt.lifecycle(buffer, p.res, applet, pre)
 			}
 		}
 	}
@@ -346,7 +339,7 @@ func (rt *runtime) prepareTranslator(res graph.Result, ctl graph.Controls) *prep
 // with the buffered logs; failures after it are logged live. Members
 // the translator-first pass already configured are not re-Configured;
 // a degraded translator is skipped entirely.
-func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Applet, silence bool, pre *prepared) int {
+func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Applet, pre *prepared) int {
 	code := 2
 	res.Inject(rt.c)
 	if rt.c.Len() == 0 {
@@ -367,7 +360,7 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 			for _, from := range res.UnusedOverrides {
 				slog.Warn("override matched no dependency", "from", from)
 			}
-			multi := rt.assembleSinks(res, silence)
+			multi := rt.assembleSinks(res)
 			if err := buffer.Replay(multi); err != nil {
 				fmt.Fprintf(rt.stderr, "log replay: %v\n", err)
 			}
@@ -408,10 +401,12 @@ func (rt *runtime) runApplet(applet Applet) int {
 }
 
 // assembleSinks builds the multihandler over the closure's sinks in
-// start order. Zero sinks means: deliberate silence when the console
-// was explicitly disabled, otherwise the last-resort stderr handler
-// (console sink not linked into the binary).
-func (rt *runtime) assembleSinks(res graph.Result, silence bool) *logging.Multi {
+// start order. A closure with no sink falls to the last-resort raw
+// stderr handler — the framework's unconditional logging floor. There
+// is no silence switch: a binary that wants no output redirects stderr
+// itself. Richer logging is opt-in — the console sink (or any other)
+// is enabled with --enable or pulled by a genuine dependency.
+func (rt *runtime) assembleSinks(res graph.Result) *logging.Multi {
 	var sinks []slog.Handler
 	for _, m := range res.Ordered {
 		if providesType(m.Desc, handlerType) {
@@ -420,7 +415,7 @@ func (rt *runtime) assembleSinks(res graph.Result, silence bool) *logging.Multi 
 			}
 		}
 	}
-	if len(sinks) == 0 && !silence {
+	if len(sinks) == 0 {
 		sinks = append(sinks, slog.NewTextHandler(rt.stderr, nil))
 	}
 	return logging.NewMulti(sinks...)
@@ -501,24 +496,13 @@ func (rt *runtime) providerSeeds(files *config.Files) []string {
 	return out
 }
 
-// seedIDs returns the closure seeds every invocation gets: AlwaysOn
-// services plus the registered Translator, which is the core's own
-// dependency (spec §7).
+// seedIDs returns the closure seeds every invocation gets beyond the
+// applet: the registered Translator, the core's own dependency (spec
+// §7). Format providers in use are seeded separately in plan().
 func (rt *runtime) seedIDs() []string {
-	out := rt.alwaysOnIDs()
+	var out []string
 	if rt.translatorID != "" {
 		out = append(out, rt.translatorID)
-	}
-	return out
-}
-
-// alwaysOnIDs returns the ids of every service declaring AlwaysOn.
-func (rt *runtime) alwaysOnIDs() []string {
-	var out []string
-	for _, d := range rt.reg.All() {
-		if providesType(d, alwaysOnType) {
-			out = append(out, d.ID)
-		}
 	}
 	return out
 }
@@ -598,14 +582,6 @@ func providesType(d *registry.Descriptor, t reflect.Type) bool {
 	out := false
 	for _, it := range d.Provides {
 		out = out || it == t
-	}
-	return out
-}
-
-func closureHasSink(res graph.Result) bool {
-	out := false
-	for _, m := range res.Ordered {
-		out = out || providesType(m.Desc, handlerType)
 	}
 	return out
 }

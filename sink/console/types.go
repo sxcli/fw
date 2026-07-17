@@ -13,9 +13,10 @@
 // limitations under the License.
 
 // Package console provides the console log sink: a slog.Handler service
-// writing text or json records to stderr (default) or stdout. It
-// registers itself as always-on, so a binary that imports it has sane
-// log output with no further wiring:
+// writing text or json records to stderr (default) or stdout. It is an
+// opt-in service — enabled with --enable console or pulled by a
+// dependency; a binary that imports it but enables nothing falls to
+// the framework's raw stderr logging floor:
 //
 //	import _ "sxcli.dev/fw/sink/console"
 package console
@@ -41,6 +42,6 @@ type Console struct {
 	inner slog.Handler
 }
 
-var _ sxclifw.AlwaysOn = (*Console)(nil)
+var _ sxclifw.Starter = (*Console)(nil)
 var _ sxclifw.Configurable = (*Console)(nil)
 var _ slog.Handler = (*Console)(nil)

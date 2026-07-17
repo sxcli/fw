@@ -54,7 +54,7 @@ sxcli-fw/
 │   ├── config/           — file discovery, source merging, arg/env parsing
 │   └── platform/         — platform layer internals if they outgrow root files
 ├── sink/
-│   ├── console/          — slog.Handler → terminal (registers as AlwaysOn)
+│   ├── console/          — slog.Handler → terminal (opt-in sink)
 │   ├── file/             — slog.Handler → file
 │   └── syslog/           — slog.Handler → syslog/journald
 └── configfmt/
@@ -92,25 +92,6 @@ type Starter interface {
     Start() error
 }
 
-// AlwaysOn services are active regardless of the applet's dependency
-// closure. Embeds Starter, guaranteeing a full lifecycle. Structurally
-// identical to Starter — always-on status comes from the explicit
-// Provides[AlwaysOn]() declaration at registration (no marker method, so
-// third-party packages can implement it).
-//
-// WARNING: an AlwaysOn service is configured, started, and stopped for
-// EVERY applet in the binary, whether that applet needs it or not. It
-// taxes every invocation with its startup cost, its configuration
-// surface, and its failure modes. It SHOULD NOT be used lightly, if at
-// all — almost every service belongs in the normal dependency closure
-// instead. AlwaysOn exists for framework-level infrastructure (log
-// sinks) and little else. The framework reserves the right to disable
-// or remove AlwaysOn support in a future version; do not build designs
-// that depend on it.
-type AlwaysOn interface {
-    Starter
-}
-
 // Implemented by services owning a Configuration struct. The core fills the
 // registered struct in place, then calls Configured() as notification —
 // there is never a second config instance.
@@ -146,8 +127,6 @@ type SCMApplet interface {
 
 ### Enforced rules
 
-- A service registered with `Provides[AlwaysOn]()` receives
-  Configured/Start/Stop on every invocation, in every closure.
 - An applet (implements `Applet`; `SCMApplet` extends it) that also
   implements `Starter`/`Stopper` is a registration error.
 - `Configured()` is called in dependency order on every closure member that
@@ -339,7 +318,7 @@ argument schema the applet would have if invoked with `args`. It runs
 the real planning pipeline (the shared `plan()` also used by
 execution, so introspection truth cannot drift): lenient core peek
 honoring an in-line `--config`, file loading, controls from every
-source, closure resolution including the console fallback, schema
+source, closure resolution, schema
 construction — with **zero side effects**: nothing is written, ejected
 or mutated; `--write-config`/`--help` inside `args` are inert data
 (beyond the write-config missing-target source selection). Callers
@@ -375,7 +354,7 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
   planned boolean preference syntax).
 - Slice fields: **interface element types only**. Injection delivers *all
   enabled* matching services in registration order — with listed IDs the
-  slice may contain *more* than listed (always-on services and other
+  slice may contain *more* than listed (seeded services and other
   closure members of that type are included too). A type-only slice pulls
   **every** registered service of that type into the closure; listing IDs
   is how to narrow that.
@@ -461,7 +440,8 @@ init() registrations → Main()
      unknown arguments ignored in this pass
   4. config file discovery and loading (format providers used pre-lifecycle
      as pure stream transforms)
-  5. closure resolution: applet + AlwaysOn + transitive deps,
+  5. closure resolution: applet + seeds (the registered translator, the
+     format providers in use) + transitive deps,
      with disable/enable/override applied; dependency-ordered via SCC
      condensation (cycles are warnings, registration order within);
      cold services are ejected from the registry so their instances
@@ -698,6 +678,13 @@ instead of wondering why it is ignored. Suppression is a build-time
 property of the binary (called from `main()`/`init()` before `Main`),
 not runtime configuration.
 
+Noted interaction: with sinks opt-in, a binary that suppresses
+`FeatureEnable` leaves the operator no path to any linked sink — the
+logging floor is all they get unless the developer wires a sink in as
+a code-level dependency. That is the point of Suppress (the builder's
+deliberate lockdown), stated here so nobody discovers it in
+production.
+
 Misusing the build-time API is itself a collected startup violation,
 never silently ignored: `MaxConfigSize` with a non-positive limit,
 `Suppress` of the default-off `FeatureSCMDebug`, `Enable` of a
@@ -723,8 +710,8 @@ extension matched an actually loaded file (or the `--write-config`
 target) is added as a closure seed — it receives the normal lifecycle and
 survives ejection, keeping a future value-only config reload able to
 re-read the file. Unused providers stay cold and are ejected. A provider
-wanting an unconditional lifecycle may still declare `Provides[AlwaysOn]()`
-itself.
+wanting an unconditional lifecycle declares a dependency or is forced in
+with `--enable`.
 
 ### Argument syntax
 
@@ -761,8 +748,11 @@ itself.
 Built on `log/slog`. A log sink is a service declaring
 `Provides[slog.Handler]()` — console, file, syslog/journald ship as
 subpackages, each with its own config struct. Sink activation falls out of
-the normal machinery (imports, closure, enable/disable); the console sink
-registers itself as `AlwaysOn` so there is sane output by default.
+the normal machinery (imports, closure, enable/disable): a sink is used
+when it is `--enable`d or pulled by a genuine dependency, and stays cold
+otherwise. No sink is on by default — the framework guarantees a raw
+stderr floor instead (below), and the console sink is opt-in like every
+other.
 
 The core assembles a **multihandler** over every enabled sink:
 `Enabled` = any child accepts; `Handle` fans out to accepting children
@@ -804,13 +794,16 @@ collecting every record emitted during startup. After the `Configured`
 phase, the multihandler is assembled, the buffer **replays** into it, and
 the default swaps over.
 
-- Zero enabled `slog.Handler` services after resolution → the core
-  force-pulls the console sink into the closure — **unless the operator
-  explicitly disabled it**: disabling every sink means deliberate
-  silence, respected as stated ("your choice, your problem"). Use
-  `--console-level error` for quiet-not-mute.
-- Console sink not even registered (package never imported) → last resort
-  is a plain stderr text handler.
+- Zero `slog.Handler` services in the closure → the core's unconditional
+  **logging floor**: a plain stderr text handler. This is the default —
+  a binary that links no sink, or links sinks but enables none, still
+  gets startup and runtime records on stderr. Enabling a sink
+  (`--enable console`, or a dependency) replaces the floor with that
+  sink's configurable output.
+- There is **no silence switch**. The floor is always present; a binary
+  that wants no output redirects its stderr (`2>/dev/null`) — the shell
+  already does this, the framework does not reinvent it. Use
+  `--console-level error` (with console enabled) for quiet-not-mute.
 - Startup failure before the swap → the buffer flushes to stderr so
   diagnostics are never swallowed.
 
@@ -857,9 +850,9 @@ discovered through the registry, not an applet dependency:
 - A service declares `Provides[Translator]`. **Exactly one** may be
   registered — more than one is a startup violation (a developer
   error: two catalog systems linked into one binary).
-- If present, the core **seeds it into every closure**; no `AlwaysOn`
-  declaration is needed or wanted. `--disable` still wins: the
-  operator can force raw msgids, exactly as sinks can be silenced.
+- If present, the core **seeds it into every closure** as its own
+  dependency. `--disable` still wins: the operator can force raw
+  msgids, exactly as `--disable` drops any other service.
 - **Configured-first, everywhere output renders**: the translator's
   dependency subtree gets Inject + `Configured` before anything is
   printed — first in the ordering on normal runs, and on both

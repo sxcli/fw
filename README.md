@@ -25,7 +25,7 @@ import (
 
 	fw "sxcli.dev/fw"
 	_ "sxcli.dev/fw/configfmt/yaml"  // optional: yaml config files
-	_ "sxcli.dev/fw/sink/console"    // logging to stderr, on by default
+	_ "sxcli.dev/fw/sink/console"    // optional: configurable console sink
 )
 
 type Config struct {
@@ -140,11 +140,15 @@ arguments.
 
 ## Logging
 
-Log sinks are ordinary services implementing `slog.Handler`. The
-console sink (stderr, text or json) is on by default when imported;
-file and syslog/journald sinks activate per invocation:
+Logging always works: with no sink enabled, records land on stderr
+through a built-in plain handler — the logging floor. (No silence
+switch either; redirect stderr if you want quiet.) Richer sinks are
+ordinary services implementing `slog.Handler`, activated per
+invocation — console (stderr/stdout, text or json), file, and
+syslog/journald:
 
 ```console
+$ mytool --enable console --console-format json
 $ mytool --enable logfile --logfile-path /var/log/mytool.log
 $ mytool --enable syslog          # journald picks this up under systemd
 ```

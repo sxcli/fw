@@ -259,15 +259,30 @@ func TestHelpListsClosureArguments(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("help exit %d\n%s", r.code, r.stderr)
 	}
-	for _, want := range []string{"--note, -n", "a note to print", "--config, -c", "--console-level"} {
+	for _, want := range []string{"--note, -n", "a note to print", "--config, -c"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("help misses %q:\n%s", want, r.stdout)
 		}
 	}
+	// console is opt-in: its arguments enter the schema only when it is
+	// enabled or depended upon
+	r = box(t, "single", nil, "", "--enable", "console", "--help")
+	if !strings.Contains(r.stdout, "--console-level") {
+		t.Errorf("enabled console's arguments must appear in help:\n%s", r.stdout)
+	}
+}
+
+// The framework's logging floor: with no sink in the closure, records
+// still reach stderr through the raw fallback handler.
+func TestLoggingFloorWritesStderr(t *testing.T) {
+	r := box(t, "single", nil, "", "--note", "logged")
+	if !strings.Contains(r.stderr, "probe ran") || !strings.Contains(r.stderr, "note=logged") {
+		t.Errorf("raw stderr floor output missing:\n%s", r.stderr)
+	}
 }
 
 func TestConsoleSinkWritesStderr(t *testing.T) {
-	r := box(t, "single", nil, "", "--note", "logged")
+	r := box(t, "single", nil, "", "--enable", "console", "--note", "logged")
 	if !strings.Contains(r.stderr, "probe ran") || !strings.Contains(r.stderr, "note=logged") {
 		t.Errorf("console sink output missing:\n%s", r.stderr)
 	}
@@ -317,7 +332,7 @@ func TestLogfileSinkEndToEnd(t *testing.T) {
 }
 
 func TestSinkEnumsAreEnforced(t *testing.T) {
-	r := box(t, "single", nil, "", "--console-output", "printer")
+	r := box(t, "single", nil, "", "--enable", "console", "--console-output", "printer")
 	if r.code != 2 || !strings.Contains(r.stderr, "not among the allowed values") {
 		t.Errorf("console output domain must be enforced: exit %d\n%s", r.code, r.stderr)
 	}
@@ -326,7 +341,7 @@ func TestSinkEnumsAreEnforced(t *testing.T) {
 		t.Errorf("logfile format domain must be enforced: exit %d\n%s", r.code, r.stderr)
 	}
 	// open domains stay open: slog level offsets still work
-	if r = box(t, "single", nil, "", "--console-level", "warn+2"); r.code != 0 {
+	if r = box(t, "single", nil, "", "--enable", "console", "--console-level", "warn+2"); r.code != 0 {
 		t.Errorf("level must remain an open domain: exit %d\n%s", r.code, r.stderr)
 	}
 }

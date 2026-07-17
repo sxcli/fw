@@ -23,12 +23,12 @@ import (
 )
 
 // Resolve computes the composition of one invocation: seed the closure
-// with the dispatched applet, the always-on services and every forced
-// Enable, expand it through the inject fields, resolve every member's
+// with the dispatched applet, the caller-supplied seed ids and every
+// forced Enable, expand it through the inject fields, resolve every member's
 // bindings against the final closure, and order it dependencies-first.
 // Violations are recorded into c; when c grew, the Result must not be
 // used.
-func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, alwaysOn []string, ctl Controls) Result {
+func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, seedIDs []string, ctl Controls) Result {
 	r := &resolver{
 		reg:          reg,
 		c:            c,
@@ -40,7 +40,7 @@ func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, alwaysO
 	before := c.Len()
 	r.validateControls(ctl)
 	if c.Len() == before {
-		r.expand(r.seeds(appletID, alwaysOn, ctl.Enable))
+		r.expand(r.seeds(appletID, seedIDs, ctl.Enable))
 	}
 	if c.Len() == before {
 		r.order(r.bind())
@@ -83,10 +83,10 @@ func (r *resolver) validateControls(ctl Controls) {
 	}
 }
 
-// seeds returns the closure roots: the applet, every always-on service
-// and every forced Enable. Disabled always-on services are silently
-// skipped — disabling one is legitimate user intent.
-func (r *resolver) seeds(appletID string, alwaysOn []string, enable []string) []*registry.Descriptor {
+// seeds returns the closure roots: the applet, every caller-supplied
+// seed id and every forced Enable. Disabled seeds are silently skipped
+// — disabling one is legitimate user intent.
+func (r *resolver) seeds(appletID string, seedIDs []string, enable []string) []*registry.Descriptor {
 	var out []*registry.Descriptor
 	if d, ok := r.reg.ByID(appletID); ok {
 		if r.disabled[appletID] {
@@ -97,13 +97,13 @@ func (r *resolver) seeds(appletID string, alwaysOn []string, enable []string) []
 	} else {
 		r.fail("applet %q is not registered", appletID)
 	}
-	for _, id := range alwaysOn {
+	for _, id := range seedIDs {
 		if d, ok := r.reg.ByID(id); ok {
 			if !r.disabled[id] {
 				out = append(out, d)
 			}
 		} else {
-			r.fail("always-on service %q is not registered", id)
+			r.fail("seed service %q is not registered", id)
 		}
 	}
 	for _, id := range enable {

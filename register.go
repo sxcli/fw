@@ -46,8 +46,7 @@ type RegisterOption func(*registerOptions)
 // declared interfaces participate in dependency injection — a service is
 // never injected somewhere just because it accidentally satisfies an
 // interface. Declaring an interface the instance does not implement is a
-// registration error. Always-on status is declared the same way, with
-// Provides[AlwaysOn]().
+// registration error.
 func Provides[I any]() RegisterOption {
 	t := reflect.TypeOf((*I)(nil)).Elem()
 	return func(o *registerOptions) {

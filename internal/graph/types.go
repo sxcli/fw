@@ -16,7 +16,7 @@
 // dependency closure of the dispatched applet, the resolved injection
 // targets of every member, and a dependency-ordered start sequence. Like
 // the registry it is ignorant of the framework's interfaces: the applet
-// and always-on services arrive as plain ids computed by the root
+// and the seed services arrive as plain ids computed by the root
 // package.
 package graph
 

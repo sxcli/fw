@@ -48,25 +48,6 @@ type Starter interface {
 	Start() error
 }
 
-// AlwaysOn services are active regardless of the applet's dependency
-// closure. It embeds Starter, guaranteeing that an always-on service gets
-// a full lifecycle and therefore a way to be informed on stop. The
-// interface is structurally identical to Starter — always-on status comes
-// solely from the explicit Provides[AlwaysOn]() declaration at
-// registration.
-//
-// WARNING: an AlwaysOn service is configured, started, and stopped for
-// EVERY applet in the binary, whether that applet needs it or not. It
-// taxes every invocation with its startup cost, its configuration surface,
-// and its failure modes. It SHOULD NOT be used lightly, if at all — almost
-// every service belongs in the normal dependency closure instead. AlwaysOn
-// exists for framework-level infrastructure (log sinks) and little else.
-// The framework reserves the right to disable or remove AlwaysOn support
-// in a future version; do not build designs that depend on it.
-type AlwaysOn interface {
-	Starter
-}
-
 // Configurable is implemented by services that own a Configuration struct
 // (registered via WithConfig). The framework fills that registered struct
 // in place with the merged configuration (defaults, config files,
@@ -133,8 +114,8 @@ type ConfigurationUpdater interface {
 // interface, used statelessly. The provider whose extension matched an
 // actually loaded file (or the --write-config target) is pulled into the
 // closure and receives the normal lifecycle; unused providers stay cold
-// and are ejected. A provider that wants an unconditional lifecycle may
-// still declare Provides[AlwaysOn]() at registration.
+// and are ejected. A provider that wants an unconditional lifecycle
+// declares a dependency or is forced in with --enable.
 type ConfigFormatProvider interface {
 	Extensions() []string
 	ToJSON(in io.Reader) (io.Reader, error)
