@@ -68,7 +68,7 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
 	}
-	s.add(c, "core", reflect.ValueOf(core), suppress, coreMeta)
+	s.add(c, CoreID, reflect.ValueOf(core), suppress, coreMeta)
 	for _, d := range members {
 		if d.ConfigPtr != nil {
 			meta, _ := d.Metadata.(*Meta)

@@ -76,6 +76,26 @@ func (r *Registry) Register(id string, instance any, opts Options) {
 	}
 }
 
+// Virtual builds a descriptor through the registry's structural
+// machinery — dependency collection included — WITHOUT storing it: no
+// id claim, no concrete-type claim, no semantic checks. The resolver
+// takes such a descriptor as the root of a resolution (the framework
+// core's per-invocation node); it never appears in ByID or All.
+// Violations (malformed inject tags on the composed struct) are
+// recorded like any other — they are framework bugs, not user errors,
+// but silence is never the answer.
+func (r *Registry) Virtual(id string, instance any) *Descriptor {
+	var d *Descriptor
+	t := reflect.TypeOf(instance)
+	if instance != nil && t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct && !reflect.ValueOf(instance).IsNil() {
+		d = &Descriptor{ID: id, Instance: instance, Concrete: t}
+		r.collectDeps(d)
+	} else {
+		r.fail("virtual service %q: instance must be a non-nil pointer to struct", id)
+	}
+	return d
+}
+
 // ByID returns the descriptor registered under id.
 func (r *Registry) ByID(id string) (*Descriptor, bool) {
 	d, ok := r.byID[id]

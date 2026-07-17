@@ -109,9 +109,10 @@ func Register(id string, instance any, opts ...RegisterOption) {
 	defaultRegistry.Register(id, instance, registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata, Hidden: o.hidden || o.system, System: o.system})
 }
 
-// reservedCoreID is the service id under which the framework core's own
-// configuration lives; no service may claim it.
-const reservedCoreID = "core"
+// reservedCoreID is the service id of the framework core itself — its
+// config section, the virtual root of every resolution, and the
+// synthesized introspection entry; no service may claim it.
+const reservedCoreID = config.CoreID
 
 func checkReservedID(d *registry.Descriptor) error {
 	var err error

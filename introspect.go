@@ -105,7 +105,10 @@ func (i *Introspector) SingleApplet() (string, bool) {
 // Services returns the ids of every registered service — applets
 // included — in registration order.
 func (i *Introspector) Services() []string {
-	var out []string
+	// the core is a virtual root, not a registry entry — its presence
+	// here is synthesized, because it is truthfully part of every
+	// binary (spec §5)
+	out := []string{reservedCoreID}
 	for _, d := range i.rt.reg.All() {
 		out = append(out, d.ID)
 	}
@@ -145,7 +148,11 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 			err = errors.Join(c.All()...)
 			fallback := &fail.Collector{}
 			var core config.Core
-			res := graph.Resolve(fallback, i.rt.reg, appletID, i.rt.seedIDs(), graph.Controls{})
+			root := i.rt.coreRoot(fallback, appletID, nil)
+			var res graph.Result
+			if fallback.Len() == 0 {
+				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
+			}
 			if fallback.Len() == 0 {
 				var members []*registry.Descriptor
 				for _, m := range res.Ordered {
@@ -165,7 +172,9 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 // WithMetadata, or "" when it declared none (or the id is unknown).
 func (i *Introspector) Describe(serviceID string) string {
 	out := ""
-	if d, registered := i.rt.reg.ByID(serviceID); registered {
+	if serviceID == reservedCoreID {
+		out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
+	} else if d, registered := i.rt.reg.ByID(serviceID); registered {
 		if meta, has := d.Metadata.(*config.Meta); has {
 			out = meta.Description
 		}

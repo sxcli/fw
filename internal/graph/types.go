@@ -73,6 +73,7 @@ type Result struct {
 type resolver struct {
 	reg          *registry.Registry
 	c            *fail.Collector
+	root         *registry.Descriptor // the resolution root; a virtual one never appears in reg
 	disabled     map[string]bool
 	override     map[string]string
 	overrideUsed map[string]bool

@@ -119,10 +119,19 @@ func position(t *testing.T, res Result, id string) int {
 	return found
 }
 
-func mustResolve(t *testing.T, reg *registry.Registry, appletID string, alwaysOn []string, ctl Controls) Result {
+func mustResolve(t *testing.T, reg *registry.Registry, rootID string, ctl Controls) Result {
+	t.Helper()
+	root, ok := reg.ByID(rootID)
+	if !ok {
+		t.Fatalf("root %q is not registered", rootID)
+	}
+	return mustResolveRoot(t, reg, root, ctl)
+}
+
+func mustResolveRoot(t *testing.T, reg *registry.Registry, root *registry.Descriptor, ctl Controls) Result {
 	t.Helper()
 	c := &fail.Collector{}
-	res := Resolve(c, reg, appletID, alwaysOn, ctl)
+	res := Resolve(c, reg, root, ctl)
 	if c.Len() != 0 {
 		t.Fatalf("unexpected resolve errors: %v", c.All())
 	}
@@ -134,7 +143,7 @@ func TestChainOrderAndBindings(t *testing.T) {
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "app", nil, Controls{})
+	res := mustResolve(t, r, "app", Controls{})
 	if len(res.Ordered) != 3 || len(res.Cycles) != 0 {
 		t.Fatalf("got order %v, cycles %v", ids(res), res.Cycles)
 	}
@@ -152,7 +161,7 @@ func TestColdServicesStayOut(t *testing.T) {
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType)) // nothing pulls it
-	res := mustResolve(t, r, "app", nil, Controls{})
+	res := mustResolve(t, r, "app", Controls{})
 	if len(res.Ordered) != 2 {
 		t.Errorf("cold service leaked into closure: %v", ids(res))
 	}
@@ -164,7 +173,7 @@ func TestFirstRegisteredWins(t *testing.T) {
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "app", nil, Controls{})
+	res := mustResolve(t, r, "app", Controls{})
 	m := res.Ordered[position(t, res, "app")]
 	if m.Bindings[0].Targets[0].ID != "workera" {
 		t.Errorf("expected first registered match, got %q", m.Bindings[0].Targets[0].ID)
@@ -178,9 +187,9 @@ func TestSliceGathersLateJoiners(t *testing.T) {
 	r := newRegistry()
 	r.Register("appseeded", &appSeeded{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType)) // joins via injection, not via the seed list
+	r.Register("workerb", &workerB{}, provides(workerType)) // joins via Enable, not via injection
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "appseeded", []string{"workerb"}, Controls{})
+	res := mustResolve(t, r, "appseeded", Controls{Enable: []string{"workerb"}})
 	m := res.Ordered[position(t, res, "appseeded")]
 	var got []string
 	for _, target := range m.Bindings[0].Targets {
@@ -197,7 +206,7 @@ func TestBareSlicePullsAllRegistered(t *testing.T) {
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "appall", nil, Controls{})
+	res := mustResolve(t, r, "appall", Controls{})
 	if len(res.Ordered) != 4 {
 		t.Errorf("bare slice must pull every registered match: %v", ids(res))
 	}
@@ -206,7 +215,7 @@ func TestBareSlicePullsAllRegistered(t *testing.T) {
 func TestOptionalMissingIsFine(t *testing.T) {
 	r := newRegistry()
 	r.Register("appopt", &appOptional{}, registry.Options{})
-	res := mustResolve(t, r, "appopt", nil, Controls{})
+	res := mustResolve(t, r, "appopt", Controls{})
 	m := res.Ordered[0]
 	if len(m.Bindings) != 1 || len(m.Bindings[0].Targets) != 0 {
 		t.Errorf("optional unmatched field must bind empty: %+v", m.Bindings)
@@ -226,11 +235,9 @@ func TestResolutionErrors(t *testing.T) {
 		{"unknown id in tag", func(r *registry.Registry) {
 			r.Register("appbyid", &appByID{}, registry.Options{})
 		}, "appbyid", Controls{}},
-		{"unknown applet", func(r *registry.Registry) {}, "ghost", Controls{}},
-		{"disabled applet", func(r *registry.Registry) {
-			r.Register("app", &app{}, registry.Options{})
-			r.Register("workera", &workerA{}, provides(workerType))
-		}, "app", Controls{Disable: []string{"app"}}},
+		// "unknown applet" and "disabled applet" moved out of the
+		// graph: the root arrives as a descriptor, so existence and
+		// the human disabled-message are the root package's job now
 		{"disabled required by-id dependency", func(r *registry.Registry) {
 			r.Register("appbyid", &appByID{}, registry.Options{})
 			r.Register("workerb", &workerB{}, provides(workerType))
@@ -262,8 +269,12 @@ func TestResolutionErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRegistry()
 			tc.setup(r)
+			root, ok := r.ByID(tc.applet)
+			if !ok {
+				t.Fatalf("root %q is not registered", tc.applet)
+			}
 			c := &fail.Collector{}
-			Resolve(c, r, tc.applet, nil, tc.ctl)
+			Resolve(c, r, root, tc.ctl)
 			if c.Len() == 0 {
 				t.Error("expected resolve errors, got none")
 			}
@@ -277,7 +288,7 @@ func TestDisableSteersBareField(t *testing.T) {
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "app", nil, Controls{Disable: []string{"workera"}})
+	res := mustResolve(t, r, "app", Controls{Disable: []string{"workera"}})
 	m := res.Ordered[position(t, res, "app")]
 	if m.Bindings[0].Targets[0].ID != "workerb" {
 		t.Errorf("disable must steer to the next candidate, got %q", m.Bindings[0].Targets[0].ID)
@@ -290,7 +301,7 @@ func TestOverrideSubstitutes(t *testing.T) {
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "appbyid", nil, Controls{Disable: []string{"workerb"}, Override: map[string]string{"workerb": "workera"}})
+	res := mustResolve(t, r, "appbyid", Controls{Disable: []string{"workerb"}, Override: map[string]string{"workerb": "workera"}})
 	m := res.Ordered[position(t, res, "appbyid")]
 	if m.Bindings[0].Targets[0].ID != "workera" {
 		t.Errorf("override must substitute, got %q", m.Bindings[0].Targets[0].ID)
@@ -309,7 +320,7 @@ func TestUnusedOverridesAreReported(t *testing.T) {
 	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
-	res := mustResolve(t, r, "app", nil, Controls{Override: map[string]string{
+	res := mustResolve(t, r, "app", Controls{Override: map[string]string{
 		"ghost":   "workera", // unregistered key: legal rescue mapping, but unused here
 		"unfired": "workera",
 	}})
@@ -324,7 +335,7 @@ func TestEnableForcesColdService(t *testing.T) {
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType)) // cold unless enabled; drags storea
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "app", nil, Controls{Enable: []string{"workerb"}})
+	res := mustResolve(t, r, "app", Controls{Enable: []string{"workerb"}})
 	if len(res.Ordered) != 4 {
 		t.Errorf("enable must pull the service and its deps: %v", ids(res))
 	}
@@ -337,7 +348,7 @@ func TestConcreteTypeDependency(t *testing.T) {
 	r := newRegistry()
 	r.Register("appstore", &appStore{}, registry.Options{})
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "appstore", nil, Controls{})
+	res := mustResolve(t, r, "appstore", Controls{})
 	m := res.Ordered[position(t, res, "appstore")]
 	if m.Bindings[0].Targets[0].ID != "storea" {
 		t.Errorf("concrete type dependency not resolved: %+v", m.Bindings)
@@ -348,7 +359,7 @@ func TestCycleIsWarningNotError(t *testing.T) {
 	r := newRegistry()
 	r.Register("ping", &ping{}, provides(workerType))
 	r.Register("pong", &pong{}, provides(storageType))
-	res := mustResolve(t, r, "ping", nil, Controls{})
+	res := mustResolve(t, r, "ping", Controls{})
 	if len(res.Ordered) != 2 {
 		t.Fatalf("cycle members must stay in the closure: %v", ids(res))
 	}
@@ -363,24 +374,36 @@ func TestCycleIsWarningNotError(t *testing.T) {
 func TestSelfLoopIsReported(t *testing.T) {
 	r := newRegistry()
 	r.Register("selfish", &selfish{}, provides(workerType))
-	res := mustResolve(t, r, "selfish", nil, Controls{})
+	res := mustResolve(t, r, "selfish", Controls{})
 	if !reflect.DeepEqual(res.Cycles, [][]string{{"selfish"}}) {
 		t.Errorf("self-loop not reported: %v", res.Cycles)
 	}
 }
 
-func TestSeedsJoinAndDisabledSeedsSkip(t *testing.T) {
+// virtualRoot mirrors the framework's core node at graph level: a
+// required by-id edge (the applet) and an optional by-id edge (a
+// translator, a provider in use).
+type virtualRoot struct {
+	A *app    `inject:"app"`
+	S storage `inject:"storea;optional"`
+}
+
+func TestVirtualRootEdgesJoinAndDisabledOptionalSkips(t *testing.T) {
 	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "app", []string{"storea"}, Controls{})
-	if len(res.Ordered) != 3 {
-		t.Errorf("a seed must join the closure: %v", ids(res))
+	root := r.Virtual("core", &virtualRoot{})
+	res := mustResolveRoot(t, r, root, Controls{})
+	if len(res.Ordered) != 4 {
+		t.Errorf("root edges must join the closure: %v", ids(res))
 	}
-	res = mustResolve(t, r, "app", []string{"storea"}, Controls{Disable: []string{"storea"}})
-	if len(res.Ordered) != 2 {
-		t.Errorf("a disabled seed must be skipped: %v", ids(res))
+	if res.Ordered[len(res.Ordered)-1].Desc.ID != "core" {
+		t.Errorf("the root depends on everything and must order last: %v", ids(res))
+	}
+	res = mustResolveRoot(t, r, root, Controls{Disable: []string{"storea"}})
+	if len(res.Ordered) != 3 {
+		t.Errorf("a disabled optional edge must drop silently: %v", ids(res))
 	}
 }
 
@@ -390,7 +413,7 @@ func TestDiamondResolvesOnce(t *testing.T) {
 	r.Register("ping", &ping{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType)) // both need storage
 	r.Register("storea", &storeA{}, provides(storageType))
-	res := mustResolve(t, r, "appall", nil, Controls{})
+	res := mustResolve(t, r, "appall", Controls{})
 	if len(res.Ordered) != 4 {
 		t.Fatalf("diamond dependency duplicated or lost: %v", ids(res))
 	}

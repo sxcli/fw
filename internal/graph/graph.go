@@ -23,15 +23,18 @@ import (
 )
 
 // Resolve computes the composition of one invocation: seed the closure
-// with the dispatched applet, the caller-supplied seed ids and every
-// forced Enable, expand it through the inject fields, resolve every member's
-// bindings against the final closure, and order it dependencies-first.
-// Violations are recorded into c; when c grew, the Result must not be
-// used.
-func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, seedIDs []string, ctl Controls) Result {
+// with the given root descriptor and every forced Enable, expand it
+// through the inject fields, resolve every member's bindings against
+// the final closure, and order it dependencies-first. The root is any
+// descriptor — a registered service (resolving its own closure) or a
+// virtual one the caller composed (the framework's core node); it is
+// never disable-checked, that is the caller's courtesy. Violations are
+// recorded into c; when c grew, the Result must not be used.
+func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descriptor, ctl Controls) Result {
 	r := &resolver{
 		reg:          reg,
 		c:            c,
+		root:         root,
 		disabled:     map[string]bool{},
 		override:     map[string]string{},
 		overrideUsed: map[string]bool{},
@@ -40,7 +43,7 @@ func Resolve(c *fail.Collector, reg *registry.Registry, appletID string, seedIDs
 	before := c.Len()
 	r.validateControls(ctl)
 	if c.Len() == before {
-		r.expand(r.seeds(appletID, seedIDs, ctl.Enable))
+		r.expand(r.seeds(root, ctl.Enable))
 	}
 	if c.Len() == before {
 		r.order(r.bind())
@@ -83,29 +86,12 @@ func (r *resolver) validateControls(ctl Controls) {
 	}
 }
 
-// seeds returns the closure roots: the applet, every caller-supplied
-// seed id and every forced Enable. Disabled seeds are silently skipped
-// — disabling one is legitimate user intent.
-func (r *resolver) seeds(appletID string, seedIDs []string, enable []string) []*registry.Descriptor {
-	var out []*registry.Descriptor
-	if d, ok := r.reg.ByID(appletID); ok {
-		if r.disabled[appletID] {
-			r.fail("applet %q is disabled", appletID)
-		} else {
-			out = append(out, d)
-		}
-	} else {
-		r.fail("applet %q is not registered", appletID)
-	}
-	for _, id := range seedIDs {
-		if d, ok := r.reg.ByID(id); ok {
-			if !r.disabled[id] {
-				out = append(out, d)
-			}
-		} else {
-			r.fail("seed service %q is not registered", id)
-		}
-	}
+// seeds returns the closure roots: the root descriptor and every
+// forced Enable. Disabled Enables are silently skipped — enabling in
+// one source and disabling in another is already a control violation,
+// anything else is legitimate user intent.
+func (r *resolver) seeds(root *registry.Descriptor, enable []string) []*registry.Descriptor {
+	out := []*registry.Descriptor{root}
 	for _, id := range enable {
 		if d, ok := r.reg.ByID(id); ok && !r.disabled[id] {
 			out = append(out, d)
@@ -202,7 +188,9 @@ func (r *resolver) matches(target *registry.Descriptor, dep registry.DepField) b
 // bind resolves every closure member's fields against the final closure,
 // in registration order. It runs after expansion because slice fields
 // gather every closure member of their type, including services that
-// joined through other paths after the owner was expanded.
+// joined through other paths after the owner was expanded. A virtual
+// root is not in the registry and is bound explicitly, last — it
+// depends on everything and nothing depends on it.
 func (r *resolver) bind() []Member {
 	var members []Member
 	for _, d := range r.reg.All() {
@@ -213,6 +201,13 @@ func (r *resolver) bind() []Member {
 			}
 			members = append(members, m)
 		}
+	}
+	if _, registered := r.reg.ByID(r.root.ID); !registered {
+		m := Member{Desc: r.root}
+		for _, dep := range r.root.Deps {
+			m.Bindings = append(m.Bindings, Binding{Dep: dep, Targets: r.bindDep(dep)})
+		}
+		members = append(members, m)
 	}
 	return members
 }

@@ -310,9 +310,11 @@ not type), `SingleApplet()` (the applet that would run with no
 selector word — dispatch-mode truth from the dispatch rules
 themselves; consumers must not re-derive it from `Applets`, which is
 public-only while a Hidden non-System applet still counts for the
-mode), `Services()`, `ConfigExtensions()`,
+mode), `Services()` (every registered service — plus `core`,
+synthesized: the core is a virtual root, not a registry entry, but it
+is truthfully part of every binary), `ConfigExtensions()`,
 `Describe(serviceID)` (the registration Metadata's long-form
-description), and
+description; `Describe("core")` answers a fixed description), and
 `Arguments(appletID, args) ([]ArgInfo, error)` — the closure-true
 argument schema the applet would have if invoked with `args`. It runs
 the real planning pipeline (the shared `plan()` also used by
@@ -440,8 +442,9 @@ init() registrations → Main()
      unknown arguments ignored in this pass
   4. config file discovery and loading (format providers used pre-lifecycle
      as pure stream transforms)
-  5. closure resolution: applet + seeds (the registered translator, the
-     format providers in use) + transitive deps,
+  5. closure resolution, rooted at the core node (below): the core's
+     inject fields — the dispatched applet, the registered translator
+     (optional), the format providers in use — plus transitive deps,
      with disable/enable/override applied; dependency-ordered via SCC
      condensation (cycles are warnings, registration order within);
      cold services are ejected from the registry so their instances
@@ -486,6 +489,49 @@ the dump is loaded.
 — core + entire closure, grouped by service ID, with usage texts (rendered
 through `Tr()`) and the **current effective values** (all sources already
 merged: what the binary would actually use) — to stdout and exits 0.
+
+### The core node
+
+Resolution roots at the framework core itself, modeled as a real
+dependency-bearing node. The core's needs are not seed lists bolted
+onto the resolver — they are **inject fields like everyone else's**,
+on a per-invocation virtual root the runtime composes dynamically
+(`reflect.StructOf` with `inject` tags):
+
+- the **dispatched applet**, by id, typed with its concrete struct
+  type (concrete-type matching is automatic — no interface declaration
+  exists or is needed for applets);
+- the registered **Translator**, optional by interface: present means
+  pulled into the closure, absent means fine (the exactly-one rule of
+  §7 is checked separately);
+- one field per **format provider in use** this invocation (extension
+  matched an actually loaded file or the `--write-config` target), by
+  id.
+
+The registry's own tag machinery collects these dependencies and the
+graph matches and injects them unmodified — the core consumes services
+through the same mechanism it offers everyone, and after injection the
+core's fields ARE the runtime's references. The node joins the ordered
+closure (last — it depends on everything) and is inert in the
+lifecycle: the composed struct has no methods. Seeds are gone as a
+concept; what used to be seed lists (AlwaysOn — removed, provider
+seeds, the translator seed) are now visible dependency edges.
+
+Why a *virtual* root rather than a registry entry: the Introspector's
+`Arguments` re-plans freely — different applets, different provider
+sets, a different core struct each pass — and `reflect.StructOf`
+returns identical types for identical field sets, colliding with both
+the duplicate-id and duplicate-concrete-type rules. The graph
+therefore takes the root descriptor as a parameter; the registry never
+holds it. Introspection **synthesizes** the core's visibility instead:
+`Services()` includes `core`, `Describe("core")` answers a fixed
+description — truth for humans, one truth (the graph) for the
+machinery.
+
+The boundary stated once, plainly: the core's **config** (`--config`,
+`--disable`, `--enable`, `--override`, …) *drives* resolution and is
+parsed before the graph exists — it stays the pre-graph machinery it
+is today. The core node is the graph-and-injection side only.
 
 ### Config-driven service control
 
@@ -850,9 +896,10 @@ discovered through the registry, not an applet dependency:
 - A service declares `Provides[Translator]`. **Exactly one** may be
   registered — more than one is a startup violation (a developer
   error: two catalog systems linked into one binary).
-- If present, the core **seeds it into every closure** as its own
-  dependency. `--disable` still wins: the operator can force raw
-  msgids, exactly as `--disable` drops any other service.
+- If present, it is an **optional dependency edge of the core node**
+  (§5) and thereby joins every closure. `--disable` still wins: the
+  operator can force raw msgids, exactly as `--disable` drops any
+  other service.
 - **Configured-first, everywhere output renders**: the translator's
   dependency subtree gets Inject + `Configured` before anything is
   printed — first in the ordering on normal runs, and on both

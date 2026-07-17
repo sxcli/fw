@@ -28,6 +28,12 @@ import (
 	"reflect"
 )
 
+// CoreID is the reserved service id of the framework core: the name
+// of its config section, of the virtual root the resolver expands
+// from, and of the synthesized introspection entry. The root package
+// derives its reserved-id constant from this one.
+const CoreID = "core"
+
 // Provider is the structural twin of the root package's
 // ConfigFormatProvider, redeclared here to avoid an import cycle; root
 // provider instances satisfy it without adaptation.

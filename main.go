@@ -216,8 +216,16 @@ func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invo
 		p.ctl = rt.controls(c, p.core)
 	}
 	if c.Len() == before {
-		seeds := append(rt.seedIDs(), rt.providerSeeds(p.files)...)
-		p.res = graph.Resolve(c, rt.reg, appletID, seeds, p.ctl)
+		root := rt.coreRoot(c, appletID, rt.providerSeeds(p.files))
+		if contains(p.core.Disable, appletID) {
+			// as a required dependency of the core node the applet
+			// would fail resolution anyway; this keeps the message
+			// human
+			c.Fail("applet %q is disabled", appletID)
+		}
+		if c.Len() == before {
+			p.res = graph.Resolve(c, rt.reg, root, p.ctl)
+		}
 	}
 	if c.Len() == before {
 		for _, m := range p.res.Ordered {
@@ -299,7 +307,14 @@ func (rt *runtime) prepareTranslator(res graph.Result, ctl graph.Controls) *prep
 	}
 	if rt.translatorID != "" && inClosure {
 		sub := &fail.Collector{}
-		subRes := graph.Resolve(sub, rt.reg, rt.translatorID, nil, ctl)
+		var subRes graph.Result
+		if trDesc, registered := rt.reg.ByID(rt.translatorID); registered {
+			// the translator's own descriptor is the root: "resolve
+			// this service's closure" is what the root parameter means
+			subRes = graph.Resolve(sub, rt.reg, trDesc, ctl)
+		} else {
+			sub.Fail("translator %q is not registered", rt.translatorID)
+		}
 		subRes.Inject(sub)
 		if sub.Len() == 0 {
 			out = &prepared{configured: map[string]bool{}, skip: map[string]bool{}}
@@ -496,15 +511,36 @@ func (rt *runtime) providerSeeds(files *config.Files) []string {
 	return out
 }
 
-// seedIDs returns the closure seeds every invocation gets beyond the
-// applet: the registered Translator, the core's own dependency (spec
-// §7). Format providers in use are seeded separately in plan().
-func (rt *runtime) seedIDs() []string {
-	var out []string
-	if rt.translatorID != "" {
-		out = append(out, rt.translatorID)
+// coreRoot composes the per-invocation core node (spec §5): the
+// virtual root of every resolution, a dynamically built struct whose
+// inject fields are the system's needs — the dispatched applet by id
+// and concrete type, the Translator (optional: present means pulled,
+// the exactly-one rule is checked at startup), and one optional field
+// per format provider in use (optional preserves the old seed
+// semantics: a --disable'd provider drops from the closure silently;
+// its transcode work happened before resolution regardless). The
+// registry builds the descriptor through its normal machinery but
+// never stores it — see the spec for why the root cannot be a
+// registry entry.
+func (rt *runtime) coreRoot(c *fail.Collector, appletID string, providerIDs []string) *registry.Descriptor {
+	var root *registry.Descriptor
+	if d, registered := rt.reg.ByID(appletID); registered {
+		fields := []reflect.StructField{
+			{Name: "Applet", Type: d.Concrete, Tag: reflect.StructTag(`inject:"` + appletID + `"`)},
+			{Name: "Translator", Type: translatorType, Tag: `inject:";optional"`},
+		}
+		for i, id := range providerIDs {
+			fields = append(fields, reflect.StructField{
+				Name: fmt.Sprintf("Provider%d", i),
+				Type: providerType,
+				Tag:  reflect.StructTag(`inject:"` + id + `;optional"`),
+			})
+		}
+		root = rt.reg.Virtual(reservedCoreID, reflect.New(reflect.StructOf(fields)).Interface())
+	} else {
+		c.Fail("applet %q is not registered", appletID)
 	}
-	return out
+	return root
 }
 
 // help renders the dispatched applet's full argument schema, grouped by
