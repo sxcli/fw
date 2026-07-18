@@ -224,15 +224,21 @@ The core itself follows the model: identity `sxcli.dev/fw`, alias
 
 ### Registration API
 
-Registration is a builder: the entry function carries the type
-parameters (Go permits them only there — methods cannot be generic),
-enters the catalog immediately, and returns the entry for fluent
-enrichment. No options, no terminal method; completeness is judged at
-`Build`, where a missing alias is a violation:
+Registration is a builder with a terminal: the constructor carries the
+type parameters (Go permits them only there — methods cannot be
+generic) and returns a free-standing value; chain methods enrich it;
+**`.Register()` commits it to the catalog** — construct freely, commit
+completely. The catalog never holds a half-built entry, so
+completeness (the required alias above all) is validated **at the
+commit**, registration-time, all-at-once like every other violation.
+A chain may end two ways: `.Register()` into the catalog for
+composition, or consumed by `Solo` (the second terminal). A forgotten
+terminal compiles — explicit `Accept` catches it loudly ("unknown
+id"); `sxclivet` closes the silent `AcceptAll` case statically:
 
 ```go
-func Register[T, C any](id string, factory func() *T, cfg func(*T) *C) *Registration[T]
-func RegisterBare[T any](id string, factory func() *T) *Registration[T]
+func NewRegistration[T, C any](id string, factory func() *T, cfg func(*T) *C) *Registration[T]
+func NewBareRegistration[T any](id string, factory func() *T) *Registration[T]
 func Iface[I any]() reflect.Type // type token for Provides
 
 // on *Registration[T]:
@@ -241,15 +247,17 @@ func Iface[I any]() reflect.Type // type token for Provides
 //   Metadata(md *Metadata)
 //   Hidden()
 //   System()
+//   Register()                  — the terminal: validate + commit
 ```
 
 ```go
 const ID = "sxcli.dev/fw/sink/console"
 
-fw.Register(ID, newConsole, func(c *Console) *Config { return &c.cfg }).
+fw.NewRegistration(ID, newConsole, func(c *Console) *Config { return &c.cfg }).
     Alias("console").
     Provides(fw.Iface[slog.Handler]()).
-    Metadata(&fw.Metadata{...})
+    Metadata(&fw.Metadata{...}).
+    Register()
 ```
 
 Two entry points, split by the most structural fact about a service —
@@ -363,12 +371,14 @@ panics; violations are recorded and reported all at once):
 - metadata violations that are type-level (unknown field keys, type
   mismatches, hint rules).
 
-`Build()` validates the composed, instantiated reality: duplicate ids
-within the composition, **missing or colliding aliases** among the
-accepted, the same concrete type accepted twice, unresolvable required
-dependencies, unbroken ambiguity (below), and the value-level metadata
-check — a constructor default outside its own declared domain — which
-needs instances to exist.
+`Build()` validates the composed, instantiated reality: **colliding
+aliases** among the accepted (a missing alias is caught earlier, at
+the `.Register()` commit), the same concrete type accepted twice,
+unresolvable required dependencies, unbroken ambiguity (below), and
+the value-level metadata check — a constructor default outside its own
+declared domain — which needs instances to exist. (Duplicate ids are
+a catalog-commit violation: two packages claiming one id is wrong
+before any composition exists.)
 
 The concrete struct type is recorded automatically — no option needed —
 so dependents may require the service by `*Struct` or by any declared
@@ -389,9 +399,10 @@ fw.Builder().AcceptAll().Main()             // terminal form: Build, report
                                             // startup contract
 
 fw.Solo(                                    // the single-applet front door:
-    fw.Register("example.com/mytool/srv", newSrv,
+    fw.NewRegistration("example.com/mytool/srv", newSrv,
         func(s *Srv) *Config { return &s.cfg }).
-        Alias("srv"))                       // register + AcceptAll + Main
+        Alias("srv"))                       // Solo is the second terminal:
+                                            // commit + accept + Main
 ```
 
 Two independent axes, two verbs:
@@ -1125,9 +1136,11 @@ Checks:
   magic strings.
 - **identity** — the id constant **begins with the package's import
   path** (the uniqueness guarantee the runtime cannot check); every
-  registration chain reaches `.Alias(...)` (statically, before Build
-  ever runs); literal aliases are valid (lowercase, digits, hyphens)
-  and inject-by-id tags reference known ids.
+  registration chain **ends in `.Register()` or is consumed by
+  `Solo`** (the forgotten-terminal hole, closed statically) and
+  reaches `.Alias(...)` before its terminal; literal aliases are valid
+  (lowercase, digits, hyphens) and inject-by-id tags reference known
+  ids.
 - **composition** — `Accept`/`Order` ids exist in the statically
   reconstructed catalog; `Order ⊆ Accept`; duplicates.
 - **graph viability** — the static mirror of `Build()`: required
