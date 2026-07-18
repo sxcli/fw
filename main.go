@@ -64,8 +64,22 @@ func run(rt *runtime) int {
 	buffer := logging.NewBuffer()
 	slog.SetDefault(slog.New(buffer))
 	// the core's own service: the read-only composition view, cold
-	// unless something injects it
-	rt.reg.Register(introspectionID, &Introspector{rt: rt}, registry.Options{})
+	// unless something injects it — a full citizen of the identity
+	// model: path identity, operator alias. Squatting the concrete
+	// type is refused explicitly (the catalog tolerates same-type
+	// entries, so the old duplicate-type collision no longer defends
+	// this): there is exactly one Introspector, and it is the core's.
+	for _, d := range rt.reg.All() {
+		if d.Concrete == reflect.TypeOf(&Introspector{}) {
+			rt.c.Fail("service %q: the Introspector's concrete type is reserved for the core", d.ID)
+		}
+	}
+	rt.reg.Commit(&registry.Descriptor{
+		ID:       IntrospectionID,
+		Aliases:  []string{IntrospectionAlias},
+		Instance: &Introspector{rt: rt},
+		Concrete: reflect.TypeOf(&Introspector{}),
+	})
 	// the core's translator dependency: exactly one service may
 	// provide it (spec §7); two catalog systems in one binary is a
 	// developer error, reported like every other violation
@@ -290,7 +304,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 		}
 		// an introspecting closure keeps the whole registry:
 		// enumerating the binary is the point
-		if !keep[introspectionID] {
+		if !keep[IntrospectionID] {
 			rt.reg.Retain(keep)
 		}
 		loaded := p.sch.Apply(rt.c, p.files, p.src)

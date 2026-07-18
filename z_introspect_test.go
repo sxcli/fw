@@ -244,7 +244,9 @@ func TestIntrospectorSquattingFailsLoudly(t *testing.T) {
 	if code := run(w.rt); code != 2 {
 		t.Errorf("exit = %d, want 2; squatting must fail startup", code)
 	}
-	if !strings.Contains(w.stderr.String(), "already registered") {
-		t.Errorf("expected the duplicate concrete type violation:\n%s", w.stderr.String())
+	// ledger note: the defense used to ride the old duplicate-type
+	// registration check; it is an explicit reservation now
+	if !strings.Contains(w.stderr.String(), "reserved for the core") {
+		t.Errorf("expected the reserved-type violation:\n%s", w.stderr.String())
 	}
 }

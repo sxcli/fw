@@ -25,16 +25,13 @@ import (
 	"sxcli.dev/fw/internal/registry"
 )
 
-// introspectionID is the reserved service id of the core's Introspector.
-const introspectionID = "introspection"
-
 // ArgInfo describes one config struct field of an applet's closure —
 // the schema unit completions and documentation generators consume. A
 // field with an empty Long is not settable from the command line; one
 // with an empty Env is not settable from the environment; both empty
 // means file-only. For slices, Type is the element type.
 type ArgInfo struct {
-	Service string       // owning service id, "core" included
+	Service string       // owning service ALIAS (the operator name), "core" included
 	Long    string       // long argument name, without dashes
 	Short   string       // single-character short form
 	Env     string       // environment variable name
@@ -64,15 +61,16 @@ type Introspector struct {
 	rt *runtime
 }
 
-// Applets returns the ids of every registered public applet, in
-// registration order. Hidden and System applets are omitted: they are
-// not commands offered to a human, and a completion must not offer
-// what a human should not type.
+// Applets returns the primary alias of every registered public
+// applet, in composed order — the operator vocabulary: these are the
+// selectors a completion offers as first words. Hidden and System
+// applets are omitted: they are not commands offered to a human, and
+// a completion must not offer what a human should not type.
 func (i *Introspector) Applets() []string {
 	var out []string
 	for _, d := range i.rt.reg.All() {
 		if _, isApplet := d.Instance.(Applet); isApplet && !d.Hidden {
-			out = append(out, d.ID)
+			out = append(out, primaryAlias(d))
 		}
 	}
 	return out
@@ -85,34 +83,47 @@ func (i *Introspector) Applets() []string {
 // must not re-derive it from Applets: that listing is public-only,
 // while a Hidden non-System applet still counts for the mode.
 func (i *Introspector) SingleApplet() (string, bool) {
-	id := ""
+	alias := ""
 	n := 0
 	for _, d := range i.rt.reg.All() {
 		if _, isApplet := d.Instance.(Applet); isApplet {
 			if !d.System {
 				n++
-				id = d.ID
+				alias = primaryAlias(d)
 			}
 		}
 	}
 	ok := n == 1
 	if !ok {
-		id = ""
+		alias = ""
 	}
-	return id, ok
+	return alias, ok
 }
 
-// Services returns the ids of every registered service — applets
-// included — in registration order.
+// Services returns the primary alias of every registered service —
+// applets included — in composed order: the operator vocabulary,
+// exactly what --disable and --enable take, which is what a
+// HintServiceID completion offers.
 func (i *Introspector) Services() []string {
 	// the core is a virtual root, not a registry entry — its presence
 	// here is synthesized, because it is truthfully part of every
 	// binary (spec §5)
 	out := []string{CoreAlias}
 	for _, d := range i.rt.reg.All() {
-		out = append(out, d.ID)
+		out = append(out, primaryAlias(d))
 	}
 	return out
+}
+
+// resolve maps an introspection reference — alias or id, both legal —
+// to its descriptor. Alias first; cross-vocabulary collisions were
+// startup violations, so the pick is deterministic.
+func (i *Introspector) resolve(ref string) (*registry.Descriptor, bool) {
+	d, found := i.rt.byAlias[ref]
+	if !found {
+		d, found = i.rt.reg.ByID(ref)
+	}
+	return d, found
 }
 
 // Arguments returns the argument schema the given applet would have if
@@ -135,7 +146,7 @@ func (i *Introspector) Services() []string {
 func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, error) {
 	var out []ArgInfo
 	var err error
-	if d, registered := i.rt.reg.ByID(appletID); !registered {
+	if d, registered := i.resolve(appletID); !registered {
 		err = fmt.Errorf("introspection: %q is not registered", appletID)
 	} else if _, isApplet := d.Instance.(Applet); !isApplet {
 		err = fmt.Errorf("introspection: %q is not an applet", appletID)
@@ -172,9 +183,9 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 // WithMetadata, or "" when it declared none (or the id is unknown).
 func (i *Introspector) Describe(serviceID string) string {
 	out := ""
-	if serviceID == CoreAlias {
+	if serviceID == CoreAlias || serviceID == CoreID {
 		out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
-	} else if d, registered := i.rt.reg.ByID(serviceID); registered {
+	} else if d, registered := i.resolve(serviceID); registered {
 		if meta, has := d.Metadata.(*config.Meta); has {
 			out = meta.Description
 		}

@@ -140,7 +140,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	for _, a := range r.aliases {
 		if !validAlias(a) {
 			c.Fail("service %q: alias %q must be lowercase letters, digits and hyphens, starting with a letter", r.id, a)
-		} else if a == CoreAlias || a == introspectionID {
+		} else if a == CoreAlias || a == IntrospectionAlias {
 			c.Fail("service %q: alias %q is reserved", r.id, a)
 		} else if seen[a] {
 			c.Fail("service %q: alias %q declared twice", r.id, a)

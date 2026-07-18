@@ -203,7 +203,7 @@ func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c
 			for _, a := range r.names {
 				if !validAlias(a) {
 					c.Fail("alias: %q for %q must be lowercase letters, digits and hyphens, starting with a letter", a, r.id)
-				} else if a == CoreAlias || a == introspectionID {
+				} else if a == CoreAlias || a == IntrospectionAlias {
 					c.Fail("alias: %q is reserved", a)
 				} else if seen[a] {
 					c.Fail("alias: %q for %q given twice", a, r.id)

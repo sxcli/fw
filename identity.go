@@ -24,6 +24,14 @@ import (
 // operator-facing name is CoreAlias.
 const CoreID = "sxcli.dev/fw"
 
+// IntrospectionID is the core Introspector's identity; its
+// operator-facing name is IntrospectionAlias.
+const IntrospectionID = CoreID + "/introspection"
+
+// IntrospectionAlias is the Introspector's operator name — what
+// --enable takes and listings show. Reserved, like CoreAlias.
+const IntrospectionAlias = "introspection"
+
 // validServiceID reports whether id is path-shaped: slash-separated,
 // non-empty segments of lowercase letters, digits, dots, hyphens and
 // underscores, each starting with a letter or digit. The convention

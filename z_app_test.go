@@ -259,3 +259,59 @@ func TestOrderSequenceDecidesAmongRanked(t *testing.T) {
 		t.Errorf("flipped Order must flip the winner: code=%d log=%v", code, w.log)
 	}
 }
+
+// appProbe runs assertions against the injected Introspector from
+// inside the composed world, keeping the whole registry alive.
+type appProbe struct {
+	I  *Introspector `inject:""`
+	do func(i *Introspector)
+}
+
+func (p *appProbe) Configured() error { return nil }
+func (p *appProbe) Run() int          { p.do(p.I); return 0 }
+
+func TestIntrospectionSpeaksAliases(t *testing.T) {
+	var applets, services []string
+	var single, descByAlias, descByID string
+	var argsByAlias, argsByID, argsUnknown error
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewBareRegistration("example.com/app/probe", func() *appProbe {
+			return &appProbe{do: func(i *Introspector) {
+				applets = i.Applets()
+				services = i.Services()
+				single, _ = i.SingleApplet()
+				descByAlias = i.Describe("described")
+				descByID = i.Describe("example.com/app/described")
+				_, argsByAlias = i.Arguments("probe", nil)
+				_, argsByID = i.Arguments("example.com/app/probe", nil)
+				_, argsUnknown = i.Arguments("ghost", nil)
+			}}
+		}).Alias("probe").registerInto(reg, c)
+		NewBareRegistration("example.com/app/described", func() *appAux { return &appAux{log: log} }).
+			Alias("described").Metadata(&Metadata{Description: "a well-described service"}).
+			registerInto(reg, c)
+	}
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register)
+	if code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if strings.Join(applets, ",") != "probe" {
+		t.Errorf("Applets must speak aliases: %v", applets)
+	}
+	if single != "probe" {
+		t.Errorf("SingleApplet must speak the alias: %q", single)
+	}
+	joined := strings.Join(services, ",")
+	if services[0] != "core" || !strings.Contains(joined, "described") || !strings.Contains(joined, "introspection") || strings.Contains(joined, "example.com") {
+		t.Errorf("Services must be operator names, core first, introspection included: %v", services)
+	}
+	if descByAlias != "a well-described service" || descByID != descByAlias {
+		t.Errorf("Describe must accept both vocabularies: %q / %q", descByAlias, descByID)
+	}
+	if argsByAlias != nil || argsByID != nil {
+		t.Errorf("Arguments must accept both vocabularies: %v / %v", argsByAlias, argsByID)
+	}
+	if argsUnknown == nil {
+		t.Error("Arguments must reject unknown references")
+	}
+}
