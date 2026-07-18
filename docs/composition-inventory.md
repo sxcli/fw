@@ -15,7 +15,7 @@ scratch — each failure is a decision consciously revisited).
 
 | file | class | notes |
 | --- | --- | --- |
-| register.go | **dies → fresh** | replaced by `catalog.go` (catalog, `Register[T,C]`, `RegisterBare[T]`, `Registration[T]` chain: Alias/Provides/Metadata/Hidden/System, registration-time checks) and `identity.go` (id/alias validation; CoreID split, see Subtleties) |
+| register.go | **dies → fresh** | replaced by `catalog.go` (`NewRegistration[T,C]`/`NewBareRegistration[T]` → chain Alias/Provides/Metadata/Hidden/System → **`.Register()` terminal** commits; completeness incl. required alias checked AT COMMIT; `Solo` is the second terminal) and `identity.go` (`CoreID = "sxcli.dev/fw"` identity + `CoreAlias = "core"` = config.CoreID; id/alias validators) |
 | — (new) builder.go | **fresh** | `Builder()`, Accept/AcceptAll/Order/Alias, `Build() (*App, error)`, `Main()` terminal; composition-time checks (missing/colliding aliases, dup ids, concrete-type-once, ambiguity) |
 | — (new) app.go | **fresh** | sealed `App`: owns what `runtime` + package globals own today; `App.Main()` |
 | — (new) solo.go | **fresh** | `Solo(*Registration[T])` = accept-one + Main |
@@ -35,7 +35,7 @@ scratch — each failure is a decision consciously revisited).
 | --- | --- | --- |
 | internal/registry | **adapted (heavy)** | becomes the catalog: descriptors carry factory + accessor + aliases, `Instance` is nil until Build; `Virtual` stays; validation split per spec (types at registration, instances at Build) |
 | internal/graph | **adapted (localized)** | two changes only: candidates follow the **composed rank order** (Build hands members ranked; the graph stays ignorant of Order itself), and unranked single-valued ties become a **violation** instead of silent first-wins — the "never silently" rule lands here |
-| internal/config | **untouched** | framework-ignorant by decree — the extraction guarantee; section names and env prefixes are caller-supplied strings and the root now passes aliases. Zero edits expected; any needed edit is a design smell to surface |
+| internal/config | **untouched*** | framework-ignorant by decree — the extraction guarantee; section names and env prefixes are caller-supplied strings and the root now passes aliases. *One surfaced exception (per the "surface it" rule): an additive `ProbeType(reflect.Type)` beside `ProbeFields` so type-level metadata checks can run at the `.Register()` commit with NO instance (the value-level default-in-domain check keeps `ProbeFields` at Build). Still framework-ignorant |
 | internal/logging | **untouched** | |
 | internal/fail | **untouched** | |
 
@@ -51,8 +51,10 @@ scratch — each failure is a decision consciously revisited).
 
 ## Test ledger (ported, one by one — this list is the completeness check)
 
-Root: z_main, z_register (largely superseded → port what survives,
-new catalog/builder tests replace the rest), z_core, z_translator,
+Root: z_catalog (NEW — commit checks, deferred Make, chain
+semantics), z_main, z_register (largely superseded → port what
+survives, new catalog/builder tests replace the rest), z_core,
+z_translator,
 z_visibility, z_introspect, z_metadata, z_tr, z_suppress,
 z_pinned_open, z_statregular, x_integration (personalities gain
 Builder), x_scm_wine(+windows).
@@ -78,11 +80,13 @@ deleting the assertion.
 
 ## Subtleties (the misses waiting to happen)
 
-1. **`config.CoreID` stays `"core"` — it is the core's ALIAS** (config
-   section, operator surfaces). The core's IDENTITY is a new constant
-   (`sxcli.dev/fw`) living in the root. Do not "unify" them; they are
-   different names on purpose. `fw.CoreID`'s meaning shifts — decide
-   its export story at mechanics (completion filters by it).
+1. **DECIDED: `fw.CoreID = "sxcli.dev/fw"` (identity), `fw.CoreAlias
+   = "core"` (= config.CoreID — config section, operator surfaces).**
+   The OLD exported `CoreID` ("core") renames to `CoreAlias` during
+   coexistence — every old use site meant the alias. Do not "unify"
+   them; different names on purpose. Completion's future
+   HintServiceID filter targets `CoreAlias` (aliases are what
+   operators speak).
 2. Env prefix / config sections / `--disable` vocabulary derive from
    the **dispatched applet's alias** and each service's alias — the
    root passes aliases into internal/config everywhere it passed ids.

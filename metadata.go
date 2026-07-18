@@ -121,50 +121,61 @@ func metaHas(allowed []any, v any) bool {
 	return out
 }
 
-// checkMetadata is the registry check validating and normalizing a
-// registration's Metadata: field keys must name config struct fields,
-// annotation value types must match the fields they annotate, and the
-// raw public structure is converted into the internal representation
-// the schema machinery consumes.
-func checkMetadata(d *registry.Descriptor) error {
-	var err error
-	if raw, has := d.Metadata.(*Metadata); has && raw != nil {
-		meta := &config.Meta{Description: raw.Description, Fields: map[string]config.FieldMeta{}}
-		var errs []error
-		if len(raw.Fields) > 0 && d.ConfigPtr == nil {
-			errs = append(errs, fmt.Errorf("service %q: field metadata without a config struct", d.ID))
-		} else {
-			probes := config.ProbeFields(d.ConfigPtr)
-			for name, value := range raw.Fields {
-				probe, known := probes[name]
-				if !known {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q names no config field", d.ID, name))
-				} else if _, isFieldMetadata := value.(fieldMetadataMarker); !isFieldMetadata {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q must be a FieldMetadata value, got %T", d.ID, name, value))
+// normalizeMetadata validates a registration's Metadata against the
+// probed config fields and converts it into the internal
+// representation the schema machinery consumes. The type-level checks
+// always run; the value-level default-in-domain check runs only when
+// withValues (the probes carry real field values — an instance
+// exists). Shared by the old instance-based registry check and the
+// catalog's commit path, which validates against ProbeType with no
+// instance and defers the value check to Build.
+func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[string]config.ProbedField, withValues bool) (*config.Meta, []error) {
+	meta := &config.Meta{Description: raw.Description, Fields: map[string]config.FieldMeta{}}
+	var errs []error
+	if len(raw.Fields) > 0 && !hasConfig {
+		errs = append(errs, fmt.Errorf("service %q: field metadata without a config struct", id))
+	} else {
+		for name, value := range raw.Fields {
+			probe, known := probes[name]
+			if !known {
+				errs = append(errs, fmt.Errorf("service %q metadata: %q names no config field", id, name))
+			} else if _, isFieldMetadata := value.(fieldMetadataMarker); !isFieldMetadata {
+				errs = append(errs, fmt.Errorf("service %q metadata: %q must be a FieldMetadata value, got %T", id, name, value))
+			} else {
+				rv := reflect.ValueOf(value)
+				allowedValues := rv.FieldByName("Allowed")
+				elemType := allowedValues.Type().Elem()
+				hint := ValueHint(rv.FieldByName("Hint").Int())
+				if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", id, name, elemType, probe.Type))
+				} else if hint < HintNone || hint > HintServiceID {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q declares an unknown hint %d", id, name, hint))
+				} else if hint != HintNone && allowedValues.Len() > 0 {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", id, name))
+				} else if hint != HintNone && probe.Type.Kind() != reflect.String {
+					errs = append(errs, fmt.Errorf("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, probe.Type))
 				} else {
-					rv := reflect.ValueOf(value)
-					allowedValues := rv.FieldByName("Allowed")
-					elemType := allowedValues.Type().Elem()
-					hint := ValueHint(rv.FieldByName("Hint").Int())
-					if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
-						errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", d.ID, name, elemType, probe.Type))
-					} else if hint < HintNone || hint > HintServiceID {
-						errs = append(errs, fmt.Errorf("service %q metadata: %q declares an unknown hint %d", d.ID, name, hint))
-					} else if hint != HintNone && allowedValues.Len() > 0 {
-						errs = append(errs, fmt.Errorf("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", d.ID, name))
-					} else if hint != HintNone && probe.Type.Kind() != reflect.String {
-						errs = append(errs, fmt.Errorf("service %q metadata: %q declares a hint but the field takes %s, not a string", d.ID, name, probe.Type))
-					} else {
-						fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: config.ValueHint(hint)}
-						for i := 0; i < allowedValues.Len(); i++ {
-							fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
-						}
-						errs = append(errs, defaultDomainViolations(d.ID, name, fm.Allowed, probe)...)
-						meta.Fields[name] = fm
+					fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: config.ValueHint(hint)}
+					for i := 0; i < allowedValues.Len(); i++ {
+						fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
 					}
+					if withValues {
+						errs = append(errs, defaultDomainViolations(id, name, fm.Allowed, probe)...)
+					}
+					meta.Fields[name] = fm
 				}
 			}
 		}
+	}
+	return meta, errs
+}
+
+// checkMetadata is the registry check validating and normalizing a
+// registration's Metadata on the old instance-based path.
+func checkMetadata(d *registry.Descriptor) error {
+	var err error
+	if raw, has := d.Metadata.(*Metadata); has && raw != nil {
+		meta, errs := normalizeMetadata(d.ID, raw, d.ConfigPtr != nil, config.ProbeFields(d.ConfigPtr), true)
 		if len(errs) > 0 {
 			err = errs[0]
 			for _, extra := range errs[1:] {

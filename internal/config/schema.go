@@ -261,6 +261,22 @@ func ProbeFields(cfgPtr any) map[string]ProbedField {
 	return out
 }
 
+// ProbeType is ProbeFields without an instance: the settable fields of
+// a config struct TYPE (a pointer-to-struct type), for type-level
+// metadata validation at the registration commit, where no instance
+// exists yet. Probed Values are zero; the value-level default-in-domain
+// check runs later, at Build, over ProbeFields of the real instance.
+func ProbeType(cfgPtr reflect.Type) map[string]ProbedField {
+	out := map[string]ProbedField{}
+	if cfgPtr != nil {
+		fields, _ := extract("", cfgPtr.Elem(), nil, nil, "", true)
+		for _, f := range fields {
+			out[f.Name] = ProbedField{Type: f.Type, IsSlice: f.IsSlice}
+		}
+	}
+	return out
+}
+
 // HelpSections returns the schema's services and their fields for help
 // rendering, the core first.
 func (s *Schema) HelpSections() []HelpSection {

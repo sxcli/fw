@@ -76,6 +76,24 @@ func (r *Registry) Register(id string, instance any, opts Options) {
 	}
 }
 
+// Commit stores a catalog entry built by the root's registration
+// chain: the typed side already ran the semantic checks, so the
+// registry validates only what it owns — id uniqueness across the
+// whole catalog (two packages claiming one id is wrong before any
+// composition exists) — and collects the dependency fields from the
+// concrete type. The same concrete type MAY be cataloged twice; only
+// accepting both into one composition is a violation, and that is
+// Build's check. Instance stays nil until Build calls Make.
+func (r *Registry) Commit(d *Descriptor) {
+	if _, dup := r.byID[d.ID]; !dup {
+		r.collectDeps(d)
+		r.ordered = append(r.ordered, d)
+		r.byID[d.ID] = d
+	} else {
+		r.fail("service %q: duplicate id", d.ID)
+	}
+}
+
 // Virtual builds a descriptor through the registry's structural
 // machinery — dependency collection included — WITHOUT storing it: no
 // id claim, no concrete-type claim, no semantic checks. The resolver

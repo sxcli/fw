@@ -551,7 +551,7 @@ func (rt *runtime) coreRoot(c *fail.Collector, appletID string, providerIDs []st
 				Tag:  reflect.StructTag(`inject:"` + id + `;optional"`),
 			})
 		}
-		root = rt.reg.Virtual(CoreID, reflect.New(reflect.StructOf(fields)).Interface())
+		root = rt.reg.Virtual(CoreAlias, reflect.New(reflect.StructOf(fields)).Interface())
 	} else {
 		c.Fail("applet %q is not registered", appletID)
 	}

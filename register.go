@@ -109,14 +109,14 @@ func Register(id string, instance any, opts ...RegisterOption) {
 	defaultRegistry.Register(id, instance, registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata, Hidden: o.hidden || o.system, System: o.system})
 }
 
-// CoreID is the service id of the framework core itself — its
+// CoreAlias is the operator-facing name of the framework core — its
 // config section, the virtual root of every resolution, and the
 // synthesized introspection entry; no service may claim it.
-const CoreID = config.CoreID
+const CoreAlias = config.CoreID
 
 func checkReservedID(d *registry.Descriptor) error {
 	var err error
-	if d.ID == CoreID {
+	if d.ID == CoreAlias {
 		err = fmt.Errorf("service id %q is reserved for the framework core", d.ID)
 	} else if d.ID == introspectionID && d.Concrete != reflect.TypeOf(&Introspector{}) {
 		err = fmt.Errorf("service id %q is reserved for the core's Introspector", d.ID)

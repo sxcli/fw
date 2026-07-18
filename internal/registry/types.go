@@ -63,6 +63,14 @@ type Descriptor struct {
 	Hidden    bool           // absent from listings and basename dispatch
 	System    bool           // binary machinery; ignored by single-applet counting
 	Deps      []DepField
+
+	// Catalog-model fields (the composition release). On a committed
+	// catalog entry Instance and ConfigPtr stay nil until Build calls
+	// Make — the catalog holds factories and declarations, no state.
+	Aliases []string                          // operator-facing names, primary first
+	CfgType reflect.Type                      // *C, nil for config-less services
+	Make    func() (instance any, cfgPtr any) // factory ⊗ accessor, composed
+	// in typed land; every static check ran before it was erased
 }
 
 // Registry collects service descriptors. It never panics: every
