@@ -232,9 +232,34 @@ type invocationPlan struct {
 	src   conf.Sources
 	files *conf.Files
 	core  conf.Core
+	ctrl  coreControls
 	ctl   graph.Controls
 	res   graph.Result
 	sch   *conf.Schema
+}
+
+// coreControls is the framework's contribution to the composite core
+// section: the service controls, riding the same operator surfaces as
+// the engine's own knobs.
+type coreControls struct {
+	Disable  []string `json:"disable" arg:"disable" usage:"service ids to remove from the closure"`
+	Enable   []string `json:"enable" arg:"enable" usage:"service ids to force into the closure"`
+	Override []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
+}
+
+// controlsMeta carries the controls' hints for introspection and
+// completion. Override takes from=to pairs, not plain service ids —
+// no honest hint fits; tooling that understands the pair form can
+// still act on the field by name.
+var controlsMeta = &conf.Meta{Fields: map[string]conf.FieldMeta{
+	"Disable": {Hint: conf.HintServiceID},
+	"Enable":  {Hint: conf.HintServiceID},
+}}
+
+// coreContribs assembles the composite core: the engine's knobs
+// first (its short forms win), the framework's controls second.
+func coreContribs(core *conf.Core, ctrl *coreControls) []conf.Contribution {
+	return []conf.Contribution{conf.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}}
 }
 
 // sections maps a resolved closure to config sections: the primary
@@ -275,13 +300,15 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		MaxSize:      rt.maxConfig,
 	}
 	before := c.Len()
-	peek := conf.PeekCore(c, alias, p.src)
+	var peek conf.Core
+	var peekCtrl coreControls
+	conf.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl))
 	if c.Len() == before {
 		p.files = conf.LoadFiles(c, p.src, rt.explicitPath(peek))
 	}
 	if c.Len() == before {
-		p.core = p.files.ApplyCore(c, alias, p.src)
-		p.ctl = rt.controls(c, p.core)
+		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, &p.ctrl))
+		p.ctl = rt.controls(c, p.ctrl)
 	}
 	if c.Len() == before {
 		root := rt.coreRoot(c, d, rt.providerSeeds(p.files))
@@ -296,7 +323,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = conf.NewSchema(c, alias, &p.core, sections(p.res.Ordered), rt.suppressed)
+		p.sch = conf.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl), sections(p.res.Ordered), rt.suppressed)
 	}
 	return p
 }
@@ -551,23 +578,23 @@ func (rt *runtime) explicitPath(peek conf.Core) string {
 // Override's from side is special: it matches dependency REFERENCES
 // (tag strings), which may name nothing registered — an unresolvable
 // from stays raw and at worst earns the unused-override warning.
-func (rt *runtime) controls(c *fail.Collector, core conf.Core) graph.Controls {
+func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls {
 	ctl := graph.Controls{}
-	for _, ref := range core.Disable {
+	for _, ref := range ctrl.Disable {
 		if d, ok := rt.resolveRef(c, ref); ok {
 			ctl.Disable = append(ctl.Disable, d.ID)
 		} else {
 			c.Fail("disable: unknown service %q", ref)
 		}
 	}
-	for _, ref := range core.Enable {
+	for _, ref := range ctrl.Enable {
 		if d, ok := rt.resolveRef(c, ref); ok {
 			ctl.Enable = append(ctl.Enable, d.ID)
 		} else {
 			c.Fail("enable: unknown service %q", ref)
 		}
 	}
-	for _, entry := range core.Override {
+	for _, entry := range ctrl.Override {
 		from, to, wellFormed := strings.Cut(entry, "=")
 		if wellFormed && from != "" && to != "" {
 			if ctl.Override == nil {

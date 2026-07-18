@@ -38,6 +38,18 @@ type dbConfig struct {
 	Tags []string `json:"tags" arg:"tag,t"`
 }
 
+// testControls mirrors the framework's core contribution: composite-
+// core tests need a second contributor claiming the control keys.
+type testControls struct {
+	Disable  []string `json:"disable" arg:"disable" usage:"drop"`
+	Enable   []string `json:"enable" arg:"enable" usage:"force"`
+	Override []string `json:"override" arg:"override" usage:"remap"`
+}
+
+func coreWith(core *Core, ctl *testControls) []Contribution {
+	return []Contribution{CoreContrib(core), {Ptr: ctl}}
+}
+
 func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 	t.Helper()
 	var sections []Section
@@ -45,7 +57,7 @@ func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 		sections = append(sections, Section{Name: name, Ptr: cfg})
 	}
 	c := &fail.Collector{}
-	s := NewSchema(c, "cat", core, sections, nil)
+	s := NewSchema(c, "cat", []Contribution{CoreContrib(core)}, sections, nil)
 	if c.Len() != 0 {
 		t.Fatalf("unexpected schema errors: %v", c.All())
 	}
@@ -139,7 +151,7 @@ func TestSchemaCrossServiceCollisions(t *testing.T) {
 		{Name: "two", Ptr: &two{}},
 	}
 	c := &fail.Collector{}
-	NewSchema(c, "cat", &Core{}, sections, nil)
+	NewSchema(c, "cat", []Contribution{CoreContrib(&Core{})}, sections, nil)
 	if c.Len() == 0 {
 		t.Error("duplicate long across services must be an error")
 	}
@@ -148,7 +160,9 @@ func TestSchemaCrossServiceCollisions(t *testing.T) {
 func TestSuppressedCoreFields(t *testing.T) {
 	var core Core
 	c := &fail.Collector{}
-	s := NewSchema(c, "cat", &core, nil, []string{"config", "override"})
+	// override lives in the second contribution: suppression spans
+	// the whole composite core
+	s := NewSchema(c, "cat", coreWith(&core, &testControls{}), nil, []string{"config", "override"})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected schema errors: %v", c.All())
 	}
@@ -172,7 +186,7 @@ func TestSuppressedCoreFields(t *testing.T) {
 func TestSuppressUnknownNameFails(t *testing.T) {
 	var core Core
 	c := &fail.Collector{}
-	NewSchema(c, "cat", &core, nil, []string{"no-such-flag"})
+	NewSchema(c, "cat", []Contribution{CoreContrib(&core)}, nil, []string{"no-such-flag"})
 	if c.Len() == 0 {
 		t.Error("suppressing a non-existent core argument must fail")
 	}
@@ -188,5 +202,17 @@ func TestShortFormFirstComeFirstServed(t *testing.T) {
 	}
 	if s.long["x-value"].Short != "" {
 		t.Error("loser of a short collision must have its short cleared")
+	}
+}
+
+func TestCompositeCoreRejectsDuplicateKey(t *testing.T) {
+	var core Core
+	squatter := struct {
+		Config string `json:"config"`
+	}{}
+	c := &fail.Collector{}
+	NewSchema(c, "cat", []Contribution{CoreContrib(&core), {Ptr: &squatter}}, nil, nil)
+	if c.Len() == 0 {
+		t.Error("a core key claimed by two contributions must be a violation")
 	}
 }

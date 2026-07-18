@@ -149,7 +149,7 @@ func (p *argParser) bundle(body string, rest []string) int {
 // occurrence of a slice field replaces any file/env-sourced content;
 // repetitions append. Values outside a declared domain are violations.
 func (p *argParser) set(f *Field, display, value string) {
-	target := p.schema.owner[f].cfg.Elem().FieldByIndex(f.Path)
+	target := f.root.Elem().FieldByIndex(f.Path)
 	var err error
 	if f.IsSlice {
 		if !p.reset[f] {

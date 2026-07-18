@@ -395,7 +395,7 @@ func TestRunScopedCoreKeysAreRefusedFromFiles(t *testing.T) {
 		}
 		files := mustLoadFiles(t, src, "")
 		c := &fail.Collector{}
-		files.ApplyCore(c, "cat", src)
+		files.ApplyCore(c, "cat", src, []Contribution{CoreContrib(&Core{})})
 		if c.Len() == 0 {
 			t.Errorf("run-scoped core key %s must be refused from a config file", key)
 		}
@@ -412,7 +412,7 @@ func TestSuppressedFileKeyIsLoud(t *testing.T) {
 	}
 	files := mustLoadFiles(t, src, "")
 	c := &fail.Collector{}
-	files.ApplyCore(c, "cat", src)
+	files.ApplyCore(c, "cat", src, coreWith(&Core{}, &testControls{}))
 	if c.Len() == 0 {
 		t.Error("a suppressed key in the core file section must be a loud error")
 	}
@@ -446,27 +446,32 @@ func TestApplyCoreSeesFileValues(t *testing.T) {
 	}
 	files := mustLoadFiles(t, src, "")
 	c := &fail.Collector{}
-	core := files.ApplyCore(c, "cat", src)
+	var core Core
+	var ctl testControls
+	// the control keys live in the SECOND contribution: this passing
+	// without unknown-key errors is the composite routing proof
+	files.ApplyCore(c, "cat", src, coreWith(&core, &ctl))
 	if c.Len() != 0 {
 		t.Fatalf("unexpected core errors: %v", c.All())
 	}
-	if !reflect.DeepEqual(core.Disable, []string{"sqlite", "boltdb"}) {
-		t.Errorf("env must beat file for disable: %v", core.Disable)
+	if !reflect.DeepEqual(ctl.Disable, []string{"sqlite", "boltdb"}) {
+		t.Errorf("env must beat file for disable: %v", ctl.Disable)
 	}
-	if !reflect.DeepEqual(core.Override, []string{"sqlite=mysql"}) {
-		t.Errorf("file-sourced override lost: %v", core.Override)
+	if !reflect.DeepEqual(ctl.Override, []string{"sqlite=mysql"}) {
+		t.Errorf("file-sourced override lost: %v", ctl.Override)
 	}
-	if !reflect.DeepEqual(core.Enable, []string{"mysql"}) {
-		t.Errorf("arg-sourced enable lost: %v", core.Enable)
+	if !reflect.DeepEqual(ctl.Enable, []string{"mysql"}) {
+		t.Errorf("arg-sourced enable lost: %v", ctl.Enable)
 	}
 }
 
 func TestPeekCore(t *testing.T) {
 	c := &fail.Collector{}
-	core := PeekCore(c, "cat", Sources{
+	var core Core
+	PeekCore(c, "cat", Sources{
 		Args:      []string{"--unknown-service-flag", "junk", "--config=x.yml", "--write-config", "--help"},
 		LookupEnv: env(map[string]string{"CAT_CONFIG": "env.yml"}),
-	})
+	}, []Contribution{CoreContrib(&core)})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
 	}
@@ -477,13 +482,14 @@ func TestPeekCore(t *testing.T) {
 
 func TestArgumentOnlyCoreFieldsIgnoreEnvironment(t *testing.T) {
 	c := &fail.Collector{}
-	core := PeekCore(c, "cat", Sources{
+	var core Core
+	PeekCore(c, "cat", Sources{
 		LookupEnv: env(map[string]string{
 			"CAT_HELP":         "true",
 			"CAT_WRITE_CONFIG": "true",
 			"CAT_CONFIG":       "env.yml",
 		}),
-	})
+	}, []Contribution{CoreContrib(&core)})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
 	}

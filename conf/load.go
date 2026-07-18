@@ -16,35 +16,34 @@ package conf
 
 import "sxcli.dev/fw/internal/fail"
 
-// PeekCore is the first pipeline pass: it leniently extracts the core's
-// own configuration from environment and arguments only — no file can be
+// PeekCore is the first pipeline pass: it leniently fills the
+// composite core from environment and arguments only — no file can be
 // located before --config is known. File-sourced core values arrive
-// later via Files.ApplyCore.
-func PeekCore(c *fail.Collector, appletID string, src Sources) Core {
-	var core Core
+// later via Files.ApplyCore. The caller owns the contribution
+// structs and must hand over pristine ones.
+func PeekCore(c *fail.Collector, appletID string, src Sources, core []Contribution) {
 	before := c.Len()
-	sch := NewSchema(c, appletID, &core, nil, src.SuppressCore)
+	sch := NewSchema(c, appletID, core, nil, src.SuppressCore)
 	if c.Len() == before {
 		sch.applyEnv(c, src.LookupEnv)
 		sch.parseArgs(c, src.Args, true)
 	}
-	return core
 }
 
-// ApplyCore refills a fresh Core in full precedence order once the
-// files are loaded: file sections, then environment, then arguments.
-// This is the Core the closure resolution must use — a disable/enable/
-// override list in a config file is only visible here.
-func (f *Files) ApplyCore(c *fail.Collector, appletID string, src Sources) Core {
-	var core Core
+// ApplyCore fills the composite core in full precedence order once
+// the files are loaded: file sections, then environment, then
+// arguments. These are the values the closure resolution must use — a
+// control list in a config file is only visible here. The caller owns
+// the contribution structs and must hand over pristine ones (slice
+// values already filled by a peek would double up).
+func (f *Files) ApplyCore(c *fail.Collector, appletID string, src Sources, core []Contribution) {
 	before := c.Len()
-	sch := NewSchema(c, appletID, &core, nil, src.SuppressCore)
+	sch := NewSchema(c, appletID, core, nil, src.SuppressCore)
 	if c.Len() == before {
 		sch.applyFiles(c, f)
 		sch.applyEnv(c, src.LookupEnv)
 		sch.parseArgs(c, src.Args, true)
 	}
-	return core
 }
 
 // Apply is the strict pipeline pass over the full schema: files, then
@@ -65,7 +64,7 @@ func (s *Schema) applyEnv(c *fail.Collector, lookup func(string) (string, bool))
 			for _, f := range svc.fields {
 				if f.EnvName != "" {
 					if value, present := lookup(f.EnvName); present {
-						target := svc.cfg.Elem().FieldByIndex(f.Path)
+						target := f.root.Elem().FieldByIndex(f.Path)
 						var err error
 						if f.IsSlice {
 							err = setSliceFromEnv(target, value)

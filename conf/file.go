@@ -194,10 +194,21 @@ func (f *Files) parse(c *fail.Collector, path string, r io.ReadCloser, provider 
 // file serves every applet of the binary — but unknown keys inside an
 // owned section are violations.
 func (s *Schema) applyFiles(c *fail.Collector, files *Files) {
+	// the composite core is several schema entries sharing one section
+	// name: a file section is applied against the UNION of its owners'
+	// fields, so a key is only unknown when no contribution has it
+	var ids []string
+	byID := map[string][]*Field{}
+	for _, svc := range s.services {
+		if _, seen := byID[svc.id]; !seen {
+			ids = append(ids, svc.id)
+		}
+		byID[svc.id] = append(byID[svc.id], svc.fields...)
+	}
 	for _, section := range files.sections {
-		for _, svc := range s.services {
-			if raw, present := section[svc.id]; present {
-				applyObject(c, svc, svc.fields, 0, raw, svc.id)
+		for _, id := range ids {
+			if raw, present := section[id]; present {
+				applyObject(c, byID[id], 0, raw, id)
 			}
 		}
 	}
@@ -206,7 +217,7 @@ func (s *Schema) applyFiles(c *fail.Collector, files *Files) {
 // applyObject applies one json object to the fields living at the given
 // json-path depth; fields is the subset whose JSONPath matches the path
 // walked so far.
-func applyObject(c *fail.Collector, svc *serviceSchema, fields []*Field, depth int, raw json.RawMessage, where string) {
+func applyObject(c *fail.Collector, fields []*Field, depth int, raw json.RawMessage, where string) {
 	object := map[string]json.RawMessage{}
 	if err := json.Unmarshal(raw, &object); err == nil {
 		for key, value := range object {
@@ -225,7 +236,7 @@ func applyObject(c *fail.Collector, svc *serviceSchema, fields []*Field, depth i
 				if leaf.Transient {
 					c.Fail("config %s.%s: run-scoped, settable only by argument or environment", where, key)
 				} else {
-					target := svc.cfg.Elem().FieldByIndex(leaf.Path)
+					target := leaf.root.Elem().FieldByIndex(leaf.Path)
 					if err := setFromJSON(target, value); err != nil {
 						c.Fail("config %s.%s: %v", where, key, err)
 					} else {
@@ -233,7 +244,7 @@ func applyObject(c *fail.Collector, svc *serviceSchema, fields []*Field, depth i
 					}
 				}
 			} else if len(nested) > 0 {
-				applyObject(c, svc, nested, depth+1, value, where+"."+key)
+				applyObject(c, nested, depth+1, value, where+"."+key)
 			} else {
 				c.Fail("config %s: unknown key %q", where, key)
 			}

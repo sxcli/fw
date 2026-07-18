@@ -72,23 +72,30 @@ type Sources struct {
 // not set one: 1 MiB covers any sane configuration.
 const DefaultMaxSize = 1 << 20
 
-// Core is the framework core's own configuration, living under the
-// reserved service id "core". The run-scoped fields (config,
-// writeConfig, help) carry dump:"-": excluded from --write-config
-// output AND refused loudly from config files — a file setting them
-// would be self-triggering (every run becoming help output, or a
-// config write to an attacker-chosen path). writeConfig and help
-// additionally carry env:"-": an inherited APPLETID_HELP=true would be
-// the same persistent denial — they are argument-only. config keeps
-// its env door (a legitimate deployment pattern; the pointed-at file
-// still passes every gate).
+// Core is the engine's own configuration — the machinery knobs only,
+// living under the reserved section name "core". All three are
+// run-scoped (dump:"-"): excluded from --write-config output AND
+// refused loudly from config files — a file setting them would be
+// self-triggering (every run becoming help output, or a config write
+// to an attacker-chosen path). writeConfig and help additionally
+// carry env:"-": an inherited APPLETID_HELP=true would be the same
+// persistent denial — they are argument-only. config keeps its env
+// door (a legitimate deployment pattern; the pointed-at file still
+// passes every gate). Anything else under "core" — the framework's
+// service controls, say — arrives as a further Contribution.
 type Core struct {
-	Config      string   `json:"config" arg:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
-	WriteConfig bool     `json:"writeConfig" arg:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
-	Help        bool     `json:"help" arg:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
-	Disable     []string `json:"disable" arg:"disable" usage:"service ids to remove from the closure"`
-	Enable      []string `json:"enable" arg:"enable" usage:"service ids to force into the closure"`
-	Override    []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
+	Config      string `json:"config" arg:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
+	WriteConfig bool   `json:"writeConfig" arg:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
+	Help        bool   `json:"help" arg:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
+}
+
+// Contribution is one flat struct claiming keys under the composite
+// core section. The section name is fixed — that absence of a name is
+// what distinguishes it from a Section. Contributors share the "core"
+// namespace in every source; a json key claimed twice is a violation.
+type Contribution struct {
+	Ptr  any   // pointer to the struct; nil contributes nothing
+	Meta *Meta // its own field metadata, nil when none declared
 }
 
 // Section is one named contributor to a schema: a config struct under
@@ -157,12 +164,14 @@ type Field struct {
 	Allowed   []any // closed value domain from registration metadata; values are of the field's type (element type for slices)
 	Doc       string
 	Hint      ValueHint // advisory value denotation from registration metadata
+
+	root reflect.Value // the config struct this field lives in (its *Struct value)
 }
 
-// serviceSchema is the schema of one service's config struct.
+// serviceSchema is the schema of one config struct under its section
+// name; the composite core appears as several entries sharing "core".
 type serviceSchema struct {
 	id     string
-	cfg    reflect.Value // the *Struct the registration chain declared
 	fields []*Field
 }
 

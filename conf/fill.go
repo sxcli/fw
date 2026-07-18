@@ -220,9 +220,14 @@ func fieldValue(f reflect.Value) any {
 func (s *Schema) MarshalIndent() ([]byte, error) {
 	root := map[string]any{}
 	for _, svc := range s.services {
-		section := map[string]any{}
+		// same-name entries (the composite core) merge into one
+		// section; their key spaces are disjoint by construction
+		section, merged := root[svc.id].(map[string]any)
+		if !merged {
+			section = map[string]any{}
+		}
 		for _, f := range svc.fields {
-			value := svc.cfg.Elem().FieldByIndex(f.Path)
+			value := f.root.Elem().FieldByIndex(f.Path)
 			if !f.Transient && !emptyValue(value) {
 				node := section
 				for _, key := range f.JSONPath[:len(f.JSONPath)-1] {

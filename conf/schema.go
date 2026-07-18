@@ -39,19 +39,21 @@ func ValidateConfigType(id string, cfgPtr reflect.Type) error {
 	return err
 }
 
-// coreMeta is the core's own field metadata — the same declarative
-// channel services use via chain Metadata, built directly since the core
-// is not registered: --config names a file (which may not exist yet
-// when --write-config creates it), so the hint is advisory like every
+// coreMeta is the engine's own field metadata — the same declarative
+// channel services use, built directly since the core is not
+// registered: --config names a file (which may not exist yet when
+// --write-config creates it), so the hint is advisory like every
 // hint.
 var coreMeta = &Meta{Fields: map[string]FieldMeta{
-	"Config":  {Hint: HintFile},
-	"Disable": {Hint: HintServiceID},
-	"Enable":  {Hint: HintServiceID},
-	// Override takes from=to pairs, not plain service ids — no honest
-	// hint fits; tooling that understands the pair form can still act
-	// on the field by name.
+	"Config": {Hint: HintFile},
 }}
+
+// CoreContrib pairs the engine's own Core with its metadata: the
+// first contribution of every composite core, by convention — first
+// so its short forms win.
+func CoreContrib(core *Core) Contribution {
+	return Contribution{Ptr: core, Meta: coreMeta}
+}
 
 // NewSchema builds the full schema of one invocation: the core config
 // first (so its short forms win), then every member owning a config
@@ -61,14 +63,28 @@ var coreMeta = &Meta{Fields: map[string]FieldMeta{
 // Duplicate long argument names and duplicate explicit env names across
 // the schema are violations; short-form collisions are resolved
 // first-come-first-served.
-func NewSchema(c *fail.Collector, appletID string, core *Core, sections []Section, suppress []string) *Schema {
+func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections []Section, suppress []string) *Schema {
 	s := &Schema{
 		appletID: appletID,
 		long:     map[string]*Field{},
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
 	}
-	s.add(c, CoreID, reflect.ValueOf(core), suppress, coreMeta)
+	// suppression spans the whole composite core: a name is only
+	// unknown when NO contribution carries it
+	drop := map[string]bool{}
+	for _, long := range suppress {
+		drop[long] = true
+	}
+	for _, ct := range core {
+		if ct.Ptr != nil {
+			s.add(c, CoreID, reflect.ValueOf(ct.Ptr), drop, ct.Meta)
+		}
+	}
+	for long := range drop {
+		c.Fail("suppress: %q does not name a core argument", long)
+	}
+	s.checkCoreKeys(c)
 	for _, sec := range sections {
 		if sec.Ptr != nil {
 			s.add(c, sec.Name, reflect.ValueOf(sec.Ptr), nil, sec.Meta)
@@ -106,10 +122,13 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, sections []Sectio
 	return s
 }
 
-func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppress []string, meta *Meta) {
+func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, drop map[string]bool, meta *Meta) {
 	fields, errs := extract(id, cfgPtr.Type().Elem(), nil, nil, "", true)
 	for _, err := range errs {
 		c.Add(err)
+	}
+	for _, f := range fields {
+		f.root = cfgPtr
 	}
 	if meta != nil {
 		for _, f := range fields {
@@ -120,11 +139,7 @@ func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppres
 			}
 		}
 	}
-	if len(suppress) > 0 {
-		drop := map[string]bool{}
-		for _, long := range suppress {
-			drop[long] = true
-		}
+	if len(drop) > 0 {
 		var kept []*Field
 		for _, f := range fields {
 			if drop[f.Long] {
@@ -133,15 +148,29 @@ func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, suppres
 				kept = append(kept, f)
 			}
 		}
-		for long := range drop {
-			c.Fail("suppress: %q does not name a core argument", long)
-		}
 		fields = kept
 	}
-	svc := &serviceSchema{id: id, cfg: cfgPtr, fields: fields}
+	svc := &serviceSchema{id: id, fields: fields}
 	s.services = append(s.services, svc)
 	for _, f := range fields {
 		s.owner[f] = svc
+	}
+}
+
+// checkCoreKeys rejects a json path claimed by two core contributions:
+// the contributors share one file namespace, and ties are never broken
+// silently.
+func (s *Schema) checkCoreKeys(c *fail.Collector) {
+	claimed := map[string]*Field{}
+	for _, svc := range s.services {
+		for _, f := range svc.fields {
+			key := strings.Join(f.JSONPath, ".")
+			if prev, taken := claimed[key]; taken {
+				c.Fail("core key %q is claimed by two contributions (fields %s and %s)", key, prev.Name, f.Name)
+			} else {
+				claimed[key] = f
+			}
+		}
 	}
 }
 
@@ -290,8 +319,8 @@ func (s *Schema) HelpSections() []HelpSection {
 // --write-config output: durations as unit-suffixed strings.
 func (s *Schema) Value(f *Field) any {
 	var out any
-	if svc, owned := s.owner[f]; owned {
-		out = fieldValue(svc.cfg.Elem().FieldByIndex(f.Path))
+	if _, owned := s.owner[f]; owned {
+		out = fieldValue(f.root.Elem().FieldByIndex(f.Path))
 	}
 	return out
 }

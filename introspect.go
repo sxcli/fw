@@ -159,13 +159,14 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 			err = errors.Join(c.All()...)
 			fallback := &fail.Collector{}
 			var core conf.Core
+			var ctrl coreControls
 			root := i.rt.coreRoot(fallback, d, nil)
 			var res graph.Result
 			if fallback.Len() == 0 {
 				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
 			}
 			if fallback.Len() == 0 {
-				sch := conf.NewSchema(fallback, appletID, &core, sections(res.Ordered), i.rt.suppressed)
+				sch := conf.NewSchema(fallback, appletID, coreContribs(&core, &ctrl), sections(res.Ordered), i.rt.suppressed)
 				if fallback.Len() == 0 {
 					out = argInfos(sch)
 				}
