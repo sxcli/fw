@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"sxcli.dev/fw/internal/config"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/registry"
 )
@@ -43,7 +44,7 @@ func (a *catApplet) Run() int          { return 0 }
 // catalogWorld is a private catalog + collector pair.
 func catalogWorld() (*registry.Registry, *fail.Collector) {
 	c := &fail.Collector{}
-	return registry.New(c, checkReservedID, checkAppletLifecycle, checkVisibility, nil, checkMetadata), c
+	return registry.New(c, checkReservedID, checkAppletLifecycle, checkVisibility, config.ValidateConfig, checkMetadata), c
 }
 
 // chain builds a valid, committable registration for a catService
