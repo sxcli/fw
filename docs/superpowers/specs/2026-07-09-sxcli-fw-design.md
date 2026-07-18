@@ -794,6 +794,159 @@ Supported field types (v1): `string`, `bool`, all int/uint widths, floats,
 file/JSON structure but their fields are file-only (no `arg`/`env` tags) in
 v1. Anything else (maps, custom types) is a registration error.
 
+### The conf module & the unified tag grammar (direction, 2026-07-18)
+
+The configuration system's endgame is **`sxcli.dev/conf`** — the
+engine above, standalone, aimed at replacing cobra/viper for
+single-command tools (dispatch is fw's territory; the busybox model IS
+the multi-command story). The pitch against viper: no store, no
+watching, no package-global mutable config object — the struct is the
+schema, filled once, immutable for the run, strict about unknowns.
+The ladder: (1) in-tree decoupling — `NewSchema` takes neutral
+`Section{Name, Ptr, Meta}` members and the registry import dies; (2)
+in-tree pipeline promotion — the discover→peek→lenient→env→strict→fill
+sequencing moves from fw's `plan()` into a conf front door fw then
+calls; (3) the module split at the v1 horizon, not before — a public
+surface frozen early ossifies before the model has proven itself.
+
+Decided:
+
+- **Dedicated/total stays the model.** Every exported field
+  participates and carries `json:`; totality — not provenance — is
+  the requirement, and it is what keeps unknown-key strictness and
+  `--write-config` completeness honest. (A per-field exclusion tag is
+  the escape hatch if adoption friction ever demands one; adding it
+  later breaks nothing.)
+- **No flattening, ever.** An embedded struct is an ordinary nested
+  path element. Env derivation generalizes to **paths**: derived name
+  = section alias + the field's path segments, joined with
+  underscores. A top-level field's segment is its conf name, so every
+  currently derived name survives unchanged; nested and untagged
+  fields *gain* derived names (segments from json names).
+- **Derived-name collisions are Build errors** naming both fields —
+  underscore joins make distinct paths collidable — with the vet
+  nudge; sxclivet reports the same collision at compile time (§8).
+- **One operator name.** `arg:` dies; **`conf:"long[,short]"`** names
+  the field's whole operator surface: it grants `--long`/`-s` AND
+  feeds env derivation — no more env names silently downstream of a
+  flag rename. `env:` owns the env axis in all its states: absent →
+  derived; `env:"NAME"` → **verbatim global**, no alias prefix (its
+  only remaining job is matching names you don't own — `HTTP_PROXY`,
+  `NO_COLOR`; a prefixed custom name is just `conf:`); `env:"-"` →
+  none. Explicit env is a strong claim: collisions are Build errors a
+  composition cannot rename away (`Builder.Alias` repins derived
+  names only) — reserve it for names you match, never names you
+  invent; a Builder-level env remap stays in the back pocket.
+
+The matrix (every row a real use case, no dead cells):
+
+```go
+Listen  string `json:"listen"  conf:"listen,l"`               // file + --listen/-l + ALIAS_LISTEN
+Backups int    `json:"backups"`                               // file + ALIAS_BACKUPS (derived, no flag)
+Token   string `json:"token"   env:"MYAPP_TOKEN" dump:"-"`    // env ONLY — secrets touch neither argv nor files
+Proxy   string `json:"proxy"   conf:"proxy" env:"HTTP_PROXY"` // --proxy + verbatim global env
+Help    bool   `json:"help"    conf:"help" env:"-" dump:"-"`  // arg-only, run-scoped
+Legacy  string `json:"legacy"  env:"-"`                       // file-only
+```
+
+The Token row extends `dump:"-"` beyond run-scoped flags to its
+general meaning — **not file material**: excluded from
+`--write-config` output and refused loudly when a file supplies it.
+Secrets never touch argv (`ps`-visible) and never belong in config
+files (backed up, committed, world-readable more often than not); the
+framework refuses to normalize either. `json:` stays required even
+here — refusal needs the key name to refuse by.
+
+Open (recorded, undecided): the composite-core shape (the core
+section as ONE namespace fed by two flat structs — conf's knobs +
+fw's controls — proposed, unblessed); the camel-split rule for
+json-derived env segments (`maxAge` → `MAX_AGE`); whether `conf:` at
+depth is a violation like `arg:` today (proposed: yes — args are the
+flat, scarce surface; files and env address paths); whether a
+dedicated secret marker should replace the `dump:"-"` reuse; the
+`arg:`→`conf:` tag cutover timing (before the release train departs,
+so the breaking release stays ONE).
+
+### Config schema versioning & migration (decided 2026-07-18)
+
+Schema evolution is **developer-owned, typed, and runtime** —
+Kubernetes-style API conversion applied to config, not metadata the
+engine interprets. The engine stays dumb: it walks a chain.
+
+- **Every config struct mandates `Version uint32`** (json-tagged like
+  everything — totality). The factory default carries the current
+  number, so `--write-config` emits it for free.
+- **Old versions live on as plain types** — and only as *file
+  schemas*: `json:` tags, no `conf:`, no `env:`. Args and env always
+  speak the current dialect (operators spell them against the current
+  binary's `--help`); only files age.
+- **The chain is typed steps declaring their from-version**:
+
+  ```go
+  NewRegistration(ID, newServe, accessor).
+      Alias("srv").
+      Migrate(
+          conf.Step(1, func(old ConfigV1) ConfigV2 { … }),
+          conf.Step(2, func(old ConfigV2) Config { … }),
+      ).
+      Register()
+  ```
+
+  Generics keep each link fully typed; erasure happens inside `Step`.
+  The **commit validates the chain** — contiguous from-versions, each
+  link's output type feeding the next link's input, terminating at
+  the current config type — type-level work that belongs to the
+  registration commit under two-phase validation; sxclivet mirrors it
+  at compile time. No chain registered = versions must match exactly,
+  mismatch = loud error: never-silent by default, ceremony only when
+  a schema actually evolves.
+- **Load flow, per section instance, per file**: `version` == current
+  → normal strict parse. `version` < current → **strict-parse against
+  that version's struct** (strictness survives history — unknown keys
+  in an old file are judged by the old schema), walk the chain, and
+  the result enters the merge as that file's values. `version` >
+  current → hard error ("config written by a newer version" — the
+  binary-older-than-file case gets its own message). Missing →
+  current dialect, partial.
+- **Version implies complete.** A section carrying `version` is a
+  complete document, migrated whole; a versionless section is a
+  partial in the current dialect, merged key-by-key. The convention
+  is self-enforcing: the only producer of versioned files is
+  `--write-config`, which writes complete documents, while
+  hand-written partials never include a version key. Typed conversion
+  functions cannot see key *presence* (a partial unmarshaled into an
+  old struct makes absent keys indistinguishable from zero values) —
+  this convention is what dissolves that, and the only combination it
+  declines to support is a *stale-versioned partial*: the file nobody
+  has a reason to write. The completeness rule only bites when
+  `version` < current — a trimmed current-version file still merges
+  as a partial.
+- **Migrate first, merge second.** The version is a property of a
+  section instance in one file, never of the merged result: each
+  file's section is independently brought to the current dialect,
+  then the normal location-order presence merge runs. Different
+  versions across files — and different versions across *sections* of
+  one file — are the expected steady state (sections belong to
+  different packages evolving at different speeds; a file-level
+  version could never work). Two complete documents at different
+  versions shade each other exactly as two complete documents do
+  today: precedence is precedence.
+- **Checks run on migrated values**: domain/metadata enforcement
+  applies to the *output* of the chain against the current schema — a
+  migration cannot smuggle in an out-of-domain value.
+- **Pipeline consequence** (pins the promotion work): per-file parse
+  → version peek (the `PeekCore` trick, per section) → strict-check
+  against that version's schema → migrate → merge. Migration is why
+  the pipeline moves into conf as a designed thing, not lifted as-is.
+- `--write-config` completes its arc as the **migration normalizer**:
+  load old file → migrate → emit a complete current-version document.
+
+Open within the scheme: where `Migrate` lives (on the fw registration
+chain as sketched, forwarding to conf's `Section`, or conf-only);
+whether a chain may start above 1 to drop ancient versions (proposed:
+yes — older than the oldest step = loud "version N no longer
+supported" error, it is just the chain not reaching back).
+
 ### Sources & precedence (least → most important)
 
 ```
@@ -1169,6 +1322,10 @@ Checks:
 - **tag grammar** — misspelled tag keys, malformed `inject` grammar,
   the whole uncheckable-string-DSL complaint, checked. Pays rent in
   every package, composed or not.
+- **derived-name collisions** — the env namespace's underscore joins
+  make distinct field paths collidable, and explicit `env:` names are
+  global claims: every collision `Build()` would report at runtime is
+  reported at compile time, across the whole composition.
 
 Stated limits: non-constant ids and dynamically built option slices
 produce a "cannot verify" diagnostic, never silence. Drift between the
@@ -1225,3 +1382,4 @@ the checks tests cannot express.
 | Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
 | `sxcli.dev/conf` extraction (the config engine as a standalone module) | agreed direction, deliberately NOT now: internal/config stays internal through v0 churn, framework-ignorance discipline is the extraction guarantee, facade sketched on paper first; extract at the v1 horizon as the go-to-market funnel |
+| Config schema versioning & migration chain | DESIGNED 2026-07-18 (§6): mandated `Version uint32` + typed per-section `conf.Step` chain, version-implies-complete, migrate-then-merge; supersedes the earlier "renamed from" metadata idea; lands with the conf pipeline promotion |
