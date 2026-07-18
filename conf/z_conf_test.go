@@ -41,7 +41,7 @@ type world struct {
 	stderr bytes.Buffer
 }
 
-func (w *world) builder(t *testing.T, args []string, files, env map[string]string) *LoaderBuilder {
+func (w *world) builder(t *testing.T, args []string, files, env map[string]string) *Loader {
 	t.Helper()
 	src := engine.Sources{
 		Args: args,
@@ -64,7 +64,7 @@ func (w *world) builder(t *testing.T, args []string, files, env map[string]strin
 		},
 		OpenPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
 	}
-	return Builder("mytool").Section("mytool", &toolCfg{Version: 1}).Sources(src).Output(&w.stdout, &w.stderr)
+	return NewLoader("mytool").Section("mytool", &toolCfg{Version: 1}).Sources(src).Output(&w.stdout, &w.stderr)
 }
 
 func TestLoadFillsAndReturnsPositionals(t *testing.T) {
@@ -73,11 +73,11 @@ func TestLoadFillsAndReturnsPositionals(t *testing.T) {
 	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"timeout": "5s"}}`}
 	b := w.builder(t, []string{"--listen", ":9090", "one", "two"}, files, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
-	ldr, served := b.Build()
+	ldr, served := b.Load()
 	if served {
 		t.Fatal("a plain run must not be served")
 	}
-	pos, err := ldr.Load()
+	pos, err := ldr.Result()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,8 +94,8 @@ func TestEnvSpeaksTheSectionPrefix(t *testing.T) {
 	cfg := &toolCfg{Version: 1}
 	b := w.builder(t, nil, nil, map[string]string{"MYTOOL_LISTEN": ":7070"})
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
-	ldr, _ := b.Build()
-	if _, err := ldr.Load(); err != nil {
+	ldr, _ := b.Load()
+	if _, err := ldr.Result(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Listen != ":7070" {
@@ -108,7 +108,7 @@ func TestHelpIsServedAndLeavesTheStructAlone(t *testing.T) {
 	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	b := w.builder(t, []string{"--help", "--listen", ":9090"}, nil, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
-	ldr, served := b.Build()
+	ldr, served := b.Load()
 	if !served {
 		t.Fatal("--help must be served")
 	}
@@ -118,7 +118,7 @@ func TestHelpIsServedAndLeavesTheStructAlone(t *testing.T) {
 	if cfg.Listen != ":8080" {
 		t.Errorf("a served run must leave the struct untouched: %+v", cfg)
 	}
-	if _, err := ldr.Load(); err == nil {
+	if _, err := ldr.Result(); err == nil {
 		t.Error("loading a served run must be a loud misuse error")
 	}
 }
@@ -126,7 +126,7 @@ func TestHelpIsServedAndLeavesTheStructAlone(t *testing.T) {
 func TestHelpIsBestEffortOverBrokenFiles(t *testing.T) {
 	w := &world{}
 	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"nope": true}}`}
-	ldr, served := w.builder(t, []string{"--help"}, files, nil).Build()
+	ldr, served := w.builder(t, []string{"--help"}, files, nil).Load()
 	if !served {
 		t.Fatal("a broken config file must never take --help down")
 	}
@@ -136,8 +136,8 @@ func TestHelpIsBestEffortOverBrokenFiles(t *testing.T) {
 	if !strings.Contains(w.stderr.String(), "unknown key") {
 		t.Errorf("the violations must not be swallowed:\n%s", w.stderr.String())
 	}
-	if ldr != nil {
-		t.Error("a served run returns no loader")
+	if _, err := ldr.Result(); err == nil {
+		t.Error("reading a served run's verdict must be a loud misuse error")
 	}
 }
 
@@ -146,7 +146,7 @@ func TestWriteConfigServesTheMerge(t *testing.T) {
 	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	b := w.builder(t, []string{"--write-config", "--listen", ":9090"}, nil, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
-	_, served := b.Build()
+	_, served := b.Load()
 	if !served {
 		t.Fatal("--write-config must be served")
 	}
@@ -161,11 +161,11 @@ func TestWriteConfigServesTheMerge(t *testing.T) {
 func TestWriteConfigRefusesAViolatedMerge(t *testing.T) {
 	w := &world{}
 	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"nope": true}}`}
-	ldr, served := w.builder(t, []string{"--write-config"}, files, nil).Build()
+	ldr, served := w.builder(t, []string{"--write-config"}, files, nil).Load()
 	if served {
 		t.Fatal("write-config must not emit from a violated merge")
 	}
-	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "unknown key") {
+	if _, err := ldr.Result(); err == nil || !strings.Contains(err.Error(), "unknown key") {
 		t.Errorf("the violations must arrive via Load: %v", err)
 	}
 }
@@ -176,11 +176,11 @@ func TestViolationsRestoreTheDefaults(t *testing.T) {
 	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"listen": ":6060", "nope": true}}`}
 	b := w.builder(t, nil, files, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
-	ldr, served := b.Build()
+	ldr, served := b.Load()
 	if served {
 		t.Fatal("a violated run is not served")
 	}
-	if _, err := ldr.Load(); err == nil {
+	if _, err := ldr.Result(); err == nil {
 		t.Fatal("violations must surface")
 	}
 	if cfg.Listen != ":8080" {
@@ -191,26 +191,26 @@ func TestViolationsRestoreTheDefaults(t *testing.T) {
 func TestSuppressRemovesTheSurface(t *testing.T) {
 	w := &world{}
 	b := w.builder(t, []string{"--write-config"}, nil, nil).Suppress(FeatureWriteConfig)
-	ldr, served := b.Build()
+	ldr, served := b.Load()
 	if served {
 		t.Fatal("a suppressed write-config must not serve")
 	}
-	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "write-config") {
+	if _, err := ldr.Result(); err == nil || !strings.Contains(err.Error(), "write-config") {
 		t.Errorf("the unknown argument must be a violation: %v", err)
 	}
 }
 
 func TestTierSuppressionPrunesTheSearch(t *testing.T) {
-	b := Builder("mytool").Suppress(FeatureCompanionConfig, FeatureUserConfig)
+	b := NewLoader("mytool").Suppress(FeatureCompanionConfig, FeatureUserConfig)
 	locs := b.locations()
 	if len(locs) != 1 || !strings.Contains(locs[0].Base, "mytool") || locs[0].Pinned {
 		t.Errorf("only the system tier must remain: %+v", locs)
 	}
-	if len(Builder("mytool").Suppress(FeatureCompanionConfig, FeatureSystemConfig, FeatureUserConfig).locations()) != 0 {
+	if len(NewLoader("mytool").Suppress(FeatureCompanionConfig, FeatureSystemConfig, FeatureUserConfig).locations()) != 0 {
 		t.Error("suppressing every tier must leave no file search")
 	}
 	// tier features must not leak into the core-argument suppression
-	src := Builder("mytool").Suppress(FeatureUserConfig, FeatureHelp).sources()
+	src := NewLoader("mytool").Suppress(FeatureUserConfig, FeatureHelp).sources()
 	if len(src.SuppressCore) != 1 || src.SuppressCore[0] != "help" {
 		t.Errorf("only argument features belong in SuppressCore: %v", src.SuppressCore)
 	}
@@ -222,8 +222,8 @@ func TestEnvironmentSuppressionKillsTheWholeSource(t *testing.T) {
 	env := map[string]string{"MYTOOL_LISTEN": ":7070", "TOOL_TOKEN": "sekrit"}
 	b := w.builder(t, nil, nil, env).Suppress(FeatureEnvironment)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
-	ldr, _ := b.Build()
-	if _, err := ldr.Load(); err != nil {
+	ldr, _ := b.Load()
+	if _, err := ldr.Result(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Listen != ":8080" {
@@ -249,20 +249,20 @@ func TestMigrateWiresTheChain(t *testing.T) {
 	b := w.builder(t, nil, files, nil)
 	b.sections = []engine.Section{{Name: "tool", Ptr: cfg}}
 	b.Migrate("tool", Step(1, func(old cfgV1) cfgV2 { return cfgV2{Listen: old.Addr} }))
-	ldr, served := b.Build()
+	ldr, served := b.Load()
 	if served {
 		t.Fatal("a migrating run is not served")
 	}
-	if _, err := ldr.Load(); err != nil {
+	if _, err := ldr.Result(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Listen != ":8080" || cfg.Version != 2 {
 		t.Errorf("migration through the front door wrong: %+v", cfg)
 	}
-	if _, badServed := w.builder(t, nil, nil, nil).Migrate("ghost").Build(); badServed {
+	if _, badServed := w.builder(t, nil, nil, nil).Migrate("ghost").Load(); badServed {
 		t.Fatal("unknown-section Migrate must not serve")
-	} else if ldr2, _ := w.builder(t, nil, nil, nil).Migrate("ghost").Build(); ldr2 != nil {
-		if _, err := ldr2.Load(); err == nil || !strings.Contains(err.Error(), "unknown section") {
+	} else if ldr2, _ := w.builder(t, nil, nil, nil).Migrate("ghost").Load(); ldr2 != nil {
+		if _, err := ldr2.Result(); err == nil || !strings.Contains(err.Error(), "unknown section") {
 			t.Errorf("Migrate on an unknown section must be a violation: %v", err)
 		}
 	}
@@ -290,12 +290,12 @@ func TestUpgradeConfigIsAPureTransform(t *testing.T) {
 		Stat:      engine.StatRegular,
 		Open:      func(p string) (io.ReadCloser, error) { return os.Open(p) },
 	}
-	b := Builder("tool").Section("tool", cfg).Sources(src).Output(&w.stdout, &w.stderr).
+	b := NewLoader("tool").Section("tool", cfg).Sources(src).Output(&w.stdout, &w.stderr).
 		Migrate("tool", Step(1, func(old upV1) upV2 { return upV2{Listen: old.Addr} }))
-	ldr, served := b.Build()
+	ldr, served := b.Load()
 	if !served {
 		if ldr != nil {
-			_, err := ldr.Load()
+			_, err := ldr.Result()
 			t.Fatalf("upgrade-config must be served: %v", err)
 		}
 		t.Fatal("upgrade-config must be served")
@@ -311,11 +311,17 @@ func TestUpgradeConfigIsAPureTransform(t *testing.T) {
 
 func TestUpgradeConfigRequiresTarget(t *testing.T) {
 	w := &world{}
-	ldr, served := w.builder(t, []string{"--upgrade-config"}, nil, nil).Build()
+	ldr, served := w.builder(t, []string{"--upgrade-config"}, nil, nil).Load()
 	if served {
 		t.Fatal("upgrade-config without a target must not serve")
 	}
-	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "requires an explicit --config") {
+	if _, err := ldr.Result(); err == nil || !strings.Contains(err.Error(), "requires an explicit --config") {
 		t.Errorf("the missing target must be the violation: %v", err)
+	}
+}
+
+func TestResultBeforeLoadIsMisuse(t *testing.T) {
+	if _, err := NewLoader("mytool").Result(); err == nil || !strings.Contains(err.Error(), "before Load") {
+		t.Errorf("Result before Load must be a loud misuse error: %v", err)
 	}
 }

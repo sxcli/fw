@@ -15,22 +15,22 @@
 // Package conf is the loading front door of the sxcli configuration
 // engine: one annotated struct becomes a complete operator surface —
 // config files (binary companion, system, user), environment variables
-// and command-line arguments merged with strict validation, --help and
-// --write-config served. The machinery lives in conf/engine; this
-// package is its obvious sequencing.
+// and command-line arguments merged with strict validation, --help,
+// --write-config and --upgrade-config served. The machinery lives in
+// conf/engine; this package is its obvious sequencing.
 //
 //	cfg := Config{Listen: ":8080"}
-//	ldr, served := conf.New("mytool", &cfg)
+//	l, served := conf.New("mytool", &cfg)
 //	if served {
-//		return // --help or --write-config answered, exit 0
+//		return // --help, --write-config or --upgrade-config answered, exit 0
 //	}
-//	pos, err := ldr.Load()
+//	leftovers, err := l.Result()
 //
-// Construction and loading are split so each result means one thing:
-// served is a successfully consumed run (never an error), and Load's
-// error is always a genuine failure — every violation of the whole
-// pipeline, joined. The config structs hold their untouched defaults
-// unless Load returns nil.
+// Loading and the verdict are split so each result means one thing:
+// served is a successfully consumed run (never an error), and
+// Result's error is always a genuine failure — every violation of the
+// whole pipeline, joined. The config structs hold their untouched
+// defaults unless Result returns nil.
 package conf
 
 import (
@@ -113,9 +113,10 @@ var tierFeatures = map[Feature]bool{
 	FeatureUserConfig:      true,
 }
 
-// LoaderBuilder assembles a loading run. Every knob is a chain
-// method; Build is the terminal.
-type LoaderBuilder struct {
+// Loader is one loading run, from assembly through verdict: chain the
+// knobs, terminal with Load, read the verdict with Result — one value
+// through all three phases.
+type Loader struct {
 	name     string
 	sections []engine.Section
 	migrated map[string][]engine.Step
@@ -125,21 +126,34 @@ type LoaderBuilder struct {
 	src      *engine.Sources
 	stdout   io.Writer
 	stderr   io.Writer
+
+	// the verdict, set by Load
+	pos    []string
+	err    error
+	served bool
+	loaded bool
 }
 
-// Builder starts a loading run for name — the identity behind the env
-// prefix, the config search locations and the core section; it is
+// NewLoader starts a loading run for name — the identity behind the
+// env prefix, the config search locations and the core section; it is
 // deliberately not derived from argv[0], so renaming a binary never
 // orphans its configuration.
-func Builder(name string) *LoaderBuilder {
-	return &LoaderBuilder{name: name, stdout: os.Stdout, stderr: os.Stderr}
+func NewLoader(name string) *Loader {
+	return &Loader{name: name, stdout: os.Stdout, stderr: os.Stderr}
+}
+
+// New is the single-struct front door: cfg becomes the section named
+// after the binary itself. Exactly NewLoader(name).Section(name,
+// cfg).Load().
+func New(name string, cfg any) (*Loader, bool) {
+	return NewLoader(name).Section(name, cfg).Load()
 }
 
 // Section adds one config struct under its section name: the file key,
 // and the env-prefix namespace of its fields.
-func (b *LoaderBuilder) Section(name string, cfg any) *LoaderBuilder {
-	b.sections = append(b.sections, engine.Section{Name: name, Ptr: cfg})
-	return b
+func (l *Loader) Section(name string, cfg any) *Loader {
+	l.sections = append(l.sections, engine.Section{Name: name, Ptr: cfg})
+	return l
 }
 
 // Suppress removes pieces of the surface. A suppressed argument
@@ -148,152 +162,146 @@ func (b *LoaderBuilder) Section(name string, cfg any) *LoaderBuilder {
 // fails loudly. A suppressed location tier is never probed — tier
 // suppression applies to the production search only; a caller-supplied
 // Sources owns its own location policy.
-func (b *LoaderBuilder) Suppress(features ...Feature) *LoaderBuilder {
-	b.features = append(b.features, features...)
-	return b
+func (l *Loader) Suppress(features ...Feature) *Loader {
+	l.features = append(l.features, features...)
+	return l
 }
 
 // Migrate attaches a section's migration chain, oldest step first —
 // how a schema evolves without stranding the files already deployed.
-// The chain is validated at Build: contiguous versions, each step's
+// The chain is validated at Load: contiguous versions, each step's
 // output feeding the next step's input, terminating at the section's
 // current type, whose factory default Version must equal the terminal
 // version.
-func (b *LoaderBuilder) Migrate(section string, steps ...engine.Step) *LoaderBuilder {
-	if b.migrated == nil {
-		b.migrated = map[string][]engine.Step{}
+func (l *Loader) Migrate(section string, steps ...engine.Step) *Loader {
+	if l.migrated == nil {
+		l.migrated = map[string][]engine.Step{}
 	}
-	b.migrated[section] = append(b.migrated[section], steps...)
-	return b
+	l.migrated[section] = append(l.migrated[section], steps...)
+	return l
 }
 
 // MaxSize caps config file sizes in bytes (default 1 MiB).
-func (b *LoaderBuilder) MaxSize(n int64) *LoaderBuilder {
-	b.maxSize = n
-	return b
+func (l *Loader) MaxSize(n int64) *Loader {
+	l.maxSize = n
+	return l
 }
 
 // Provider registers a config file format beyond the native JSON.
-func (b *LoaderBuilder) Provider(p Provider) *LoaderBuilder {
-	b.provs = append(b.provs, p)
-	return b
+func (l *Loader) Provider(p Provider) *Loader {
+	l.provs = append(l.provs, p)
+	return l
 }
 
 // Sources replaces the production wiring (real argv, environment and
 // filesystem) wholesale — the hermetic seam for tests and embedders.
-func (b *LoaderBuilder) Sources(src engine.Sources) *LoaderBuilder {
-	b.src = &src
-	return b
+func (l *Loader) Sources(src engine.Sources) *Loader {
+	l.src = &src
+	return l
 }
 
-// Output redirects the served surfaces: --help and --write-config
-// output to stdout, best-effort warnings to stderr.
-func (b *LoaderBuilder) Output(stdout, stderr io.Writer) *LoaderBuilder {
-	b.stdout = stdout
-	b.stderr = stderr
-	return b
+// Output redirects the served surfaces: --help, --write-config and
+// --upgrade-config output to stdout, best-effort warnings to stderr.
+func (l *Loader) Output(stdout, stderr io.Writer) *Loader {
+	l.stdout = stdout
+	l.stderr = stderr
+	return l
 }
 
-// Loader is a built loading run awaiting its verdict.
-type Loader struct {
-	pos []string
-	err error
-}
+// errServed guards a Loader whose run was already served: Load's
+// second return was true and there is no verdict to read.
+var errServed = errors.New("conf: the run was already served (--help, --write-config or --upgrade-config); check Load's second return")
 
-// errServed guards against a Build whose run was already served: the
-// second return of Build was true and there is nothing to load.
-var errServed = errors.New("conf: the run was already served (--help or --write-config); check Build's second return")
+// errNotLoaded guards a Loader whose Load was never called.
+var errNotLoaded = errors.New("conf: Result before Load — the run has not happened")
 
-// Load delivers the run's verdict: the trailing positional arguments,
-// or every violation of the pipeline joined. On a non-nil error the
-// config structs hold their untouched defaults.
-func (l *Loader) Load() ([]string, error) {
-	if l == nil {
+// Result delivers the run's verdict: the trailing positional
+// arguments, or every violation of the pipeline joined. Nothing is
+// validated here — validation already happened in Load; Result only
+// reports it. On a non-nil error the config structs hold their
+// untouched defaults.
+func (l *Loader) Result() ([]string, error) {
+	if l == nil || !l.loaded {
+		return nil, errNotLoaded
+	}
+	if l.served {
 		return nil, errServed
 	}
 	return l.pos, l.err
 }
 
-// New is the single-struct front door: cfg becomes the section named
-// after the binary itself. Exactly Builder(name).Section(name,
-// cfg).Build().
-func New(name string, cfg any) (*Loader, bool) {
-	return Builder(name).Section(name, cfg).Build()
-}
-
-// Build runs the pipeline: discovery, files, environment, arguments,
-// strict validation. A run asking for --help or --write-config is
-// served here and Build returns (nil, true) — help is best-effort
-// (violations go to stderr, the schema still renders), write-config
-// refuses to emit from a violated merge. Violations of a normal run
-// are deferred to Load, where an error always means failure.
-func (b *LoaderBuilder) Build() (*Loader, bool) {
+// Load is the terminal: discovery, files, environment, arguments,
+// strict validation. A run asking for --help, --write-config or
+// --upgrade-config is served here and Load returns (l, true) — help
+// is best-effort (violations go to stderr, the schema still renders),
+// write-config refuses to emit from a violated merge. Violations of a
+// normal run are deferred to Result, whose error always means
+// failure.
+func (l *Loader) Load() (*Loader, bool) {
 	c := &fail.Collector{}
-	src := b.sources()
+	src := l.sources()
+	l.loaded = true
 	named := map[string]bool{}
-	for i := range b.sections {
-		named[b.sections[i].Name] = true
-		b.sections[i].Steps = b.migrated[b.sections[i].Name]
+	for i := range l.sections {
+		named[l.sections[i].Name] = true
+		l.sections[i].Steps = l.migrated[l.sections[i].Name]
 	}
-	for section := range b.migrated {
+	for section := range l.migrated {
 		if !named[section] {
 			c.Fail("Migrate names unknown section %q", section)
 		}
 	}
-	var loader *Loader
-	served := false
 	var peek engine.Core
 	var peekUp upgradeKnobs
-	engine.PeekCore(c, b.name, src, []engine.Contribution{engine.CoreContrib(&peek), {Ptr: &peekUp}})
+	engine.PeekCore(c, l.name, src, []engine.Contribution{engine.CoreContrib(&peek), {Ptr: &peekUp}})
 	if c.Len() == 0 && peekUp.UpgradeConfig {
-		return b.upgrade(c, src, peek, peekUp)
+		return l.upgrade(c, src, peek, peekUp)
 	}
 	if c.Len() == 0 {
-		files := engine.LoadFiles(c, src, b.explicitPath(src, peek))
+		files := engine.LoadFiles(c, src, l.explicitPath(src, peek))
 		if c.Len() == 0 {
 			var core engine.Core
 			var up upgradeKnobs
-			sch := engine.NewSchema(c, b.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, b.sections, src.SuppressCore)
+			sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.sections, src.SuppressCore)
 			if c.Len() == 0 {
-				saved := b.snapshot()
+				saved := l.snapshot()
 				loaded := sch.Apply(c, files, src)
 				err := errors.Join(c.All()...)
 				if peek.Help {
 					// best-effort by decree: a broken config file must
 					// never take --help down with it
 					if err != nil {
-						fmt.Fprintf(b.stderr, "error: %v\n", err)
+						fmt.Fprintf(l.stderr, "error: %v\n", err)
 					}
-					sch.WriteHelp(b.stdout)
-					b.restore(saved)
-					served = true
+					sch.WriteHelp(l.stdout)
+					l.restore(saved)
+					l.served = true
 				} else if peek.WriteConfig && err == nil {
-					if werr := sch.WriteMerged(b.stdout, peek.Config, src); werr == nil {
-						b.restore(saved)
-						served = true
+					if werr := sch.WriteMerged(l.stdout, peek.Config, src); werr == nil {
+						l.restore(saved)
+						l.served = true
 					} else {
-						b.restore(saved)
-						loader = &Loader{err: fmt.Errorf("write-config: %w", werr)}
+						l.restore(saved)
+						l.err = fmt.Errorf("write-config: %w", werr)
 					}
 				} else if err != nil {
-					b.restore(saved)
-					loader = &Loader{err: err}
+					l.restore(saved)
+					l.err = err
 				} else {
-					loader = &Loader{pos: loaded.Positionals}
+					l.pos = loaded.Positionals
 				}
+				return l, l.served
 			}
 		}
 	}
-	if loader == nil && !served {
-		loader = &Loader{err: errors.Join(c.All()...)}
-	}
-	return loader, served
+	l.err = errors.Join(c.All()...)
+	return l, false
 }
 
 // upgrade serves --upgrade-config: the pure file transform. It never
 // loads configuration — the schema is built only for its chains and
 // fields, and the caller's structs stay untouched by construction.
-func (b *LoaderBuilder) upgrade(c *fail.Collector, src engine.Sources, peek engine.Core, knobs upgradeKnobs) (*Loader, bool) {
+func (l *Loader) upgrade(c *fail.Collector, src engine.Sources, peek engine.Core, knobs upgradeKnobs) (*Loader, bool) {
 	if peek.Config == "" {
 		c.Fail("upgrade-config requires an explicit --config target")
 	}
@@ -321,58 +329,60 @@ func (b *LoaderBuilder) upgrade(c *fail.Collector, src engine.Sources, peek engi
 	}
 	var core engine.Core
 	var up upgradeKnobs
-	sch := engine.NewSchema(c, b.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, b.sections, src.SuppressCore)
+	sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.sections, src.SuppressCore)
 	if c.Len() == 0 {
 		sch.UpgradeFile(c, peek.Config, from, bare, src)
 	}
 	if c.Len() > 0 {
-		return &Loader{err: errors.Join(c.All()...)}, false
+		l.err = errors.Join(c.All()...)
+		return l, false
 	}
-	return nil, true
+	l.served = true
+	return l, true
 }
 
 // sources assembles the run's Sources: the production wiring unless
-// replaced, with the builder's knobs applied on top.
-func (b *LoaderBuilder) sources() engine.Sources {
+// replaced, with the chain's knobs applied on top.
+func (l *Loader) sources() engine.Sources {
 	var src engine.Sources
-	if b.src != nil {
-		src = *b.src
+	if l.src != nil {
+		src = *l.src
 	} else {
-		src = engine.ProductionSources(b.name)
-		src.Locations = b.locations()
+		src = engine.ProductionSources(l.name)
+		src.Locations = l.locations()
 	}
-	for _, f := range b.features {
+	for _, f := range l.features {
 		if f == FeatureEnvironment {
 			src.LookupEnv = nil
 		} else if !tierFeatures[f] {
 			src.SuppressCore = append(src.SuppressCore, string(f))
 		}
 	}
-	src.Providers = append(src.Providers, b.provs...)
-	if b.maxSize > 0 {
-		src.MaxSize = b.maxSize
+	src.Providers = append(src.Providers, l.provs...)
+	if l.maxSize > 0 {
+		src.MaxSize = l.maxSize
 	}
 	return src
 }
 
 // locations composes the production search from the unsuppressed
 // tiers, in merge order.
-func (b *LoaderBuilder) locations() []engine.Location {
+func (l *Loader) locations() []engine.Location {
 	drop := map[Feature]bool{}
-	for _, f := range b.features {
+	for _, f := range l.features {
 		drop[f] = true
 	}
 	var out []engine.Location
 	if !drop[FeatureCompanionConfig] {
-		if loc, ok := engine.CompanionLocation(b.name); ok {
+		if loc, ok := engine.CompanionLocation(l.name); ok {
 			out = append(out, loc)
 		}
 	}
 	if !drop[FeatureSystemConfig] {
-		out = append(out, engine.SystemLocation(b.name))
+		out = append(out, engine.SystemLocation(l.name))
 	}
 	if !drop[FeatureUserConfig] {
-		if loc, ok := engine.UserLocation(b.name); ok {
+		if loc, ok := engine.UserLocation(l.name); ok {
 			out = append(out, loc)
 		}
 	}
@@ -381,7 +391,7 @@ func (b *LoaderBuilder) locations() []engine.Location {
 
 // explicitPath mirrors the framework's rule: a --config target that
 // --write-config is about to create is not a load source yet.
-func (b *LoaderBuilder) explicitPath(src engine.Sources, peek engine.Core) string {
+func (l *Loader) explicitPath(src engine.Sources, peek engine.Core) string {
 	out := peek.Config
 	if peek.WriteConfig && out != "" && src.Stat != nil {
 		if _, err := src.Stat(out); err != nil {
@@ -393,9 +403,9 @@ func (b *LoaderBuilder) explicitPath(src engine.Sources, peek engine.Core) strin
 
 // snapshot copies every section struct's current value — the defaults —
 // so a served or failed run can hand them back untouched.
-func (b *LoaderBuilder) snapshot() []reflect.Value {
-	out := make([]reflect.Value, len(b.sections))
-	for i, sec := range b.sections {
+func (l *Loader) snapshot() []reflect.Value {
+	out := make([]reflect.Value, len(l.sections))
+	for i, sec := range l.sections {
 		v := reflect.ValueOf(sec.Ptr).Elem()
 		saved := reflect.New(v.Type()).Elem()
 		saved.Set(v)
@@ -404,8 +414,8 @@ func (b *LoaderBuilder) snapshot() []reflect.Value {
 	return out
 }
 
-func (b *LoaderBuilder) restore(saved []reflect.Value) {
-	for i, sec := range b.sections {
+func (l *Loader) restore(saved []reflect.Value) {
+	for i, sec := range l.sections {
 		reflect.ValueOf(sec.Ptr).Elem().Set(saved[i])
 	}
 }

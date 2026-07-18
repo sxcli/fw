@@ -810,12 +810,18 @@ The ladder: (1) DONE — `NewSchema` takes neutral `Section{Name, Ptr,
 Meta}` members, the registry import is gone; (2) DONE — the machinery
 lives in `conf/engine` (production wiring — locations, hardening
 openers, `ProductionSources` — moved down from fw root) and `conf` is
-the front door: `Builder(name)` chain → `Build() (*Loader, served
-bool)` → `Load() ([]string, error)`. Construction and loading split
-so each result means ONE thing: `served` is a successfully consumed
---help/--write-config run (never an error; a forgotten check is
-caught by Load's loud misuse error), Load's error is always genuine
-failure — the log.Fatal reflex is CORRECT. Help is best-effort by
+the front door: ONE type through all phases — `NewLoader(name)` chain
+→ `Load() (*Loader, served bool)` terminal (returns the receiver) →
+`Result() ([]string, error)` verdict. (The earlier two-type
+Builder/Build/Load shape and its `LoaderBuilder` name died in a
+rename pass 2026-07-18 — the slot closed by demolition; `Validate`
+was rejected as the verdict's name because validation happens in
+Load, and a name that lies about timing invites skipping the call.)
+Loading and verdict split so each result means ONE thing: `served` is
+a successfully consumed --help/--write-config/--upgrade-config run
+(never an error; forgotten checks are caught by Result's loud misuse
+errors, including Result-before-Load), Result's error is always
+genuine failure — the log.Fatal reflex is CORRECT. Help is best-effort by
 decree (violations to stderr, the schema still renders); write-config
 refuses a violated merge; the config structs hold their untouched
 defaults unless Load returns nil (snapshot/restore around the
