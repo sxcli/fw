@@ -183,40 +183,98 @@ nothing. What a binary actually *is* gets said explicitly, once, in
 imported for its exported id constant, which the composition
 references — the import is justified by an identifier like any other.
 
+### Identity: IDs and aliases
+
+A service carries two names with two jobs — the old single flat id
+served six masters and is retired:
+
+- **ID — unique, namespaced, machine-facing.** The catalog key, the
+  DI identity, what `Accept`/`Order`/`Builder.Alias` and inject-by-id
+  tags reference. Convention: **the package's import path**, with a
+  `/name` suffix when one package registers several services
+  (`sxcli.dev/fw/sink/console`, `example.com/mytool/srv`). Uniqueness
+  is inherited from Go's own module namespace — domain-owned,
+  collision-proof by the same rules as imports — and provenance is
+  legible in every error message. `sxclivet` verifies the exported
+  `ID` constant begins with the package's import path (the runtime
+  cannot know import paths; the guarantee is the tool's). Inject tags
+  reference IDs — verbose, copy-pasteable, and correctly so: naming a
+  specific service is a deliberate, concrete act.
+- **Alias — short, human-facing, REQUIRED.** The CLI selector, the
+  config-file section, the env-prefix source, the
+  `--disable`/`--enable` vocabulary, the completion candidates.
+  Declared explicitly at registration (`.Alias(...)` — deliberately,
+  no derivation from the ID: a library author who types "logging"
+  made a choice they can be blamed for; derived defaults would make
+  it silently). Lowercase, digits and hyphens (env derivation
+  uppercases and maps hyphens to underscores, so `cherry-pick` is
+  finally a legal command name). Aliases need only be unique **within
+  a composition**: a collision between accepted services is a `Build`
+  violation, resolved by the composer. Convention, documented:
+  libraries prefix (`acme-log`), applications go plain. A service may
+  declare several (`.Alias("cherry-pick", "cp")`) — the first is
+  primary (env prefix, config section, listings), all are selectable.
+
+Operator-facing surfaces throughout this spec that historically said
+"service id" — config sections, env prefixes, dispatch selectors,
+control vocabulary, `HintServiceID` completion — mean the **alias**
+from this release on; identity appears only in code and diagnostics.
+The core itself follows the model: identity `sxcli.dev/fw`, alias
+`core` — both reserved.
+
 ### Registration API
 
+Registration is a builder: the entry function carries the type
+parameters (Go permits them only there — methods cannot be generic),
+enters the catalog immediately, and returns the entry for fluent
+enrichment. No options, no terminal method; completeness is judged at
+`Build`, where a missing alias is a violation:
+
 ```go
-func Register[T any](id string, factory func() *T, opts ...RegisterOption)
-func Provides[I any]() RegisterOption            // declares a provided interface
-func WithConfig[T, C any](get func(*T) *C) RegisterOption
-                                                 // accessor to the instance's
-                                                 // Configuration struct; the
-                                                 // constructor's field values
-                                                 // are the defaults
-func WithMetadata(md *Metadata) RegisterOption   // optional declarative description
-func Hidden() RegisterOption                     // applet: absent from listings and
-                                                 // basename dispatch; explicit
-                                                 // first-token selection only
-func System() RegisterOption                     // applet: binary machinery, not a
-                                                 // user command; implies Hidden and
-                                                 // is ignored by single-applet counting
+func Register[T, C any](id string, factory func() *T, cfg func(*T) *C) *Registration[T]
+func RegisterBare[T any](id string, factory func() *T) *Registration[T]
+func Iface[I any]() reflect.Type // type token for Provides
+
+// on *Registration[T]:
+//   Alias(names ...string)      — REQUIRED; first is primary
+//   Provides(types ...reflect.Type)
+//   Metadata(md *Metadata)
+//   Hidden()
+//   System()
 ```
 
-The factory is typed: the type parameter anchors the concrete type at
-registration, so everything structural is validated with **no instance
-constructed** — inject tags, applet-ness, Starter/Stopper rules,
-declared interfaces (`reflect.PointerTo(T).Implements`), config tags
-and metadata keys (through the accessor's statically known `C`).
-Constructors carry a contract: **cheap** — allocate and set defaults,
-nothing else; I/O belongs to `Configured` (the sink contract's
-philosophy, extended to birth). Every registering package **exports
-its id** as a constant (`ID`; `XxxID` when a package registers
-several) — the constant is the package's public handle and what
-compositions reference; `sxclivet` enforces the convention (§Tooling).
+```go
+const ID = "sxcli.dev/fw/sink/console"
+
+fw.Register(ID, newConsole, func(c *Console) *Config { return &c.cfg }).
+    Alias("console").
+    Provides(fw.Iface[slog.Handler]()).
+    Metadata(&fw.Metadata{...})
+```
+
+Two entry points, split by the most structural fact about a service —
+whether it owns a config struct — chosen over a single entry with an
+erasing wrapper: two dumb names beat one clever indirection. The
+config accessor rides the entry because that is where `C` can be
+generic; the constructor's field values are the defaults, and the
+framework applies the accessor to each `Build`-fresh instance.
+
+The typed factory anchors the concrete type at registration, so
+everything structural is validated with **no instance constructed** —
+inject tags, applet-ness, Starter/Stopper rules, declared interfaces
+(`reflect.PointerTo(T).Implements`), config tags and metadata keys
+(through the statically known `C`). Constructors carry a contract:
+**cheap** — allocate and set defaults, nothing else; I/O belongs to
+`Configured` (the sink contract's philosophy, extended to birth).
+Every registering package **exports its id** as a constant (`ID`;
+`XxxID` when a package registers several) — the constant is the
+package's public handle and what compositions reference; `sxclivet`
+enforces the convention (§Tooling).
 
 **Applet visibility** is registration-time policy, not a capability —
-hence options, not interfaces (interfaces declare what a service can
-do; options declare how the framework treats it). The progression: a
+hence registration-chain methods, not interfaces (interfaces declare
+what a service can do; the registration declares how the framework
+treats it). The progression: a
 plain applet is a public command; `Hidden` keeps it selectable by an
 explicit first token but removes it from usage listings, the future
 `--applets` enumeration and basename/symlink dispatch (hidden debug or
@@ -292,8 +350,10 @@ package may register many services.
 moment.** Registration validates types and declarations (never
 panics; violations are recorded and reported all at once):
 
-- invalid ID (must be lowercase, Go-identifier style; `core` and
-  `introspection` are reserved),
+- malformed ID (path-shaped, lowercase; `sxcli.dev/fw` and the core's
+  Introspector id are reserved — import-path *equality* is `sxclivet`'s
+  check, the runtime cannot know import paths),
+- malformed alias (lowercase, digits, hyphens, starts with a letter),
 - declared interface the concrete type does not implement,
 - applet implementing Starter/Stopper,
 - malformed tags / unsupported config field types,
@@ -304,10 +364,11 @@ panics; violations are recorded and reported all at once):
   mismatches, hint rules).
 
 `Build()` validates the composed, instantiated reality: duplicate ids
-within the composition, the same concrete type accepted twice,
-unresolvable required dependencies, unbroken ambiguity (below), and
-the value-level metadata check — a constructor default outside its own
-declared domain — which needs instances to exist.
+within the composition, **missing or colliding aliases** among the
+accepted, the same concrete type accepted twice, unresolvable required
+dependencies, unbroken ambiguity (below), and the value-level metadata
+check — a constructor default outside its own declared domain — which
+needs instances to exist.
 
 The concrete struct type is recorded automatically — no option needed —
 so dependents may require the service by `*Struct` or by any declared
@@ -319,6 +380,7 @@ interface.
 app, err := fw.Builder().
     AcceptAll().                            // admission: what the binary is
     Order(cat.ID, ls.ID, console.ID).       // ranking: who wins, who lists first
+    Alias(acmemetrics.ID, "acme-metrics").  // composition-level rename
     Build()                                 // instantiate + validate, all at once
 app.Main()                                  // never returns
 
@@ -326,8 +388,10 @@ fw.Builder().AcceptAll().Main()             // terminal form: Build, report
                                             // violations, exit 2 — the standard
                                             // startup contract
 
-fw.Solo("srv", newSrv, fw.WithConfig(...))  // the single-applet front door:
-                                            // register + AcceptAll + Main
+fw.Solo(                                    // the single-applet front door:
+    fw.Register("example.com/mytool/srv", newSrv,
+        func(s *Srv) *Config { return &s.cfg }).
+        Alias("srv"))                       // register + AcceptAll + Main
 ```
 
 Two independent axes, two verbs:
@@ -344,6 +408,15 @@ Two independent axes, two verbs:
   fields gather ranked members first in `Order` sequence, then
   unranked **sorted by id**; `Order` also drives listing order (usage,
   `Applets()`, help sections). Multiple `Order` calls append.
+- **`Alias(id, names...)` — composition-level rename.** Overrides what
+  an accepted service answers to, for this app only, upstream
+  untouched: `Builder.Alias` > registration `.Alias(...)` —
+  registration proposes, composition disposes. All operator surfaces
+  follow the composed result. Beyond collision-fixing, this is how
+  **the composition owns the operator contract**: a released binary
+  pins the aliases it has documented, and no upstream rename — or
+  even provider swap — ever touches a deployed config file again.
+  Recommended practice for released binaries.
 
 **Ties are never broken silently** — the one rule, everywhere. A bare
 single-valued field with two candidates neither of which is ranked is
@@ -1050,6 +1123,11 @@ Checks:
   registering packages exporting no constant are flagged. The constant
   is the package's public handle; without it consumers are back to
   magic strings.
+- **identity** — the id constant **begins with the package's import
+  path** (the uniqueness guarantee the runtime cannot check); every
+  registration chain reaches `.Alias(...)` (statically, before Build
+  ever runs); literal aliases are valid (lowercase, digits, hyphens)
+  and inject-by-id tags reference known ids.
 - **composition** — `Accept`/`Order` ids exist in the statically
   reconstructed catalog; `Order ⊆ Accept`; duplicates.
 - **graph viability** — the static mirror of `Build()`: required
@@ -1117,7 +1195,7 @@ the checks tests cannot express.
 | Positional declarations for introspection/completion | still open; field-level self-description landed as `WithMetadata` |
 | Shell completion service | decided: a SEPARATE module (`sxcli.dev` namespace), never in core — the first external Introspector consumer; registers per-shell `System` applets (invoked `binary <id> …` by the generated scripts); any capability gap it hits is fixed as a core API improvement, never a backdoor |
 | Disabling first-token applet dispatch entirely (build-time policy for binaries that want basename/single-applet behavior only) | idea noted while designing Hidden/System — registration/`Suppress`-style knob, unscheduled; interaction with System selectors must be resolved when designed |
-| Composition release fallout | §4's model, implemented: fw rework, every ecosystem package gains an exported ID and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
+| Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
 | Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
 | `sxcli.dev/conf` extraction (the config engine as a standalone module) | agreed direction, deliberately NOT now: internal/config stays internal through v0 churn, framework-ignorance discipline is the extraction guarantee, facade sketched on paper first; extract at the v1 horizon as the go-to-market funnel |
