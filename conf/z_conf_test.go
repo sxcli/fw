@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"io"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -263,5 +265,57 @@ func TestMigrateWiresTheChain(t *testing.T) {
 		if _, err := ldr2.Load(); err == nil || !strings.Contains(err.Error(), "unknown section") {
 			t.Errorf("Migrate on an unknown section must be a violation: %v", err)
 		}
+	}
+}
+
+func TestUpgradeConfigIsAPureTransform(t *testing.T) {
+	type upV1 struct {
+		Version uint32 `json:"version"`
+		Addr    string `json:"addr"`
+	}
+	type upV2 struct {
+		Version uint32 `json:"version"`
+		Listen  string `json:"listen" arg:"listen"`
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"tool": {"addr": ":8080"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := &world{}
+	cfg := &upV2{Version: 2, Listen: ":default"}
+	src := engine.Sources{
+		Args: []string{"--upgrade-config", "--config", path, "--from-version", "1"},
+		// the invoking environment must never leak into the file
+		LookupEnv: func(string) (string, bool) { return "poison", true },
+		Stat:      engine.StatRegular,
+		Open:      func(p string) (io.ReadCloser, error) { return os.Open(p) },
+	}
+	b := Builder("tool").Section("tool", cfg).Sources(src).Output(&w.stdout, &w.stderr).
+		Migrate("tool", Step(1, func(old upV1) upV2 { return upV2{Listen: old.Addr} }))
+	ldr, served := b.Build()
+	if !served {
+		if ldr != nil {
+			_, err := ldr.Load()
+			t.Fatalf("upgrade-config must be served: %v", err)
+		}
+		t.Fatal("upgrade-config must be served")
+	}
+	raw, _ := os.ReadFile(path)
+	if !strings.Contains(string(raw), `"listen"`) || !strings.Contains(string(raw), `":8080"`) || strings.Contains(string(raw), "poison") {
+		t.Errorf("the file must be migrated and pure:\n%s", raw)
+	}
+	if cfg.Listen != ":default" {
+		t.Errorf("a served run must leave the struct untouched: %+v", cfg)
+	}
+}
+
+func TestUpgradeConfigRequiresTarget(t *testing.T) {
+	w := &world{}
+	ldr, served := w.builder(t, []string{"--upgrade-config"}, nil, nil).Build()
+	if served {
+		t.Fatal("upgrade-config without a target must not serve")
+	}
+	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "requires an explicit --config") {
+		t.Errorf("the missing target must be the violation: %v", err)
 	}
 }

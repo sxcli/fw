@@ -972,9 +972,12 @@ implementation forced:
 - A file section WITHOUT a version key is legal (current-dialect
   partial) but earns a `slog.Warn` naming file and section — the
   engine's first log call; the floor surfaces it under fw, stdlib's
-  default handler standalone. Adding the key is what upgrades a file
-  from "judged as current" to "migratable forever". Errors go to the
-  developer, advice to the operator.
+  default handler standalone. Partials stay versionless BY DESIGN:
+  stamping a version onto a partial is a trap — it behaves fine while
+  the version is current, then becomes a "complete" old document at
+  the next schema bump and its absent keys migrate as zeros, stomping
+  defaults. Nothing in the tooling pushes a partial toward the stamp.
+  Errors go to the developer, advice to the operator.
 - A migrated document applies by DIRECT FIELD COPY, not a JSON
   round-trip: the chain's output (same Go type as the live struct)
   copies field-by-field through the current schema's field list —
@@ -991,6 +994,54 @@ implementation forced:
   exact spelling) + `.Migrate(section, steps...)`. Open: the fw
   registration-chain `.Migrate` forwarding into the descriptor →
   Section mapping — composes on this substrate, not yet built.
+
+### --upgrade-config (designed AND implemented 2026-07-18)
+
+The explicit schema-upgrade tool the chains make possible — and the
+thing `--write-config` deliberately is not. Write-config emits the
+MERGED EFFECTIVE configuration: env, args and every discovered file
+folded in — a normalizer of state, wrong for upgrading fleet config
+(the invoking shell's environment must never leak into `/etc`).
+Upgrade-config is a PURE FILE TRANSFORM:
+
+```console
+$ mytool --upgrade-config --config /etc/mytool/config.json \
+    --from-version srv=2 --from-version logfile=1
+```
+
+- **One file per invocation**, named by `--config` (required): read
+  it, migrate its sections, write it back in its own format. No
+  merge, no other sources, no defaults injection. The discovered
+  tiers have different owners — "upgrade everything" is a shell loop,
+  not a footgun in the tool.
+- **Sections carrying a version key migrate by it**; a contradicting
+  `--from-version` for such a section is an error, not a tiebreak.
+- **Versionless sections require `--from-version`, else the run
+  fails.** The grammar is `--override`'s own: repeatable
+  self-describing `section=N` pairs, order-free — no positional
+  coupling between flags, ever (paired-flag adjacency was considered
+  and rejected: reordering argv must never rebind meaning). A bare
+  `--from-version N` (no `=`) is sugar legal only when the file has
+  exactly one versionless section; more than one fails naming the
+  candidates.
+- **`--from-version` is an assertion of completeness.** Typed chains
+  cannot migrate a partial losslessly, so the flag declares "this
+  file is a complete version-N document". The tool makes the cost
+  reviewable: per section it warns which keys were ABSENT from the
+  input and now appear with materialized values — the operator sees
+  what the assertion invented before deploying.
+- **Target population**: complete-but-versionless files — everything
+  `--write-config` wrote before the mandate existed, and hand-written
+  full configs. Genuine partials keep their honest path: stay
+  versionless, stay current-dialect, get fixed by hand on a rename.
+- Mechanically: the knobs (`upgradeKnobs`) are a FRONT-DOOR-ONLY core
+  contribution, not engine.Core fields — a framework binary that does
+  not serve them never parses them (a flag that parses but silently
+  does nothing is worse than an unknown argument). The transform is
+  `engine.UpgradeFile` (foreign sections pass through verbatim, file
+  mode preserved, current-version sections strict-reparsed and
+  restamped); fw grows its own serving + contribution at the parity
+  pass.
 
 ### Sources & precedence (least → most important)
 

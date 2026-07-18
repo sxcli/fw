@@ -109,9 +109,10 @@ func (s *Schema) validateVersioning(c *fail.Collector, sec Section, fields []*Fi
 
 // applyVersioned applies one file's section under the version rules:
 // a versionless section is a partial in the current dialect (warned —
-// adding the version key is what makes a file migratable forever), a
-// current-version section applies normally, an old one walks the
-// migration chain, a newer-than-the-binary one is refused.
+// partials stay versionless by design; stamping one turns absent keys
+// into zeros at the next schema bump), a current-version section
+// applies normally, an old one walks the migration chain, a
+// newer-than-the-binary one is refused.
 func (s *Schema) applyVersioned(c *fail.Collector, ch *chain, raw json.RawMessage, path, id string) {
 	var peek struct {
 		Version *uint32 `json:"version"`

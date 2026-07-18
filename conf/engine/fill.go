@@ -230,27 +230,36 @@ func (s *Schema) MarshalIndent() ([]byte, error) {
 		if !merged {
 			section = map[string]any{}
 		}
-		for _, f := range svc.fields {
-			value := f.root.Elem().FieldByIndex(f.Path)
-			if !f.Transient && !emptyValue(value) {
-				node := section
-				for _, key := range f.JSONPath[:len(f.JSONPath)-1] {
-					if next, ok := node[key].(map[string]any); ok {
-						node = next
-					} else {
-						created := map[string]any{}
-						node[key] = created
-						node = created
-					}
-				}
-				node[f.JSONPath[len(f.JSONPath)-1]] = fieldValue(value)
-			}
-		}
+		buildSection(section, svc.fields, func(f *Field) reflect.Value {
+			return f.root.Elem().FieldByIndex(f.Path)
+		})
 		if len(section) > 0 {
 			root[svc.id] = section
 		}
 	}
 	return json.MarshalIndent(root, "", "  ")
+}
+
+// buildSection renders fields into a section object: Transient and
+// empty values are skipped (the documented zero-indistinguishable
+// caveat), nested json paths become nested objects.
+func buildSection(section map[string]any, fields []*Field, value func(f *Field) reflect.Value) {
+	for _, f := range fields {
+		v := value(f)
+		if !f.Transient && !emptyValue(v) {
+			node := section
+			for _, key := range f.JSONPath[:len(f.JSONPath)-1] {
+				if next, ok := node[key].(map[string]any); ok {
+					node = next
+				} else {
+					created := map[string]any{}
+					node[key] = created
+					node = created
+				}
+			}
+			node[f.JSONPath[len(f.JSONPath)-1]] = fieldValue(v)
+		}
+	}
 }
 
 // WriteMerged serves --write-config: the merged configuration goes to

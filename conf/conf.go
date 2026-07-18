@@ -39,6 +39,8 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"sxcli.dev/fw/conf/engine"
 	"sxcli.dev/fw/internal/fail"
@@ -91,6 +93,17 @@ const (
 	// environment is one identifiable door, not a location policy.
 	FeatureEnvironment Feature = "environment"
 )
+
+// upgradeKnobs is the front door's own core contribution: the
+// upgrade-config tool flags, run-scoped and argument-only like their
+// engine siblings. They live here, not in the engine's Core, so a
+// framework binary that does not serve them never parses them — a
+// flag that parses but silently does nothing is worse than an unknown
+// argument.
+type upgradeKnobs struct {
+	UpgradeConfig bool     `json:"upgradeConfig" arg:"upgrade-config" dump:"-" env:"-" usage:"migrate the --config file's sections to their current schema versions and exit"`
+	FromVersion   []string `json:"fromVersion" arg:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
+}
 
 // tierFeatures are the location-search features: suppressed tiers are
 // simply never probed. Everything else routes to the core schema.
@@ -230,12 +243,17 @@ func (b *LoaderBuilder) Build() (*Loader, bool) {
 	var loader *Loader
 	served := false
 	var peek engine.Core
-	engine.PeekCore(c, b.name, src, []engine.Contribution{engine.CoreContrib(&peek)})
+	var peekUp upgradeKnobs
+	engine.PeekCore(c, b.name, src, []engine.Contribution{engine.CoreContrib(&peek), {Ptr: &peekUp}})
+	if c.Len() == 0 && peekUp.UpgradeConfig {
+		return b.upgrade(c, src, peek, peekUp)
+	}
 	if c.Len() == 0 {
 		files := engine.LoadFiles(c, src, b.explicitPath(src, peek))
 		if c.Len() == 0 {
 			var core engine.Core
-			sch := engine.NewSchema(c, b.name, []engine.Contribution{engine.CoreContrib(&core)}, b.sections, src.SuppressCore)
+			var up upgradeKnobs
+			sch := engine.NewSchema(c, b.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, b.sections, src.SuppressCore)
 			if c.Len() == 0 {
 				saved := b.snapshot()
 				loaded := sch.Apply(c, files, src)
@@ -270,6 +288,47 @@ func (b *LoaderBuilder) Build() (*Loader, bool) {
 		loader = &Loader{err: errors.Join(c.All()...)}
 	}
 	return loader, served
+}
+
+// upgrade serves --upgrade-config: the pure file transform. It never
+// loads configuration — the schema is built only for its chains and
+// fields, and the caller's structs stay untouched by construction.
+func (b *LoaderBuilder) upgrade(c *fail.Collector, src engine.Sources, peek engine.Core, knobs upgradeKnobs) (*Loader, bool) {
+	if peek.Config == "" {
+		c.Fail("upgrade-config requires an explicit --config target")
+	}
+	from := map[string]uint32{}
+	var bare *uint32
+	for _, entry := range knobs.FromVersion {
+		section, value, scoped := strings.Cut(entry, "=")
+		if !scoped {
+			section, value = "", entry
+		}
+		n, err := strconv.ParseUint(value, 10, 32)
+		if err != nil || n == 0 {
+			c.Fail("from-version %q: versions are positive integers", entry)
+		} else if section == "" {
+			if bare != nil {
+				c.Fail("from-version: only one bare assertion is possible")
+			}
+			v := uint32(n)
+			bare = &v
+		} else if _, dup := from[section]; dup {
+			c.Fail("from-version: %q is asserted twice", section)
+		} else {
+			from[section] = uint32(n)
+		}
+	}
+	var core engine.Core
+	var up upgradeKnobs
+	sch := engine.NewSchema(c, b.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, b.sections, src.SuppressCore)
+	if c.Len() == 0 {
+		sch.UpgradeFile(c, peek.Config, from, bare, src)
+	}
+	if c.Len() > 0 {
+		return &Loader{err: errors.Join(c.All()...)}, false
+	}
+	return nil, true
 }
 
 // sources assembles the run's Sources: the production wiring unless
