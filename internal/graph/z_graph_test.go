@@ -393,7 +393,7 @@ func TestVirtualRootEdgesJoinAndDisabledOptionalSkips(t *testing.T) {
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
-	root := r.Virtual("core", &virtualRoot{})
+	root := r.Virtual("core", &virtualRoot{}, &fail.Collector{})
 	res := mustResolveRoot(t, r, root, Controls{})
 	if len(res.Ordered) != 4 {
 		t.Errorf("root edges must join the closure: %v", ids(res))
@@ -427,7 +427,7 @@ func TestSubtreeWalksBindings(t *testing.T) {
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workerb", &workerB{}, provides(workerType)) // needs storage
 	r.Register("storea", &storeA{}, provides(storageType))
-	root := r.Virtual("core", &virtualRoot{})
+	root := r.Virtual("core", &virtualRoot{}, &fail.Collector{})
 	res := mustResolveRoot(t, r, root, Controls{})
 	sub, ok := res.Subtree("workerb")
 	if !ok {

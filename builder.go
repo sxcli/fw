@@ -16,6 +16,8 @@ package sxclifw
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"sort"
 
 	"sxcli.dev/fw/internal/config"
@@ -90,13 +92,32 @@ func (b *AppBuilder) Alias(id string, names ...string) *AppBuilder {
 // exist (a constructor default outside its own declared domain). All
 // violations are joined into one error.
 func (b *AppBuilder) Build() (*App, error) {
-	return b.buildFrom(defaultRegistry)
+	return b.buildFrom(defaultRegistry, defaultCollector)
 }
 
-// buildFrom is Build against an explicit catalog; tests use private
-// ones.
-func (b *AppBuilder) buildFrom(cat *registry.Registry) (*App, error) {
+// Main is the production terminal: Build, and on violations report
+// them all and exit 2 — the standard startup contract; otherwise run
+// the App. It never returns.
+func (b *AppBuilder) Main() {
+	app, err := b.Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+	app.Main()
+}
+
+// buildFrom is Build against an explicit catalog and its collector —
+// commit violations recorded at registration time surface here, so a
+// service that failed its Register never silently "just isn't there".
+// Tests use private catalogs.
+func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector) (*App, error) {
 	c := &fail.Collector{}
+	if catalogC != nil {
+		for _, err := range catalogC.All() {
+			c.Add(err)
+		}
+	}
 	accepted := b.admitted(cat, c)
 	rank := b.ranked(accepted, c)
 	renamed := b.renamed(cat, accepted, c)

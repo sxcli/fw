@@ -72,7 +72,15 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 	for _, d := range members {
 		if d.ConfigPtr != nil {
 			meta, _ := d.Metadata.(*Meta)
-			s.add(c, d.ID, reflect.ValueOf(d.ConfigPtr), nil, meta)
+			// sections carry the operator-facing name: the primary
+			// alias when declared, the id otherwise.
+			// TODO(composition item 7): drop the id fallback with the
+			// old registration path.
+			section := d.ID
+			if len(d.Aliases) > 0 {
+				section = d.Aliases[0]
+			}
+			s.add(c, section, reflect.ValueOf(d.ConfigPtr), nil, meta)
 		}
 	}
 	env := map[string]*Field{}
@@ -92,7 +100,7 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 					}
 				}
 				if f.EnvName == "" && !f.NoEnv {
-					f.EnvName = strings.ToUpper(appletID) + "_" + strings.ToUpper(strings.ReplaceAll(f.Long, "-", "_"))
+					f.EnvName = strings.ToUpper(strings.ReplaceAll(appletID, "-", "_")) + "_" + strings.ToUpper(strings.ReplaceAll(f.Long, "-", "_"))
 				}
 			}
 			if f.EnvName != "" {

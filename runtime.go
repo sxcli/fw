@@ -44,13 +44,14 @@ type runtime struct {
 	maxConfig    int64            // config file size cap; <=0 → the 1 MiB default
 	execApplet   func(Applet) int // nil → applet.Run(); the SCM handler overrides
 	reported     bool
-	translatorID string // id of the sole Provides[Translator] service, "" = none
+	translatorID string                          // id of the sole Provides[Translator] service, "" = none
+	byAlias      map[string]*registry.Descriptor // every operator name → its service; built by run()
 }
 
-func productionRuntime(argv []string, execApplet func(Applet) int) *runtime {
+func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *runtime {
 	return &runtime{
-		reg:       defaultRegistry,
-		c:         defaultCollector,
+		reg:       app.reg,
+		c:         &fail.Collector{},
 		argv:      argv,
 		lookupEnv: os.LookupEnv,
 		stdout:    os.Stdout,

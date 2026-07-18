@@ -102,14 +102,17 @@ func (r *Registry) Commit(d *Descriptor) {
 // Violations (malformed inject tags on the composed struct) are
 // recorded like any other — they are framework bugs, not user errors,
 // but silence is never the answer.
-func (r *Registry) Virtual(id string, instance any) *Descriptor {
+func (r *Registry) Virtual(id string, instance any, c *fail.Collector) *Descriptor {
 	var d *Descriptor
 	t := reflect.TypeOf(instance)
 	if instance != nil && t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct && !reflect.ValueOf(instance).IsNil() {
 		d = &Descriptor{ID: id, Instance: instance, Concrete: t}
+		saved := r.c
+		r.c = c
 		r.collectDeps(d)
+		r.c = saved
 	} else {
-		r.fail("virtual service %q: instance must be a non-nil pointer to struct", id)
+		c.Fail("virtual service %q: instance must be a non-nil pointer to struct", id)
 	}
 	return d
 }
@@ -171,6 +174,7 @@ func (r *Registry) validateConfig(d *Descriptor, cfg any) {
 }
 
 func (r *Registry) collectDeps(d *Descriptor) {
+	d.Deps = nil
 	for _, f := range reflect.VisibleFields(d.Concrete.Elem()) {
 		if tag, tagged := f.Tag.Lookup("inject"); tagged {
 			if f.IsExported() {
@@ -237,7 +241,7 @@ func parseInjectTag(tag string) ([]string, bool, error) {
 func isValidID(id string) bool {
 	valid := id != "" && id != "_"
 	for i, c := range id {
-		valid = valid && (c == '_' || 'a' <= c && c <= 'z' || i > 0 && '0' <= c && c <= '9')
+		valid = valid && (c == '_' || 'a' <= c && c <= 'z' || i > 0 && ('0' <= c && c <= '9' || c == '.' || c == '-' || c == '/'))
 	}
 	return valid
 }

@@ -31,12 +31,12 @@ import (
 // started normally it runs the pipeline with the process arguments.
 // An un-enabled --scm-debug falls through to the normal path where the
 // strict parse rejects it as an unknown argument.
-func platformMain() int {
+func platformMain(app *App) int {
 	var code int
 	isService, err := svc.IsWindowsService()
 	debugArgv, debugMode := stripSCMDebug(os.Args)
 	if err == nil && isService {
-		h := &scmHandler{}
+		h := &scmHandler{app: app}
 		runErr := svc.Run("", h)
 		code = int(h.code)
 		if runErr != nil && code == 0 {
@@ -46,14 +46,14 @@ func platformMain() int {
 		// debug.Run reports a non-zero Execute exit code AS an error
 		// (syscall.Errno); the handler holds the real code, so the
 		// error only matters when no code was produced at all
-		h := &scmHandler{argv: debugArgv}
+		h := &scmHandler{app: app, argv: debugArgv}
 		runErr := debug.Run(binaryBasename(debugArgv[0]), h)
 		code = int(h.code)
 		if runErr != nil && code == 0 {
 			code = 2
 		}
 	} else {
-		code = run(productionRuntime(os.Args, nil))
+		code = run(productionRuntime(app, os.Args, nil))
 	}
 	return code
 }
@@ -66,6 +66,7 @@ func platformMain() int {
 // Running. After it returns, the pipeline's reverse Stop runs and the
 // final status goes to the SCM.
 type scmHandler struct {
+	app      *App
 	argv     []string // preset by the --scm-debug path; the SCM path uses Execute's vector
 	specific bool
 	code     uint32
@@ -77,7 +78,7 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 		argv = h.argv
 	}
 	status <- svc.Status{State: svc.StartPending}
-	rt := productionRuntime(argv, func(applet Applet) int {
+	rt := productionRuntime(h.app, argv, func(applet Applet) int {
 		var out int
 		if scmApplet, ok := applet.(SCMApplet); ok {
 			h.specific, h.code = scmApplet.Execute(argv, req, status)

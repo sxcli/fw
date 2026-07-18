@@ -14,6 +14,10 @@
 
 package sxclifw
 
+import (
+	"sxcli.dev/fw/internal/registry"
+)
+
 // CoreID is the framework core's identity — the machine-facing name
 // in the two-name model (spec §4): IDs are import-path-shaped, unique
 // through Go's module namespace, referenced by code. The core's
@@ -45,6 +49,24 @@ func isIDSegment(s string) bool {
 		ok = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_'
 	}
 	return ok
+}
+
+// aliasesOf returns a descriptor's operator-facing names. The
+// coexistence rule for old-style entries with none declared: the id
+// IS the operator name. TODO(composition item 7): drop the fallback
+// with the old registration path.
+func aliasesOf(d *registry.Descriptor) []string {
+	out := d.Aliases
+	if len(out) == 0 {
+		out = []string{d.ID}
+	}
+	return out
+}
+
+// primaryAlias returns the name shown in listings and used for the
+// env prefix and config section.
+func primaryAlias(d *registry.Descriptor) string {
+	return aliasesOf(d)[0]
 }
 
 // validAlias reports whether a is a legal operator-facing name:

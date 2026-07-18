@@ -15,6 +15,8 @@
 package sxclifw
 
 import (
+	"os"
+
 	"sxcli.dev/fw/internal/registry"
 )
 
@@ -27,8 +29,15 @@ import (
 // is the test-isolation guarantee.
 //
 // The composition is immutable from Build on — the graph-immutability
-// philosophy one layer up. Main (the run entry) arrives with the
-// pipeline re-plumb; until then an App is composed state.
+// philosophy one layer up.
 type App struct {
 	reg *registry.Registry
+}
+
+// Main runs the composed App: dispatch, configuration, resolution,
+// lifecycle, applet. It never returns. It takes no parameters by
+// design — the argument vector is platform-sourced (POSIX: os.Args;
+// Windows service mode: the vector the SCM hands to Execute).
+func (a *App) Main() {
+	os.Exit(platformMain(a))
 }

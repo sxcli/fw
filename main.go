@@ -31,12 +31,13 @@ import (
 	"sxcli.dev/fw/internal/registry"
 )
 
-// Main runs the framework: dispatch, configuration, resolution,
-// lifecycle, applet. It never returns. It takes no parameters by
-// design — the argument vector is platform-sourced (POSIX: os.Args;
-// Windows service mode: the vector the SCM hands to Execute).
+// Main is the busybox-compatibility sugar of the composition model:
+// accept everything cataloged and run. Exactly
+// Builder().AcceptAll().Main() — magic you opt into by name. It never
+// returns. Binaries wanting composition control use the Builder
+// directly.
 func Main() {
-	os.Exit(platformMain())
+	Builder().AcceptAll().Main()
 }
 
 // positionals holds the trailing bare arguments of the invocation.
@@ -77,20 +78,57 @@ func run(rt *runtime) int {
 			}
 		}
 	}
+	// the operator-name index: every alias (or, coexistence, every
+	// old-style id) resolves to its service. Composed-alias collisions
+	// were Build violations; old worlds have unique ids — a clash here
+	// is a framework bug, reported not swallowed.
+	rt.byAlias = map[string]*registry.Descriptor{}
+	for _, d := range rt.reg.All() {
+		for _, a := range aliasesOf(d) {
+			if prev, taken := rt.byAlias[a]; taken && prev != d {
+				rt.c.Fail("operator name %q resolves to both %q and %q", a, prev.ID, d.ID)
+			} else {
+				rt.byAlias[a] = d
+			}
+		}
+	}
 	if rt.c.Len() > 0 {
 		rt.report(buffer)
-	} else if appletID, applet, args, ok := rt.dispatch(); ok {
-		code = rt.execute(buffer, appletID, applet, args)
+	} else if d, applet, args, ok := rt.dispatch(); ok {
+		code = rt.execute(buffer, d, applet, args)
 	}
 	return code
+}
+
+// resolveRef resolves an operator-supplied service reference — an
+// alias or an id; both vocabularies are legal (aliases are what
+// operators speak, ids are what inject tags and documentation say,
+// and --override's from side inherently speaks id). Convention keeps
+// the two disjoint (ids are path-shaped); the pathological tie — the
+// string naming one service's alias and a DIFFERENT service's id — is
+// a loud violation, never a silent pick.
+func (rt *runtime) resolveRef(c *fail.Collector, ref string) (*registry.Descriptor, bool) {
+	byAlias, aliasHit := rt.byAlias[ref]
+	byID, idHit := rt.reg.ByID(ref)
+	var out *registry.Descriptor
+	ok := false
+	if aliasHit && idHit && byAlias != byID {
+		c.Fail("%q names the alias of %q and the id of %q — say which", ref, byAlias.ID, byID.ID)
+	} else if aliasHit {
+		out, ok = byAlias, true
+	} else if idHit {
+		out, ok = byID, true
+	}
+	return out, ok
 }
 
 // dispatch picks the applet per the spec rules: single-applet mode
 // (only non-System applets count, with the System-selector carve-out),
 // else first-bare-argument selector (Hidden and System applets are
 // selectable like any other), else basename(argv[0]) among non-Hidden
-// applets.
-func (rt *runtime) dispatch() (string, Applet, []string, bool) {
+// applets. Selectors and basenames are ALIASES — any declared name
+// selects; listings show the primary.
+func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 	var applets []*registry.Descriptor // every applet, any visibility
 	var public []*registry.Descriptor  // non-Hidden: what usage may list
 	var sole *registry.Descriptor      // the single non-System applet, when nMain == 1
@@ -107,7 +145,7 @@ func (rt *runtime) dispatch() (string, Applet, []string, bool) {
 			}
 		}
 	}
-	id := ""
+	var picked *registry.Descriptor
 	var applet Applet
 	var args []string
 	var rest []string
@@ -122,19 +160,19 @@ func (rt *runtime) dispatch() (string, Applet, []string, bool) {
 		// and the whole vector is its data — except a first bare token
 		// naming a System applet, the tooling entry path.
 		if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-			if d, found := rt.reg.ByID(rest[0]); found && d.System {
+			if d, found := rt.byAlias[rest[0]]; found && d.System {
 				if a, isApplet := d.Instance.(Applet); isApplet {
-					id, applet, args, ok = d.ID, a, rest[1:], true
+					picked, applet, args, ok = d, a, rest[1:], true
 				}
 			}
 		}
 		if !ok {
-			id, applet, args, ok = sole.ID, sole.Instance.(Applet), rest, true
+			picked, applet, args, ok = sole, sole.Instance.(Applet), rest, true
 		}
 	} else if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
-		if d, found := rt.reg.ByID(rest[0]); found {
+		if d, found := rt.byAlias[rest[0]]; found {
 			if a, isApplet := d.Instance.(Applet); isApplet {
-				id, applet, args, ok = d.ID, a, rest[1:], true
+				picked, applet, args, ok = d, a, rest[1:], true
 			}
 		}
 		if !ok {
@@ -145,16 +183,16 @@ func (rt *runtime) dispatch() (string, Applet, []string, bool) {
 		if len(rt.argv) > 0 {
 			name = binaryBasename(rt.argv[0])
 		}
-		if d, found := rt.reg.ByID(name); found && !d.Hidden {
+		if d, found := rt.byAlias[name]; found && !d.Hidden {
 			if a, isApplet := d.Instance.(Applet); isApplet {
-				id, applet, args, ok = d.ID, a, rest, true
+				picked, applet, args, ok = d, a, rest, true
 			}
 		}
 		if !ok {
 			rt.usage(public, Tr("{name} does not name an applet", "name", name))
 		}
 	}
-	return id, applet, args, ok
+	return picked, applet, args, ok
 }
 
 // usage prints the dispatch-failure usage to stderr; Hidden and System
@@ -166,7 +204,7 @@ func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 	if len(public) > 0 {
 		fmt.Fprintln(rt.stderr, Tr("applets:"))
 		for _, d := range public {
-			fmt.Fprintf(rt.stderr, "  %s\n", d.ID)
+			fmt.Fprintf(rt.stderr, "  %s\n", primaryAlias(d))
 		}
 	}
 }
@@ -192,12 +230,16 @@ type invocationPlan struct {
 // resolution (with the console fallback), schema construction. It
 // records violations into c and performs no side effects: nothing is
 // written, ejected, injected, configured or started.
-func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invocationPlan {
+func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string) *invocationPlan {
+	// the operator surfaces — env prefix, config file names and
+	// sections, help — speak the applet's primary alias; the graph and
+	// the inject vocabulary speak its id
+	alias := primaryAlias(d)
 	p := &invocationPlan{}
 	p.src = config.Sources{
 		Args:         args,
 		LookupEnv:    rt.lookupEnv,
-		Locations:    rt.locations(appletID),
+		Locations:    rt.locations(alias),
 		Stat:         rt.stat,
 		Lstat:        rt.lstat,
 		Open:         rt.open,
@@ -207,21 +249,21 @@ func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invo
 		MaxSize:      rt.maxConfig,
 	}
 	before := c.Len()
-	peek := config.PeekCore(c, appletID, p.src)
+	peek := config.PeekCore(c, alias, p.src)
 	if c.Len() == before {
 		p.files = config.LoadFiles(c, p.src, rt.explicitPath(peek))
 	}
 	if c.Len() == before {
-		p.core = p.files.ApplyCore(c, appletID, p.src)
+		p.core = p.files.ApplyCore(c, alias, p.src)
 		p.ctl = rt.controls(c, p.core)
 	}
 	if c.Len() == before {
-		root := rt.coreRoot(c, appletID, rt.providerSeeds(p.files))
-		if contains(p.core.Disable, appletID) {
+		root := rt.coreRoot(c, d, rt.providerSeeds(p.files))
+		if contains(p.ctl.Disable, d.ID) {
 			// as a required dependency of the core node the applet
 			// would fail resolution anyway; this keeps the message
 			// human
-			c.Fail("applet %q is disabled", appletID)
+			c.Fail("applet %q is disabled", alias)
 		}
 		if c.Len() == before {
 			p.res = graph.Resolve(c, rt.reg, root, p.ctl)
@@ -231,16 +273,16 @@ func (rt *runtime) plan(c *fail.Collector, appletID string, args []string) *invo
 		for _, m := range p.res.Ordered {
 			p.members = append(p.members, m.Desc)
 		}
-		p.sch = config.NewSchema(c, appletID, &p.core, p.members, rt.suppressed)
+		p.sch = config.NewSchema(c, alias, &p.core, p.members, rt.suppressed)
 	}
 	return p
 }
 
 // execute is the post-dispatch pipeline: planning, ejection, strict
 // parse, then help/write-config short-circuits or the lifecycle.
-func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Applet, args []string) int {
+func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, applet Applet, args []string) int {
 	code := 2
-	p := rt.plan(rt.c, appletID, args)
+	p := rt.plan(rt.c, d, args)
 	if rt.c.Len() == 0 {
 		keep := map[string]bool{}
 		for _, m := range p.res.Ordered {
@@ -479,17 +521,43 @@ func (rt *runtime) explicitPath(peek config.Core) string {
 	return out
 }
 
-// controls builds the resolver controls from the core config; override
-// entries use the from=to form.
+// controls translates the operator's service references into graph
+// identities: disable/enable/override values accept BOTH vocabularies
+// — aliases (what operators speak) and ids (what inject tags and docs
+// say). The graph stays identity-based and ignorant of aliases.
+// Override's from side is special: it matches dependency REFERENCES
+// (tag strings), which may name nothing registered — an unresolvable
+// from stays raw and at worst earns the unused-override warning.
 func (rt *runtime) controls(c *fail.Collector, core config.Core) graph.Controls {
-	ctl := graph.Controls{Disable: core.Disable, Enable: core.Enable}
+	ctl := graph.Controls{}
+	for _, ref := range core.Disable {
+		if d, ok := rt.resolveRef(c, ref); ok {
+			ctl.Disable = append(ctl.Disable, d.ID)
+		} else {
+			c.Fail("disable: unknown service %q", ref)
+		}
+	}
+	for _, ref := range core.Enable {
+		if d, ok := rt.resolveRef(c, ref); ok {
+			ctl.Enable = append(ctl.Enable, d.ID)
+		} else {
+			c.Fail("enable: unknown service %q", ref)
+		}
+	}
 	for _, entry := range core.Override {
 		from, to, wellFormed := strings.Cut(entry, "=")
 		if wellFormed && from != "" && to != "" {
 			if ctl.Override == nil {
 				ctl.Override = map[string]string{}
 			}
-			ctl.Override[from] = to
+			if fromD, ok := rt.resolveRef(c, from); ok {
+				from = fromD.ID
+			}
+			if toD, ok := rt.resolveRef(c, to); ok {
+				ctl.Override[from] = toD.ID
+			} else {
+				c.Fail("override: unknown substitute %q for %q", to, from)
+			}
 		} else {
 			c.Fail("override %q: expected from=to", entry)
 		}
@@ -537,11 +605,11 @@ func (rt *runtime) providerSeeds(files *config.Files) []string {
 // registry builds the descriptor through its normal machinery but
 // never stores it — see the spec for why the root cannot be a
 // registry entry.
-func (rt *runtime) coreRoot(c *fail.Collector, appletID string, providerIDs []string) *registry.Descriptor {
+func (rt *runtime) coreRoot(c *fail.Collector, d *registry.Descriptor, providerIDs []string) *registry.Descriptor {
 	var root *registry.Descriptor
-	if d, registered := rt.reg.ByID(appletID); registered {
+	{
 		fields := []reflect.StructField{
-			{Name: "Applet", Type: d.Concrete, Tag: reflect.StructTag(`inject:"` + appletID + `"`)},
+			{Name: "Applet", Type: d.Concrete, Tag: reflect.StructTag(`inject:"` + d.ID + `"`)},
 			{Name: "Translator", Type: translatorType, Tag: `inject:";optional"`},
 		}
 		for i, id := range providerIDs {
@@ -551,9 +619,7 @@ func (rt *runtime) coreRoot(c *fail.Collector, appletID string, providerIDs []st
 				Tag:  reflect.StructTag(`inject:"` + id + `;optional"`),
 			})
 		}
-		root = rt.reg.Virtual(CoreAlias, reflect.New(reflect.StructOf(fields)).Interface())
-	} else {
-		c.Fail("applet %q is not registered", appletID)
+		root = rt.reg.Virtual(CoreAlias, reflect.New(reflect.StructOf(fields)).Interface(), c)
 	}
 	return root
 }

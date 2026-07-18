@@ -41,7 +41,7 @@ func builderWorld(t *testing.T) (*registry.Registry, func(*AppBuilder) (*App, er
 	if c.Len() != 0 {
 		t.Fatalf("catalog setup failed: %v", c.All())
 	}
-	return reg, func(b *AppBuilder) (*App, error) { return b.buildFrom(reg) }
+	return reg, func(b *AppBuilder) (*App, error) { return b.buildFrom(reg, nil) }
 }
 
 func TestBuildComposesRankedOrder(t *testing.T) {
@@ -130,12 +130,12 @@ func TestRegistrationAliasCollision(t *testing.T) {
 		Alias("same").registerInto(reg, c)
 	NewBareRegistration("example.com/x/two", func() *bldB { return &bldB{} }).
 		Alias("same").registerInto(reg, c)
-	_, err := Builder().AcceptAll().buildFrom(reg)
+	_, err := Builder().AcceptAll().buildFrom(reg, nil)
 	if err == nil || !strings.Contains(err.Error(), `alias "same" is claimed by both`) {
 		t.Errorf("colliding registration aliases must fail Build: %v", err)
 	}
 	// and the resolution is a composition rename
-	app, err := Builder().AcceptAll().Alias("example.com/x/two", "other").buildFrom(reg)
+	app, err := Builder().AcceptAll().Alias("example.com/x/two", "other").buildFrom(reg, nil)
 	if err != nil || app == nil {
 		t.Errorf("Builder.Alias must resolve the collision: %v", err)
 	}
@@ -150,10 +150,10 @@ func TestConcreteTypeAcceptedTwice(t *testing.T) {
 	if c.Len() != 0 {
 		t.Fatalf("the catalog must tolerate same-type entries: %v", c.All())
 	}
-	if _, err := Builder().Accept("example.com/x/one").buildFrom(reg); err != nil {
+	if _, err := Builder().Accept("example.com/x/one").buildFrom(reg, nil); err != nil {
 		t.Errorf("accepting one of them is fine: %v", err)
 	}
-	_, err := Builder().AcceptAll().buildFrom(reg)
+	_, err := Builder().AcceptAll().buildFrom(reg, nil)
 	if err == nil || !strings.Contains(err.Error(), "accepted as both") {
 		t.Errorf("accepting both must fail Build: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestDefaultOutsideDomainFailsAtBuild(t *testing.T) {
 	if c.Len() != 0 {
 		t.Fatalf("the commit is type-level only and must pass: %v", c.All())
 	}
-	_, err := Builder().AcceptAll().buildFrom(reg)
+	_, err := Builder().AcceptAll().buildFrom(reg, nil)
 	if err == nil || !strings.Contains(err.Error(), "not among the allowed values") {
 		t.Errorf("the value-level check belongs to Build: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestOldStyleEntriesTolerated(t *testing.T) {
 	reg.Register("legacy", &bldA{}, registry.Options{})
 	NewBareRegistration("example.com/x/two", func() *bldB { return &bldB{} }).
 		Alias("bravo").registerInto(reg, c)
-	app, err := Builder().AcceptAll().buildFrom(reg)
+	app, err := Builder().AcceptAll().buildFrom(reg, nil)
 	if err != nil || app == nil {
 		t.Fatalf("coexistence Build must tolerate old-style entries: %v", err)
 	}

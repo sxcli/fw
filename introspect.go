@@ -141,14 +141,14 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 		err = fmt.Errorf("introspection: %q is not an applet", appletID)
 	} else {
 		c := &fail.Collector{}
-		p := i.rt.plan(c, appletID, args)
+		p := i.rt.plan(c, d, args)
 		if c.Len() == 0 {
 			out = argInfos(p.sch)
 		} else {
 			err = errors.Join(c.All()...)
 			fallback := &fail.Collector{}
 			var core config.Core
-			root := i.rt.coreRoot(fallback, appletID, nil)
+			root := i.rt.coreRoot(fallback, d, nil)
 			var res graph.Result
 			if fallback.Len() == 0 {
 				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})

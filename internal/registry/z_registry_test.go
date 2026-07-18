@@ -128,7 +128,7 @@ func TestRegisterIdentityViolations(t *testing.T) {
 		{"invalid id uppercase", func(r *Registry) { r.Register("SvcA", &svcA{}, Options{}) }, 0},
 		{"invalid id empty", func(r *Registry) { r.Register("", &svcA{}, Options{}) }, 0},
 		{"invalid id digit start", func(r *Registry) { r.Register("1svc", &svcA{}, Options{}) }, 0},
-		{"invalid id dash", func(r *Registry) { r.Register("svc-a", &svcA{}, Options{}) }, 0},
+		// "svc-a" became a LEGAL id with the identity model
 		{"invalid id blank identifier", func(r *Registry) { r.Register("_", &svcA{}, Options{}) }, 0},
 		{"duplicate id", func(r *Registry) {
 			r.Register("svca", &svcA{}, Options{})
@@ -291,8 +291,10 @@ func TestDumpReadable(t *testing.T) {
 }
 
 func TestIsValidID(t *testing.T) {
-	valid := []string{"a", "svca", "svc_a", "_svc", "s1"}
-	invalid := []string{"", "A", "svcA", "1svc", "svc-a", "svc a", "svc.a"}
+	// the identity model (composition release) legalized path-shaped
+	// ids: dots, hyphens and slashes are id characters now
+	valid := []string{"a", "svca", "svc_a", "_svc", "s1", "svc-a", "svc.a", "example.com/x/svc"}
+	invalid := []string{"", "A", "svcA", "1svc", "svc a", "-svc"}
 	for _, id := range valid {
 		if !isValidID(id) {
 			t.Errorf("%q should be valid", id)

@@ -12,27 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-
 package sxclifw
 
-import (
-	"os"
-	"path/filepath"
-)
-
-// platformMain runs the pipeline with the process arguments; there is
-// no service mode on this platform.
-func platformMain(app *App) int {
-	return run(productionRuntime(app, os.Args, nil))
-}
-
-// systemConfigDir returns the system-wide config location root.
-func systemConfigDir() string {
-	return "/etc"
-}
-
-// binaryBasename extracts the applet-selector name from argv[0].
-func binaryBasename(argv0 string) string {
-	return filepath.Base(argv0)
+// Solo is the single-applet front door and the registration chain's
+// second terminal: commit the registration, accept it (plus whatever
+// its closure needs from the catalog — dependencies resolve as
+// always), and run. It never returns.
+//
+//	fw.Solo(fw.NewRegistration("example.com/mytool/srv", newSrv,
+//	    func(s *Srv) *Config { return &s.cfg }).
+//	    Alias("srv"))
+//
+// Growing beyond one applet means graduating to the Builder — Solo IS
+// the builder route, pre-composed as AcceptAll with the sole applet.
+func Solo[T any](r *Registration[T]) {
+	r.Register()
+	Builder().AcceptAll().Main()
 }
