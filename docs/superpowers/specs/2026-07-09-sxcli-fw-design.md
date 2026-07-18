@@ -61,16 +61,21 @@ sxcli-fw/
     └── yaml/             — YAML ⇄ JSON config format provider
 ```
 
-Consumers choose what links into their binary via blank imports:
+Consumers choose what links into their binary by importing packages
+for their exported id constants and composing explicitly (§4 — the
+composition model; imports catalog, `Accept` composes, nothing is
+blank):
 
 ```go
 import (
     fw "sxcli.dev/fw"
-    _ "sxcli.dev/fw/sink/console"
-    _ "sxcli.dev/fw/configfmt/yaml"
+    "sxcli.dev/fw/sink/console"
+    "sxcli.dev/fw/configfmt/yaml"
 )
 
-func main() { fw.Main() }
+func main() {
+    fw.Builder().AcceptAll().Order(console.ID, yaml.ID).Main()
+}
 ```
 
 Providers only import the root package — no import cycles. Everything under
@@ -169,21 +174,45 @@ under the SCM is a logged error, exit code 2.
 
 ## 4. Registration & Dependency Injection
 
+DECIDED 2026-07-18, the composition release (implementation pending —
+this section leads it): registration and participation are two
+separate acts. `Register` fills a process-wide **catalog** — a phone
+book of factories and declarations, holding no state and activating
+nothing. What a binary actually *is* gets said explicitly, once, in
+`main`, through the **Builder**. Blank imports die: a package is
+imported for its exported id constant, which the composition
+references — the import is justified by an identifier like any other.
+
 ### Registration API
 
 ```go
-func Register(id string, instance any, opts ...RegisterOption)
-func Provides[I any]() RegisterOption          // declares a provided interface
-func WithConfig(cfgPtr any) RegisterOption     // pointer to the Configuration struct;
-                                               // its field values are the defaults
-func WithMetadata(md *Metadata) RegisterOption // optional declarative description
-func Hidden() RegisterOption                   // applet: absent from listings and
-                                               // basename dispatch; explicit
-                                               // first-token selection only
-func System() RegisterOption                   // applet: binary machinery, not a
-                                               // user command; implies Hidden and
-                                               // is ignored by single-applet counting
+func Register[T any](id string, factory func() *T, opts ...RegisterOption)
+func Provides[I any]() RegisterOption            // declares a provided interface
+func WithConfig[T, C any](get func(*T) *C) RegisterOption
+                                                 // accessor to the instance's
+                                                 // Configuration struct; the
+                                                 // constructor's field values
+                                                 // are the defaults
+func WithMetadata(md *Metadata) RegisterOption   // optional declarative description
+func Hidden() RegisterOption                     // applet: absent from listings and
+                                                 // basename dispatch; explicit
+                                                 // first-token selection only
+func System() RegisterOption                     // applet: binary machinery, not a
+                                                 // user command; implies Hidden and
+                                                 // is ignored by single-applet counting
 ```
+
+The factory is typed: the type parameter anchors the concrete type at
+registration, so everything structural is validated with **no instance
+constructed** — inject tags, applet-ness, Starter/Stopper rules,
+declared interfaces (`reflect.PointerTo(T).Implements`), config tags
+and metadata keys (through the accessor's statically known `C`).
+Constructors carry a contract: **cheap** — allocate and set defaults,
+nothing else; I/O belongs to `Configured` (the sink contract's
+philosophy, extended to birth). Every registering package **exports
+its id** as a constant (`ID`; `XxxID` when a package registers
+several) — the constant is the package's public handle and what
+compositions reference; `sxclivet` enforces the convention (§Tooling).
 
 **Applet visibility** is registration-time policy, not a capability —
 hence options, not interfaces (interfaces declare what a service can
@@ -196,10 +225,10 @@ a human is never meant to type — a shell-completion query endpoint is
 the canonical case — and additionally excludes the applet from
 single-applet counting, so a module registering one cannot flip an
 existing binary's dispatch mode. `System` implies `Hidden`. Whether
-the registering package arrived by blank import or was written in
-`main.go` is irrelevant — the options describe what the applet *is*,
-not how it got there: a blank-imported library of ordinary applets
-registers them plain, and they count and list like any command. In
+the applet was cataloged by a library package or written in `main.go`
+is irrelevant — the options describe what the applet *is*, not how it
+got there: a library of ordinary applets registers them plain, and
+once accepted they count and list like any command. In
 every other respect Hidden/System applets are ordinary: id rules, the
 `APPLETID_` env prefix, config files, closure resolution and the
 lifecycle are unchanged.
@@ -254,36 +283,96 @@ but the declared contract is honored by the machinery, and completion
 services can trust it via `ArgInfo.Allowed`; the advisory hint travels
 the same road as `ArgInfo.Hint`.
 
-Called from package `init()`; one package may register many services. The
-public `Register` delegates to a package-level default registry (tests build
-private registries).
+`Register` is typically called from package `init()` — cataloging is
+the one thing init still does, and it is inert; a single-file tool may
+register straight from `main` and have no init magic at all. One
+package may register many services.
 
-At registration the core builds a **descriptor**: service ID, concrete type,
-declared interfaces (each verified by reflection against the instance),
-config schema (reflected from the config struct's tags), and dependency
-fields. Registration **never panics** — every violation is recorded and
-startup fails reporting *all* problems at once:
+**Validation is two-phase, each phase checking what exists at that
+moment.** Registration validates types and declarations (never
+panics; violations are recorded and reported all at once):
 
 - invalid ID (must be lowercase, Go-identifier style; `core` and
   `introspection` are reserved),
-- duplicate ID,
-- the same concrete struct type registered more than once (forbidden),
-- instance does not implement a declared interface,
+- declared interface the concrete type does not implement,
 - applet implementing Starter/Stopper,
 - malformed tags / unsupported config field types,
 - `inject` tag on an unexported field,
 - slice-of-concrete-struct `inject` field,
-- `Hidden`/`System` on a service that is not an applet.
+- `Hidden`/`System` on a non-applet,
+- metadata violations that are type-level (unknown field keys, type
+  mismatches, hint rules).
+
+`Build()` validates the composed, instantiated reality: duplicate ids
+within the composition, the same concrete type accepted twice,
+unresolvable required dependencies, unbroken ambiguity (below), and
+the value-level metadata check — a constructor default outside its own
+declared domain — which needs instances to exist.
 
 The concrete struct type is recorded automatically — no option needed —
 so dependents may require the service by `*Struct` or by any declared
 interface.
 
-After `Register` the instance belongs to the framework: register a
-literal (`Register("x", &X{}, …)`) and keep no references. Once the
-closure is resolved, services outside it are **ejected** from the
-registry so their instances can be garbage collected before `Configured`
-ever runs (best effort — a kept package-level reference defeats it).
+### Composition: Builder, Accept, Order
+
+```go
+app, err := fw.Builder().
+    AcceptAll().                            // admission: what the binary is
+    Order(cat.ID, ls.ID, console.ID).       // ranking: who wins, who lists first
+    Build()                                 // instantiate + validate, all at once
+app.Main()                                  // never returns
+
+fw.Builder().AcceptAll().Main()             // terminal form: Build, report
+                                            // violations, exit 2 — the standard
+                                            // startup contract
+
+fw.Solo("srv", newSrv, fw.WithConfig(...))  // the single-applet front door:
+                                            // register + AcceptAll + Main
+```
+
+Two independent axes, two verbs:
+
+- **`Accept(ids...)` / `AcceptAll()` — admission.** What the binary is
+  composed of. An un-accepted catalog entry does not exist for this
+  app: no resolution, no dispatch, no introspection, and no `--enable`
+  — `Accept` is the developer's composition boundary (linking);
+  `enable`/`disable` remain the operator's runtime controls *within*
+  it.
+- **`Order(ids...)` — rank among the accepted.** `Order` never admits:
+  ordering an un-accepted id is a composition violation (a free typo
+  catcher). Ranked beats unranked in single-valued matching; slice
+  fields gather ranked members first in `Order` sequence, then
+  unranked **sorted by id**; `Order` also drives listing order (usage,
+  `Applets()`, help sections). Multiple `Order` calls append.
+
+**Ties are never broken silently** — the one rule, everywhere. A bare
+single-valued field with two candidates neither of which is ranked is
+a composition violation naming both; resolution is an id in the inject
+tag or an `Order` entry. Import order, registration order and
+`goimports`' opinions appear nowhere in the semantics: a formatter can
+never again change which service gets injected.
+
+`Build()` runs every accepted factory exactly once (constructors are
+cheap by contract), applies the config accessors, validates, and
+returns a **sealed** App — composition immutable from here, the graph
+immutability philosophy one layer up. The error return is for tests
+and embedders (`fwtest` composes, builds, asserts); `Main()` — on the
+App or as the Builder terminal — is the production path and reports
+violations under the standard all-at-once, exit-2 contract. Multiple
+Builds in one process are legal and share nothing: each App owns fresh
+instances, which is what makes user tests finally clean (no shared
+state, no filled-config-becomes-defaults corruption).
+
+The gradient is deliberate: `Solo` for one applet and no composition
+questions; `AcceptAll` for busybox assembly with ambiguity refused
+loudly; `Accept`/`Order` when the composition itself is the point.
+Nothing learned at one tier is unlearned at the next — `Solo` *is* the
+builder route, pre-composed.
+
+Ejection is unchanged in spirit and simpler in mechanism: closure
+resolution decides lifecycle as always, and accepted-but-cold
+instances are released after `Retain` — born cheap at Build, dropped
+before `Configured` ever runs.
 
 ### Introspection
 
@@ -941,7 +1030,54 @@ handoff, the `Plural-Forms` expression evaluator) is the separate
 `sxcli.dev/i18n` module — the ecosystem pattern, again: the core owns
 the seam, the module owns gettext.
 
-## 8. Testing Strategy
+## 8. Tooling — sxcli.dev/vet
+
+The reflection-and-tags bet is only defensible with tooling that
+catches its failure modes before runtime; this is the price of the
+bet, paid explicitly. A separate module — **`sxcli.dev/vet`**, binary
+`sxclivet`, built on `golang.org/x/tools/go/analysis` — runs standalone
+and as `go vet -vettool=`; the `x/tools` dependency never touches the
+core's go.mod. The composition model is what makes deep static
+analysis tractable: ids are exported constants, `Accept`/`Order`
+chains are source-visible in `main`, and the generic `Register[T]`
+hands the analyzer the concrete type through `go/types` without
+constructing anything.
+
+Checks:
+
+- **exported-id** — every `Register` id is (or matches) an exported
+  package-level constant (`ID` / `XxxID`); raw string literals and
+  registering packages exporting no constant are flagged. The constant
+  is the package's public handle; without it consumers are back to
+  magic strings.
+- **composition** — `Accept`/`Order` ids exist in the statically
+  reconstructed catalog; `Order ⊆ Accept`; duplicates.
+- **graph viability** — the static mirror of `Build()`: required
+  dependencies of the accepted set resolvable (`types.Implements` in
+  place of reflection), unbroken ambiguity flagged with both
+  candidates named.
+- **unaccepted services** — a package whose cataloged services are
+  *all* unaccepted (in the new world this is almost definitionally a
+  blank import). **Warning by default, promoted to error by
+  `-strict`**: partial acceptance is the feature working as designed
+  and stays silent; total non-acceptance is legal mid-development and
+  a leash in CI.
+- **tag grammar** — misspelled tag keys, malformed `inject` grammar,
+  the whole uncheckable-string-DSL complaint, checked. Pays rent in
+  every package, composed or not.
+
+Stated limits: non-constant ids and dynamically built option slices
+produce a "cannot verify" diagnostic, never silence. Drift between the
+analyzer's matching semantics and the graph's real ones is the design
+risk; the mitigation is a shared **conformance corpus** — fixtures
+that fw's `Build()` tests and the analyzer's tests must judge
+identically (code cannot cross the internal boundary; verdicts can).
+The runtime 90% needs no tooling at all: `Build()` returns an error,
+so a one-line `TestComposition` asserts the whole graph in CI.
+`sxclivet`'s added value is IDE/CI feedback before any test runs, and
+the checks tests cannot express.
+
+## 9. Testing Strategy
 
 - **Registry isolation:** public `Register` delegates to a default registry;
   internals construct private registries so `init()` side effects never
@@ -961,7 +1097,7 @@ the seam, the module owns gettext.
   testable anywhere; Windows-specific tests run under **Wine** using
   `x/sys/windows/svc/debug`.
 
-## 9. Open Items (deferred by decision)
+## 10. Open Items (deferred by decision)
 
 | Item | State |
 | --- | --- |
@@ -981,3 +1117,7 @@ the seam, the module owns gettext.
 | Positional declarations for introspection/completion | still open; field-level self-description landed as `WithMetadata` |
 | Shell completion service | decided: a SEPARATE module (`sxcli.dev` namespace), never in core — the first external Introspector consumer; registers per-shell `System` applets (invoked `binary <id> …` by the generated scripts); any capability gap it hits is fixed as a core API improvement, never a backdoor |
 | Disabling first-token applet dispatch entirely (build-time policy for binaries that want basename/single-applet behavior only) | idea noted while designing Hidden/System — registration/`Suppress`-style knob, unscheduled; interaction with System selectors must be resolved when designed |
+| Composition release fallout | §4's model, implemented: fw rework, every ecosystem package gains an exported ID and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
+| Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
+| `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
+| `sxcli.dev/conf` extraction (the config engine as a standalone module) | agreed direction, deliberately NOT now: internal/config stays internal through v0 churn, framework-ignorance discipline is the extraction guarantee, facade sketched on paper first; extract at the v1 horizon as the go-to-market funnel |
