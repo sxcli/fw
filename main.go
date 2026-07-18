@@ -229,13 +229,26 @@ func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 // the real run and Introspector.Arguments consume it, so introspection
 // truth cannot drift from execution truth.
 type invocationPlan struct {
-	src     config.Sources
-	files   *config.Files
-	core    config.Core
-	ctl     graph.Controls
-	res     graph.Result
-	members []*registry.Descriptor
-	sch     *config.Schema
+	src   config.Sources
+	files *config.Files
+	core  config.Core
+	ctl   graph.Controls
+	res   graph.Result
+	sch   *config.Schema
+}
+
+// sections maps a resolved closure to config sections: the primary
+// alias names each section and the metadata assertion happens here —
+// the config engine never sees a descriptor.
+func sections(ordered []graph.Member) []config.Section {
+	var out []config.Section
+	for _, m := range ordered {
+		if m.Desc.ConfigPtr != nil {
+			meta, _ := m.Desc.Metadata.(*config.Meta)
+			out = append(out, config.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta})
+		}
+	}
+	return out
 }
 
 // plan runs the pipeline's planning steps: lenient core peek (honoring
@@ -283,10 +296,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		for _, m := range p.res.Ordered {
-			p.members = append(p.members, m.Desc)
-		}
-		p.sch = config.NewSchema(c, alias, &p.core, p.members, rt.suppressed)
+		p.sch = config.NewSchema(c, alias, &p.core, sections(p.res.Ordered), rt.suppressed)
 	}
 	return p
 }

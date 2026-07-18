@@ -16,10 +16,10 @@
 // framework: schema extraction from tagged config structs, the lenient
 // and strict argument parsers, environment lookup, config file discovery
 // and transcoding, and source merging with in-place struct filling.
-// Like the other internal packages it is framework-ignorant: descriptors
-// arrive from the registry and format providers arrive through a
-// structural interface that the root package's ConfigFormatProvider
-// satisfies implicitly.
+// Like the other internal packages it is framework-ignorant: config
+// structs arrive as named Sections built by the caller, and format
+// providers arrive through a structural interface that the root
+// package's ConfigFormatProvider satisfies implicitly.
 package config
 
 import (
@@ -89,6 +89,16 @@ type Core struct {
 	Disable     []string `json:"disable" arg:"disable" usage:"service ids to remove from the closure"`
 	Enable      []string `json:"enable" arg:"enable" usage:"service ids to force into the closure"`
 	Override    []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
+}
+
+// Section is one named contributor to a schema: a config struct under
+// its operator-facing section name. The framework maps its accepted
+// services to sections; a standalone caller builds them directly. The
+// engine never sees anything richer — this is the whole seam.
+type Section struct {
+	Name string // section name: config-file key, env prefix
+	Ptr  any    // pointer to the config struct; nil contributes nothing
+	Meta *Meta  // field metadata, nil when none declared
 }
 
 // ProbedField describes one settable config field for registration-time

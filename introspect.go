@@ -165,11 +165,7 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
 			}
 			if fallback.Len() == 0 {
-				var members []*registry.Descriptor
-				for _, m := range res.Ordered {
-					members = append(members, m.Desc)
-				}
-				sch := config.NewSchema(fallback, appletID, &core, members, i.rt.suppressed)
+				sch := config.NewSchema(fallback, appletID, &core, sections(res.Ordered), i.rt.suppressed)
 				if fallback.Len() == 0 {
 					out = argInfos(sch)
 				}

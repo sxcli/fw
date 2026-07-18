@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"sxcli.dev/fw/internal/fail"
-	"sxcli.dev/fw/internal/registry"
 )
 
 type sinkConfig struct {
@@ -41,12 +40,12 @@ type dbConfig struct {
 
 func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 	t.Helper()
-	var members []*registry.Descriptor
-	for id, cfg := range structs {
-		members = append(members, &registry.Descriptor{ID: id, Aliases: []string{id}, ConfigPtr: cfg})
+	var sections []Section
+	for name, cfg := range structs {
+		sections = append(sections, Section{Name: name, Ptr: cfg})
 	}
 	c := &fail.Collector{}
-	s := NewSchema(c, "cat", core, members, nil)
+	s := NewSchema(c, "cat", core, sections, nil)
 	if c.Len() != 0 {
 		t.Fatalf("unexpected schema errors: %v", c.All())
 	}
@@ -135,12 +134,12 @@ func TestSchemaCrossServiceCollisions(t *testing.T) {
 	type two struct {
 		Y int `json:"y" arg:"shared"`
 	}
-	members := []*registry.Descriptor{
-		{ID: "one", Aliases: []string{"one"}, ConfigPtr: &one{}},
-		{ID: "two", Aliases: []string{"two"}, ConfigPtr: &two{}},
+	sections := []Section{
+		{Name: "one", Ptr: &one{}},
+		{Name: "two", Ptr: &two{}},
 	}
 	c := &fail.Collector{}
-	NewSchema(c, "cat", &Core{}, members, nil)
+	NewSchema(c, "cat", &Core{}, sections, nil)
 	if c.Len() == 0 {
 		t.Error("duplicate long across services must be an error")
 	}

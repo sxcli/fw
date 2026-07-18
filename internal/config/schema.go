@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"sxcli.dev/fw/internal/fail"
-	"sxcli.dev/fw/internal/registry"
 )
 
 var durationType = reflect.TypeOf(time.Duration(0))
@@ -62,7 +61,7 @@ var coreMeta = &Meta{Fields: map[string]FieldMeta{
 // Duplicate long argument names and duplicate explicit env names across
 // the schema are violations; short-form collisions are resolved
 // first-come-first-served.
-func NewSchema(c *fail.Collector, appletID string, core *Core, members []*registry.Descriptor, suppress []string) *Schema {
+func NewSchema(c *fail.Collector, appletID string, core *Core, sections []Section, suppress []string) *Schema {
 	s := &Schema{
 		appletID: appletID,
 		long:     map[string]*Field{},
@@ -70,11 +69,9 @@ func NewSchema(c *fail.Collector, appletID string, core *Core, members []*regist
 		owner:    map[*Field]*serviceSchema{},
 	}
 	s.add(c, CoreID, reflect.ValueOf(core), suppress, coreMeta)
-	for _, d := range members {
-		if d.ConfigPtr != nil {
-			meta, _ := d.Metadata.(*Meta)
-			// sections carry the operator-facing name: the primary alias
-			s.add(c, d.Aliases[0], reflect.ValueOf(d.ConfigPtr), nil, meta)
+	for _, sec := range sections {
+		if sec.Ptr != nil {
+			s.add(c, sec.Name, reflect.ValueOf(sec.Ptr), nil, sec.Meta)
 		}
 	}
 	env := map[string]*Field{}
