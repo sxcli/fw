@@ -48,12 +48,54 @@ import (
 // native JSON; see the engine package.
 type Provider = engine.Provider
 
+// Feature identifies one suppressible piece of the front door's
+// surface: a core argument, a tier of the config location search, or
+// a whole source. An argument feature's value IS the long argument
+// name.
+type Feature string
+
+const (
+	// FeatureConfig is the --config,-c argument: the explicit
+	// configuration file path. Suppressing it leaves the location
+	// search as the only file source.
+	FeatureConfig Feature = "config"
+	// FeatureWriteConfig is the --write-config argument.
+	FeatureWriteConfig Feature = "write-config"
+	// FeatureHelp is the --help,-h argument.
+	FeatureHelp Feature = "help"
+
+	// FeatureCompanionConfig is the pinned config next to the real
+	// binary — a portable-app pattern; rarely wanted on unix.
+	FeatureCompanionConfig Feature = "companion-config"
+	// FeatureSystemConfig is the system-wide location (/etc on unix,
+	// %ProgramData% on windows).
+	FeatureSystemConfig Feature = "system-config"
+	// FeatureUserConfig is the per-user location (the XDG config dir).
+	FeatureUserConfig Feature = "user-config"
+
+	// FeatureEnvironment is the environment as a whole: suppressing it
+	// kills every derived name AND every explicit env-tag binding — a
+	// section's documented ecosystem coupling (an HTTP_PROXY match,
+	// say) dies with it. The author owns the surface. Unlike the
+	// search tiers it applies to caller-supplied Sources too: the
+	// environment is one identifiable door, not a location policy.
+	FeatureEnvironment Feature = "environment"
+)
+
+// tierFeatures are the location-search features: suppressed tiers are
+// simply never probed. Everything else routes to the core schema.
+var tierFeatures = map[Feature]bool{
+	FeatureCompanionConfig: true,
+	FeatureSystemConfig:    true,
+	FeatureUserConfig:      true,
+}
+
 // LoaderBuilder assembles a loading run. Every knob is a chain
 // method; Build is the terminal.
 type LoaderBuilder struct {
 	name     string
 	sections []engine.Section
-	suppress []string
+	features []Feature
 	maxSize  int64
 	provs    []Provider
 	src      *engine.Sources
@@ -76,11 +118,14 @@ func (b *LoaderBuilder) Section(name string, cfg any) *LoaderBuilder {
 	return b
 }
 
-// Suppress removes core arguments (long names, e.g. "write-config")
-// from the schema entirely: the argument becomes unknown, the env var
-// is never read, and a config file mentioning them fails loudly.
-func (b *LoaderBuilder) Suppress(names ...string) *LoaderBuilder {
-	b.suppress = append(b.suppress, names...)
+// Suppress removes pieces of the surface. A suppressed argument
+// feature vanishes from the schema entirely: the argument becomes
+// unknown, the env var is never read, and a config file mentioning it
+// fails loudly. A suppressed location tier is never probed — tier
+// suppression applies to the production search only; a caller-supplied
+// Sources owns its own location policy.
+func (b *LoaderBuilder) Suppress(features ...Feature) *LoaderBuilder {
+	b.features = append(b.features, features...)
 	return b
 }
 
@@ -195,16 +240,49 @@ func (b *LoaderBuilder) Build() (*Loader, bool) {
 // sources assembles the run's Sources: the production wiring unless
 // replaced, with the builder's knobs applied on top.
 func (b *LoaderBuilder) sources() engine.Sources {
-	src := engine.ProductionSources(b.name)
+	var src engine.Sources
 	if b.src != nil {
 		src = *b.src
+	} else {
+		src = engine.ProductionSources(b.name)
+		src.Locations = b.locations()
 	}
-	src.SuppressCore = append(src.SuppressCore, b.suppress...)
+	for _, f := range b.features {
+		if f == FeatureEnvironment {
+			src.LookupEnv = nil
+		} else if !tierFeatures[f] {
+			src.SuppressCore = append(src.SuppressCore, string(f))
+		}
+	}
 	src.Providers = append(src.Providers, b.provs...)
 	if b.maxSize > 0 {
 		src.MaxSize = b.maxSize
 	}
 	return src
+}
+
+// locations composes the production search from the unsuppressed
+// tiers, in merge order.
+func (b *LoaderBuilder) locations() []engine.Location {
+	drop := map[Feature]bool{}
+	for _, f := range b.features {
+		drop[f] = true
+	}
+	var out []engine.Location
+	if !drop[FeatureCompanionConfig] {
+		if loc, ok := engine.CompanionLocation(b.name); ok {
+			out = append(out, loc)
+		}
+	}
+	if !drop[FeatureSystemConfig] {
+		out = append(out, engine.SystemLocation(b.name))
+	}
+	if !drop[FeatureUserConfig] {
+		if loc, ok := engine.UserLocation(b.name); ok {
+			out = append(out, loc)
+		}
+	}
+	return out
 }
 
 // explicitPath mirrors the framework's rule: a --config target that

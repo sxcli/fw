@@ -40,18 +40,41 @@ func StatRegular(path string) (int64, error) {
 	return size, err
 }
 
-// ProductionLocations returns the config search locations of one name:
-// the pinned binary companion, the system location, the user location.
-// An unresolvable binary path silently skips the companion; an
-// unresolvable user config dir skips the user location.
+// CompanionLocation returns the pinned binary-companion location, or
+// false when the real binary path cannot be resolved.
+func CompanionLocation(name string) (Location, bool) {
+	if dir, err := realBinaryDir(); err == nil {
+		return Location{Base: filepath.Join(dir, name+"-config"), Pinned: true}, true
+	}
+	return Location{}, false
+}
+
+// SystemLocation returns the system-wide location (/etc on unix,
+// %ProgramData% on windows).
+func SystemLocation(name string) Location {
+	return Location{Base: filepath.Join(systemConfigDir(), name, "config")}
+}
+
+// UserLocation returns the per-user location (the XDG config dir), or
+// false when it cannot be resolved.
+func UserLocation(name string) (Location, bool) {
+	if dir, err := os.UserConfigDir(); err == nil {
+		return Location{Base: filepath.Join(dir, name, "config")}, true
+	}
+	return Location{}, false
+}
+
+// ProductionLocations returns the full config search of one name:
+// companion, system, user, in merge order. Callers with tier policy
+// (the front door's Suppress) compose the tier constructors instead.
 func ProductionLocations(name string) []Location {
 	var out []Location
-	if dir, err := realBinaryDir(); err == nil {
-		out = append(out, Location{Base: filepath.Join(dir, name+"-config"), Pinned: true})
+	if loc, ok := CompanionLocation(name); ok {
+		out = append(out, loc)
 	}
-	out = append(out, Location{Base: filepath.Join(systemConfigDir(), name, "config")})
-	if dir, err := os.UserConfigDir(); err == nil {
-		out = append(out, Location{Base: filepath.Join(dir, name, "config")})
+	out = append(out, SystemLocation(name))
+	if loc, ok := UserLocation(name); ok {
+		out = append(out, loc)
 	}
 	return out
 }

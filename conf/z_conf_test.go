@@ -28,6 +28,7 @@ import (
 type toolCfg struct {
 	Listen  string        `json:"listen" arg:"listen,l" usage:"address to serve on"`
 	Timeout time.Duration `json:"timeout" arg:"timeout"`
+	Token   string        `json:"token" env:"TOOL_TOKEN"`
 }
 
 // world builds a hermetic front-door run: fake argv/env/fs, captured
@@ -186,12 +187,46 @@ func TestViolationsRestoreTheDefaults(t *testing.T) {
 
 func TestSuppressRemovesTheSurface(t *testing.T) {
 	w := &world{}
-	b := w.builder(t, []string{"--write-config"}, nil, nil).Suppress("write-config")
+	b := w.builder(t, []string{"--write-config"}, nil, nil).Suppress(FeatureWriteConfig)
 	ldr, served := b.Build()
 	if served {
 		t.Fatal("a suppressed write-config must not serve")
 	}
 	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "write-config") {
 		t.Errorf("the unknown argument must be a violation: %v", err)
+	}
+}
+
+func TestTierSuppressionPrunesTheSearch(t *testing.T) {
+	b := Builder("mytool").Suppress(FeatureCompanionConfig, FeatureUserConfig)
+	locs := b.locations()
+	if len(locs) != 1 || !strings.Contains(locs[0].Base, "mytool") || locs[0].Pinned {
+		t.Errorf("only the system tier must remain: %+v", locs)
+	}
+	if len(Builder("mytool").Suppress(FeatureCompanionConfig, FeatureSystemConfig, FeatureUserConfig).locations()) != 0 {
+		t.Error("suppressing every tier must leave no file search")
+	}
+	// tier features must not leak into the core-argument suppression
+	src := Builder("mytool").Suppress(FeatureUserConfig, FeatureHelp).sources()
+	if len(src.SuppressCore) != 1 || src.SuppressCore[0] != "help" {
+		t.Errorf("only argument features belong in SuppressCore: %v", src.SuppressCore)
+	}
+}
+
+func TestEnvironmentSuppressionKillsTheWholeSource(t *testing.T) {
+	w := &world{}
+	cfg := &toolCfg{Listen: ":8080"}
+	env := map[string]string{"MYTOOL_LISTEN": ":7070", "TOOL_TOKEN": "sekrit"}
+	b := w.builder(t, nil, nil, env).Suppress(FeatureEnvironment)
+	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
+	ldr, _ := b.Build()
+	if _, err := ldr.Load(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Listen != ":8080" {
+		t.Errorf("derived env name must be dead: %+v", cfg)
+	}
+	if cfg.Token != "" {
+		t.Errorf("explicit env binding must die with the source: %+v", cfg)
 	}
 }
