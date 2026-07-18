@@ -131,8 +131,12 @@ deleting the assertion.
      commit passes, run exits 2). Commit takes pre-collected Deps
      as-is — Build's copies keep catalog adjustments and tag
      violations are not double-reported.
-   - 7c pending: coexistence fallbacks die (aliasesOf id-fallback,
-     config section fallback, composedAliases old-style branch,
-     buildFrom tightens to Make != nil)
+   - 7c ✓ coexistence fallbacks dead: aliasesOf deleted (primaryAlias
+     reads d.Aliases[0]; the chain guarantees one), config section is
+     d.Aliases[0] with no id fallback, composedAliases drops the
+     id-as-alias branch, buildFrom calls Make unconditionally
+     (instance-carrying entries no longer ride through). The
+     both-vocabulary controls (--enable/--disable/--override by alias
+     OR id) are a FEATURE and stay.
    - 7d pending: docs sweep — README front doors, spec stale
      sentences, this file's closing pass

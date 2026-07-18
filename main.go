@@ -92,13 +92,12 @@ func run(rt *runtime) int {
 			}
 		}
 	}
-	// the operator-name index: every alias (or, coexistence, every
-	// old-style id) resolves to its service. Composed-alias collisions
-	// were Build violations; old worlds have unique ids — a clash here
+	// the operator-name index: every alias resolves to its service.
+	// Composed-alias collisions were Build violations — a clash here
 	// is a framework bug, reported not swallowed.
 	rt.byAlias = map[string]*registry.Descriptor{}
 	for _, d := range rt.reg.All() {
-		for _, a := range aliasesOf(d) {
+		for _, a := range d.Aliases {
 			if prev, taken := rt.byAlias[a]; taken && prev != d {
 				rt.c.Fail("operator name %q resolves to both %q and %q", a, prev.ID, d.ID)
 			} else {

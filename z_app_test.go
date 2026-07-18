@@ -26,9 +26,8 @@ import (
 	"sxcli.dev/fw/internal/registry"
 )
 
-// The new-world end-to-end: catalog chains → Build → the pipeline,
-// with alias-shaped operator surfaces. The old z_ worlds stay on the
-// old path deliberately — they are the coexistence proof.
+// The composition end-to-end: catalog chains → Build → the pipeline,
+// with alias-shaped operator surfaces.
 
 type appCfg struct {
 	Greeting string `json:"greeting" arg:"greeting,g" usage:"the greeting"`

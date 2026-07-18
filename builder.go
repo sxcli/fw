@@ -135,9 +135,9 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 				member.Aliases = names
 			}
 			_, member.Ranked = rank[id]
-			if member.Make != nil {
-				member.Instance, member.ConfigPtr = member.Make()
-			}
+			// every catalog entry came through the chain, so Make is
+			// always set; instance-carrying entries no longer ride through
+			member.Instance, member.ConfigPtr = member.Make()
 			reg.Commit(&member)
 			defaultsInDomain(&member, c)
 		}
@@ -221,8 +221,7 @@ func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c
 }
 
 // checkAliases rejects composed-alias collisions among the accepted,
-// naming both claimants. Coexistence rule for old-style entries (no
-// declared aliases): their id IS their operator name.
+// naming both claimants.
 func (b *AppBuilder) checkAliases(cat *registry.Registry, accepted map[string]bool, renamed map[string][]string, c *fail.Collector) {
 	claimed := map[string]string{}
 	for _, d := range cat.All() {
@@ -270,15 +269,11 @@ func (b *AppBuilder) composedOrder(accepted map[string]bool, rank map[string]int
 	return append(rankedIDs, rest...)
 }
 
-// composedAliases returns a member's operator names after renames; an
-// old-style entry with none declared answers to its id (coexistence).
+// composedAliases returns a member's operator names after renames.
 func composedAliases(d *registry.Descriptor, renamed map[string][]string) []string {
 	out := d.Aliases
 	if names, over := renamed[d.ID]; over {
 		out = names
-	}
-	if len(out) == 0 {
-		out = []string{d.ID}
 	}
 	return out
 }

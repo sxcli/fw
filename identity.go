@@ -65,22 +65,11 @@ func isIDSegment(s string) bool {
 	return ok
 }
 
-// aliasesOf returns a descriptor's operator-facing names. The
-// coexistence rule for old-style entries with none declared: the id
-// IS the operator name. TODO(composition item 7): drop the fallback
-// with the old registration path.
-func aliasesOf(d *registry.Descriptor) []string {
-	out := d.Aliases
-	if len(out) == 0 {
-		out = []string{d.ID}
-	}
-	return out
-}
-
 // primaryAlias returns the name shown in listings and used for the
-// env prefix and config section.
+// env prefix and config section. Every catalog entry has one: the
+// chain refuses to commit without a declared alias.
 func primaryAlias(d *registry.Descriptor) string {
-	return aliasesOf(d)[0]
+	return d.Aliases[0]
 }
 
 // validAlias reports whether a is a legal operator-facing name:
