@@ -20,7 +20,7 @@ import (
 	"os"
 	"sort"
 
-	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/conf"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/registry"
 )
@@ -282,8 +282,8 @@ func composedAliases(d *registry.Descriptor, renamed map[string][]string) []stri
 // registration commit: with the instance born, a constructor default
 // outside its own declared Allowed domain is a composition violation.
 func defaultsInDomain(d *registry.Descriptor, c *fail.Collector) {
-	if meta, has := d.Metadata.(*config.Meta); has && d.ConfigPtr != nil {
-		probes := config.ProbeFields(d.ConfigPtr)
+	if meta, has := d.Metadata.(*conf.Meta); has && d.ConfigPtr != nil {
+		probes := conf.ProbeFields(d.ConfigPtr)
 		for name, fm := range meta.Fields {
 			if probe, known := probes[name]; known && len(fm.Allowed) > 0 {
 				for _, err := range defaultDomainViolations(d.ID, name, fm.Allowed, probe) {

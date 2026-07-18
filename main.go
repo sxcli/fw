@@ -24,7 +24,7 @@ import (
 	"reflect"
 	"strings"
 
-	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/conf"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
@@ -229,23 +229,23 @@ func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 // the real run and Introspector.Arguments consume it, so introspection
 // truth cannot drift from execution truth.
 type invocationPlan struct {
-	src   config.Sources
-	files *config.Files
-	core  config.Core
+	src   conf.Sources
+	files *conf.Files
+	core  conf.Core
 	ctl   graph.Controls
 	res   graph.Result
-	sch   *config.Schema
+	sch   *conf.Schema
 }
 
 // sections maps a resolved closure to config sections: the primary
 // alias names each section and the metadata assertion happens here —
 // the config engine never sees a descriptor.
-func sections(ordered []graph.Member) []config.Section {
-	var out []config.Section
+func sections(ordered []graph.Member) []conf.Section {
+	var out []conf.Section
 	for _, m := range ordered {
 		if m.Desc.ConfigPtr != nil {
-			meta, _ := m.Desc.Metadata.(*config.Meta)
-			out = append(out, config.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta})
+			meta, _ := m.Desc.Metadata.(*conf.Meta)
+			out = append(out, conf.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta})
 		}
 	}
 	return out
@@ -262,7 +262,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	// the inject vocabulary speak its id
 	alias := primaryAlias(d)
 	p := &invocationPlan{}
-	p.src = config.Sources{
+	p.src = conf.Sources{
 		Args:         args,
 		LookupEnv:    rt.lookupEnv,
 		Locations:    rt.locations(alias),
@@ -275,9 +275,9 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		MaxSize:      rt.maxConfig,
 	}
 	before := c.Len()
-	peek := config.PeekCore(c, alias, p.src)
+	peek := conf.PeekCore(c, alias, p.src)
 	if c.Len() == before {
-		p.files = config.LoadFiles(c, p.src, rt.explicitPath(peek))
+		p.files = conf.LoadFiles(c, p.src, rt.explicitPath(peek))
 	}
 	if c.Len() == before {
 		p.core = p.files.ApplyCore(c, alias, p.src)
@@ -296,7 +296,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = config.NewSchema(c, alias, &p.core, sections(p.res.Ordered), rt.suppressed)
+		p.sch = conf.NewSchema(c, alias, &p.core, sections(p.res.Ordered), rt.suppressed)
 	}
 	return p
 }
@@ -534,7 +534,7 @@ func (rt *runtime) report(buffer *logging.Buffer) int {
 // explicitPath resolves the --config path of this run. In write-config
 // mode the target is input and output both: an existing target is
 // loaded (normalizing an existing file), a missing one is only created.
-func (rt *runtime) explicitPath(peek config.Core) string {
+func (rt *runtime) explicitPath(peek conf.Core) string {
 	out := peek.Config
 	if peek.WriteConfig && out != "" {
 		if _, err := rt.stat(out); err != nil {
@@ -551,7 +551,7 @@ func (rt *runtime) explicitPath(peek config.Core) string {
 // Override's from side is special: it matches dependency REFERENCES
 // (tag strings), which may name nothing registered — an unresolvable
 // from stays raw and at worst earns the unused-override warning.
-func (rt *runtime) controls(c *fail.Collector, core config.Core) graph.Controls {
+func (rt *runtime) controls(c *fail.Collector, core conf.Core) graph.Controls {
 	ctl := graph.Controls{}
 	for _, ref := range core.Disable {
 		if d, ok := rt.resolveRef(c, ref); ok {
@@ -590,11 +590,11 @@ func (rt *runtime) controls(c *fail.Collector, core config.Core) graph.Controls 
 
 // providers returns every registered service declaring
 // ConfigFormatProvider, in registration order.
-func (rt *runtime) providers() []config.Provider {
-	var out []config.Provider
+func (rt *runtime) providers() []conf.Provider {
+	var out []conf.Provider
 	for _, d := range rt.reg.All() {
 		if providesType(d, providerType) {
-			if p, ok := d.Instance.(config.Provider); ok {
+			if p, ok := d.Instance.(conf.Provider); ok {
 				out = append(out, p)
 			}
 		}
@@ -605,7 +605,7 @@ func (rt *runtime) providers() []config.Provider {
 // providerSeeds maps the format providers that actually transcoded a
 // file back to their service ids, so they join the closure and survive
 // ejection.
-func (rt *runtime) providerSeeds(files *config.Files) []string {
+func (rt *runtime) providerSeeds(files *conf.Files) []string {
 	var out []string
 	for _, used := range files.Used {
 		for _, d := range rt.reg.All() {
@@ -649,7 +649,7 @@ func (rt *runtime) coreRoot(c *fail.Collector, d *registry.Descriptor, providerI
 
 // help renders the dispatched applet's full argument schema, grouped by
 // service id, and exits 0.
-func (rt *runtime) help(sch *config.Schema) int {
+func (rt *runtime) help(sch *conf.Schema) int {
 	for _, section := range sch.HelpSections() {
 		fmt.Fprintf(rt.stdout, "%s:\n", section.ID)
 		for _, f := range section.Fields {
@@ -671,7 +671,7 @@ func (rt *runtime) help(sch *config.Schema) int {
 
 // writeConfig emits the merged configuration: to stdout as json with no
 // target, else to the target in the format its extension names.
-func (rt *runtime) writeConfig(sch *config.Schema, target string, src config.Sources) int {
+func (rt *runtime) writeConfig(sch *conf.Schema, target string, src conf.Sources) int {
 	code := 2
 	js, err := sch.MarshalIndent()
 	if err == nil {
@@ -694,7 +694,7 @@ func (rt *runtime) writeConfig(sch *config.Schema, target string, src config.Sou
 }
 
 // transcode converts the json dump to the target's format by extension.
-func (rt *runtime) transcode(js []byte, target string, src config.Sources) ([]byte, error) {
+func (rt *runtime) transcode(js []byte, target string, src conf.Sources) ([]byte, error) {
 	out := js
 	var err error
 	ext := strings.TrimPrefix(filepath.Ext(target), ".")

@@ -17,7 +17,7 @@ package fw
 import (
 	"reflect"
 
-	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/conf"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/registry"
 )
@@ -176,13 +176,13 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		// tag and field-type validation, type-level: the registration
 		// list promises "malformed tags" at registration, not at the
 		// first invocation that happens to plan this service
-		if err := config.ValidateConfigType(r.id, r.cfgType); err != nil {
+		if err := conf.ValidateConfigType(r.id, r.cfgType); err != nil {
 			c.Add(err)
 		}
 	}
 	var meta any
 	if r.metadata != nil {
-		normalized, errs := normalizeMetadata(r.id, r.metadata, r.cfgType != nil, config.ProbeType(r.cfgType), false)
+		normalized, errs := normalizeMetadata(r.id, r.metadata, r.cfgType != nil, conf.ProbeType(r.cfgType), false)
 		for _, err := range errs {
 			c.Add(err)
 		}

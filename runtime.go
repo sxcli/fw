@@ -20,7 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/conf"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/registry"
 )
@@ -35,7 +35,7 @@ type runtime struct {
 	lookupEnv    func(string) (string, bool)
 	stdout       io.Writer
 	stderr       io.Writer
-	locations    func(appletID string) []config.Location
+	locations    func(appletID string) []conf.Location
 	stat         func(string) (int64, error)
 	lstat        func(string) error
 	open         func(string) (io.ReadCloser, error)
@@ -93,14 +93,14 @@ func statRegular(path string) (int64, error) {
 // the pinned binary companion, the system location, the user location.
 // An unresolvable binary path silently skips the companion; an
 // unresolvable user config dir skips the user location.
-func productionLocations(appletID string) []config.Location {
-	var out []config.Location
+func productionLocations(appletID string) []conf.Location {
+	var out []conf.Location
 	if dir, err := realBinaryDir(); err == nil {
-		out = append(out, config.Location{Base: filepath.Join(dir, appletID+"-config"), Pinned: true})
+		out = append(out, conf.Location{Base: filepath.Join(dir, appletID+"-config"), Pinned: true})
 	}
-	out = append(out, config.Location{Base: filepath.Join(systemConfigDir(), appletID, "config")})
+	out = append(out, conf.Location{Base: filepath.Join(systemConfigDir(), appletID, "config")})
 	if dir, err := os.UserConfigDir(); err == nil {
-		out = append(out, config.Location{Base: filepath.Join(dir, appletID, "config")})
+		out = append(out, conf.Location{Base: filepath.Join(dir, appletID, "config")})
 	}
 	return out
 }

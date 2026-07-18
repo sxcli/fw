@@ -48,10 +48,12 @@ sxcli-fw/
 ├── *.go                  — package fw: the entire public API
 ├── platform_unix.go      — args acquisition, no-op service hooks
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
+├── conf/                 — the config engine: schema, file discovery,
+│                           source merging, arg/env parsing (public — the
+│                           future sxcli.dev/conf, § below)
 ├── internal/
 │   ├── registry/         — service descriptors, registration validation
 │   ├── graph/            — closure resolution, topological order
-│   ├── config/           — file discovery, source merging, arg/env parsing
 │   └── platform/         — platform layer internals if they outgrow root files
 ├── sink/
 │   ├── console/          — slog.Handler → terminal (opt-in sink)
@@ -1381,5 +1383,5 @@ the checks tests cannot express.
 | Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
 | Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
-| `sxcli.dev/conf` extraction (the config engine as a standalone module) | agreed direction, deliberately NOT now: internal/config stays internal through v0 churn, framework-ignorance discipline is the extraction guarantee, facade sketched on paper first; extract at the v1 horizon as the go-to-market funnel |
+| `sxcli.dev/conf` extraction (the config engine as a standalone module) | STAGED: the engine now lives at `sxcli.dev/fw/conf` (public package, moved out of internal 2026-07-18 after the Section decoupling left it importing only internal/fail); the module split at the v1 horizon becomes an import-path rename; the standalone front door (`conf.Load`, no Collector in its signature) arrives with the pipeline promotion |
 | Config schema versioning & migration chain | DESIGNED 2026-07-18 (§6): mandated `Version uint32` + typed per-section `conf.Step` chain, version-implies-complete, migrate-then-merge; supersedes the earlier "renamed from" metadata idea; lands with the conf pipeline promotion |

@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/conf"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/registry"
@@ -158,14 +158,14 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 		} else {
 			err = errors.Join(c.All()...)
 			fallback := &fail.Collector{}
-			var core config.Core
+			var core conf.Core
 			root := i.rt.coreRoot(fallback, d, nil)
 			var res graph.Result
 			if fallback.Len() == 0 {
 				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
 			}
 			if fallback.Len() == 0 {
-				sch := config.NewSchema(fallback, appletID, &core, sections(res.Ordered), i.rt.suppressed)
+				sch := conf.NewSchema(fallback, appletID, &core, sections(res.Ordered), i.rt.suppressed)
 				if fallback.Len() == 0 {
 					out = argInfos(sch)
 				}
@@ -182,7 +182,7 @@ func (i *Introspector) Describe(serviceID string) string {
 	if serviceID == CoreAlias || serviceID == CoreID {
 		out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
 	} else if d, registered := i.resolve(serviceID); registered {
-		if meta, has := d.Metadata.(*config.Meta); has {
+		if meta, has := d.Metadata.(*conf.Meta); has {
 			out = meta.Description
 		}
 	}
@@ -190,7 +190,7 @@ func (i *Introspector) Describe(serviceID string) string {
 }
 
 // argInfos maps a schema to its public description.
-func argInfos(sch *config.Schema) []ArgInfo {
+func argInfos(sch *conf.Schema) []ArgInfo {
 	var out []ArgInfo
 	for _, section := range sch.HelpSections() {
 		for _, f := range section.Fields {

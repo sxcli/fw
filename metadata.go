@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"sxcli.dev/fw/internal/config"
+	"sxcli.dev/fw/conf"
 )
 
 // Metadata is the optional, declarative description of a service — the
@@ -49,15 +49,15 @@ type ValueHint int
 
 const (
 	// HintNone declares nothing; the zero value.
-	HintNone ValueHint = ValueHint(config.HintNone)
+	HintNone ValueHint = ValueHint(conf.HintNone)
 	// HintFile: the value names a file, existing or to be created.
-	HintFile ValueHint = ValueHint(config.HintFile)
+	HintFile ValueHint = ValueHint(conf.HintFile)
 	// HintDirectory: the value names a directory.
-	HintDirectory ValueHint = ValueHint(config.HintDirectory)
+	HintDirectory ValueHint = ValueHint(conf.HintDirectory)
 	// HintServiceID: the value names a service registered in this
 	// binary — completable from the Introspector. The core's own
 	// --disable and --enable declare it.
-	HintServiceID ValueHint = ValueHint(config.HintServiceID)
+	HintServiceID ValueHint = ValueHint(conf.HintServiceID)
 )
 
 // FieldMetadata annotates one config struct field. T carries the
@@ -89,7 +89,7 @@ func (FieldMetadata[T]) fieldMetadata() {}
 // the value the struct holds at registration — is itself inside the
 // declared domain: a default outside its own enum would be the first
 // lie the enforcement catches, so it is caught at registration instead.
-func defaultDomainViolations(serviceID, name string, allowed []any, probe config.ProbedField) []error {
+func defaultDomainViolations(serviceID, name string, allowed []any, probe conf.ProbedField) []error {
 	var errs []error
 	if len(allowed) > 0 {
 		if probe.IsSlice {
@@ -121,8 +121,8 @@ func metaHas(allowed []any, v any) bool {
 // exists). Shared by the old instance-based registry check and the
 // catalog's commit path, which validates against ProbeType with no
 // instance and defers the value check to Build.
-func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[string]config.ProbedField, withValues bool) (*config.Meta, []error) {
-	meta := &config.Meta{Description: raw.Description, Fields: map[string]config.FieldMeta{}}
+func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[string]conf.ProbedField, withValues bool) (*conf.Meta, []error) {
+	meta := &conf.Meta{Description: raw.Description, Fields: map[string]conf.FieldMeta{}}
 	var errs []error
 	if len(raw.Fields) > 0 && !hasConfig {
 		errs = append(errs, fmt.Errorf("service %q: field metadata without a config struct", id))
@@ -147,7 +147,7 @@ func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[stri
 				} else if hint != HintNone && probe.Type.Kind() != reflect.String {
 					errs = append(errs, fmt.Errorf("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, probe.Type))
 				} else {
-					fm := config.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: config.ValueHint(hint)}
+					fm := conf.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: conf.ValueHint(hint)}
 					for i := 0; i < allowedValues.Len(); i++ {
 						fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
 					}
