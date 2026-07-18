@@ -108,13 +108,31 @@ deleting the assertion.
 
 ## Order of work
 
-1. catalog.go + identity.go + registry adaptation (fresh core of the
+1. ✓ catalog.go + identity.go + registry adaptation (fresh core of the
    model) — z_register/catalog tests ported alongside
-2. builder.go + app.go + solo.go — Build validation + composition
+2. ✓ builder.go + app.go + solo.go — Build validation + composition
    tests
-3. main.go/runtime adaptation onto App — port z_main/z_core
-4. graph rank + ambiguity — port z_graph/z_inject
-5. alias sweep of operator surfaces — port
+3. ✓ main.go/runtime adaptation onto App — port z_main/z_core
+4. ✓ graph rank + ambiguity — port z_graph/z_inject
+5. ✓ alias sweep of operator surfaces — port
    z_visibility/z_introspect/z_translator/z_metadata
-6. ecosystem packages + x_ suites + scmbox
-7. globals grep, doc-comment sweep, spec stale-sentence pass
+6. ✓ ecosystem packages + x_ suites + scmbox
+7. the kill — old API dies, coexistence dies, docs truth-swept:
+   - 7a ✓ config-tag validation joins the commit (ValidateConfigType)
+   - 7b ✓ deletion: register.go gone; registry loses Register/Options/
+     Check machinery/validateProvides/validateConfig/concrete map;
+     config loses ValidateConfig; every test world speaks the chain
+     (worlds via `w.build()`/`w.run()`, graph/registry/schema tests
+     commit descriptors the way the chain does). Ledger decisions:
+     TestOldStyleEntriesTolerated retired (the API it tolerated is
+     gone; Build-side tolerance falls in 7c); Register-era id/instance/
+     Provides/config violation tables superseded by z_catalog's chain
+     checks; domain-default tests now assert at Build (type-level
+     commit passes, run exits 2). Commit takes pre-collected Deps
+     as-is — Build's copies keep catalog adjustments and tag
+     violations are not double-reported.
+   - 7c pending: coexistence fallbacks die (aliasesOf id-fallback,
+     config section fallback, composedAliases old-style branch,
+     buildFrom tightens to Make != nil)
+   - 7d pending: docs sweep — README front doors, spec stale
+     sentences, this file's closing pass

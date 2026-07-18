@@ -27,21 +27,9 @@ import (
 
 var durationType = reflect.TypeOf(time.Duration(0))
 
-// ValidateConfig is a registry.Check validating the tags and field types
-// of a service's config struct at registration time.
-func ValidateConfig(d *registry.Descriptor) error {
-	var err error
-	if d.ConfigPtr != nil {
-		if _, errs := extract(d.ID, reflect.TypeOf(d.ConfigPtr).Elem(), nil, nil, "", true); len(errs) > 0 {
-			err = errors.Join(errs...)
-		}
-	}
-	return err
-}
-
-// ValidateConfigType is ValidateConfig without an instance: tag and
-// field-type validation of a config struct TYPE (a pointer-to-struct
-// type) at the registration commit, where no instance exists yet.
+// ValidateConfigType validates the tags and field types of a config
+// struct TYPE (a pointer-to-struct type) at the registration commit,
+// where no instance exists yet.
 func ValidateConfigType(id string, cfgPtr reflect.Type) error {
 	var err error
 	if cfgPtr != nil {
@@ -53,7 +41,7 @@ func ValidateConfigType(id string, cfgPtr reflect.Type) error {
 }
 
 // coreMeta is the core's own field metadata — the same declarative
-// channel services use via WithMetadata, built directly since the core
+// channel services use via chain Metadata, built directly since the core
 // is not registered: --config names a file (which may not exist yet
 // when --write-config creates it), so the hint is advisory like every
 // hint.
@@ -268,7 +256,7 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 
 // ProbeFields returns the settable fields of a config struct keyed by
 // go field name ("A.B" for nested), for registration-time metadata
-// validation. Extraction violations are ignored here; ValidateConfig
+// validation. Extraction violations are ignored here; ValidateConfigType
 // reports them.
 func ProbeFields(cfgPtr any) map[string]ProbedField {
 	out := map[string]ProbedField{}

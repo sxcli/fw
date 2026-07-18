@@ -49,7 +49,7 @@ type Starter interface {
 }
 
 // Configurable is implemented by services that own a Configuration struct
-// (registered via WithConfig). The framework fills that registered struct
+// (declared by its registration chain). The framework fills that struct
 // in place with the merged configuration (defaults, config files,
 // environment, arguments — least to most important) and then calls
 // Configured as a notification; there is never a second config instance.

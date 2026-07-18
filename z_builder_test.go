@@ -177,21 +177,9 @@ func TestDefaultOutsideDomainFailsAtBuild(t *testing.T) {
 	}
 }
 
-func TestOldStyleEntriesTolerated(t *testing.T) {
-	reg, c := catalogWorld()
-	// old path: instance registration, id doubles as operator name
-	reg.Register("legacy", &bldA{}, registry.Options{})
-	NewBareRegistration("example.com/x/two", func() *bldB { return &bldB{} }).
-		Alias("bravo").registerInto(reg, c)
-	app, err := Builder().AcceptAll().buildFrom(reg, nil)
-	if err != nil || app == nil {
-		t.Fatalf("coexistence Build must tolerate old-style entries: %v", err)
-	}
-	d, _ := app.reg.ByID("legacy")
-	if d.Instance == nil {
-		t.Error("old-style instance must ride through")
-	}
-}
+// Ledger note: TestOldStyleEntriesTolerated retired here — the old
+// Register path it exercised is deleted, and the Build-side tolerance
+// for instance-carrying entries goes with the item-7 fallback sweep.
 
 func ids2(app *App) []string {
 	var out []string

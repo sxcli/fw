@@ -22,14 +22,11 @@ import (
 	"sxcli.dev/fw/internal/fail"
 )
 
-// New creates an empty registry recording violations into c and running
-// the given semantic checks against every registration.
-func New(c *fail.Collector, checks ...Check) *Registry {
+// New creates an empty registry recording violations into c.
+func New(c *fail.Collector) *Registry {
 	return &Registry{
-		c:        c,
-		checks:   checks,
-		byID:     map[string]*Descriptor{},
-		concrete: map[reflect.Type]string{},
+		c:    c,
+		byID: map[string]*Descriptor{},
 	}
 }
 
@@ -38,55 +35,22 @@ func (r *Registry) fail(format string, args ...any) {
 	r.c.Fail(format, args...)
 }
 
-// Register validates the instance and options and stores a descriptor.
-// Violations that leave the service identity intact (bad interface
-// declaration, bad config pointer, bad inject tag) are recorded while the
-// descriptor is still stored; violations of identity itself (bad id,
-// duplicate id, bad instance, duplicate concrete type) discard the
-// registration.
-func (r *Registry) Register(id string, instance any, opts Options) {
-	if isValidID(id) {
-		if _, dup := r.byID[id]; !dup {
-			t := reflect.TypeOf(instance)
-			if instance != nil && t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct && !reflect.ValueOf(instance).IsNil() {
-				if prev, taken := r.concrete[t]; !taken {
-					d := &Descriptor{ID: id, Instance: instance, Concrete: t, Metadata: opts.Metadata, Hidden: opts.Hidden, System: opts.System}
-					r.validateProvides(d, opts.Interfaces)
-					r.validateConfig(d, opts.Config)
-					r.collectDeps(d)
-					for _, check := range r.checks {
-						if err := check(d); err != nil {
-							r.c.Add(err)
-						}
-					}
-					r.ordered = append(r.ordered, d)
-					r.byID[id] = d
-					r.concrete[t] = id
-				} else {
-					r.fail("service %q: concrete type %s is already registered as %q", id, t, prev)
-				}
-			} else {
-				r.fail("service %q: instance must be a non-nil pointer to struct", id)
-			}
-		} else {
-			r.fail("service %q: duplicate id", id)
-		}
-	} else {
-		r.fail("service id %q: must be a lowercase go identifier", id)
-	}
-}
-
 // Commit stores a catalog entry built by the root's registration
 // chain: the typed side already ran the semantic checks, so the
 // registry validates only what it owns — id uniqueness across the
 // whole catalog (two packages claiming one id is wrong before any
 // composition exists) — and collects the dependency fields from the
-// concrete type. The same concrete type MAY be cataloged twice; only
+// concrete type. A descriptor whose dependencies are already collected
+// is taken as-is: Build re-commits catalog copies, and re-reading the
+// tags would both double-report tag violations and discard adjustments.
+// The same concrete type MAY be cataloged twice; only
 // accepting both into one composition is a violation, and that is
 // Build's check. Instance stays nil until Build calls Make.
 func (r *Registry) Commit(d *Descriptor) {
 	if _, dup := r.byID[d.ID]; !dup {
-		r.collectDeps(d)
+		if d.Deps == nil {
+			r.collectDeps(d)
+		}
 		r.ordered = append(r.ordered, d)
 		r.byID[d.ID] = d
 	} else {
@@ -142,39 +106,12 @@ func (r *Registry) Retain(keep map[string]bool) {
 			kept = append(kept, d)
 		} else {
 			delete(r.byID, d.ID)
-			delete(r.concrete, d.Concrete)
 		}
 	}
 	r.ordered = kept
 }
 
-func (r *Registry) validateProvides(d *Descriptor, declared []reflect.Type) {
-	for _, it := range declared {
-		if it != nil && it.Kind() == reflect.Interface {
-			if d.Concrete.Implements(it) {
-				d.Provides = append(d.Provides, it)
-			} else {
-				r.fail("service %q: %s does not implement declared interface %s", d.ID, d.Concrete, it)
-			}
-		} else {
-			r.fail("service %q: Provides declares non-interface type %v", d.ID, it)
-		}
-	}
-}
-
-func (r *Registry) validateConfig(d *Descriptor, cfg any) {
-	if cfg != nil {
-		t := reflect.TypeOf(cfg)
-		if t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct && !reflect.ValueOf(cfg).IsNil() {
-			d.ConfigPtr = cfg
-		} else {
-			r.fail("service %q: config must be a non-nil pointer to struct", d.ID)
-		}
-	}
-}
-
 func (r *Registry) collectDeps(d *Descriptor) {
-	d.Deps = nil
 	for _, f := range reflect.VisibleFields(d.Concrete.Elem()) {
 		if tag, tagged := f.Tag.Lookup("inject"); tagged {
 			if f.IsExported() {

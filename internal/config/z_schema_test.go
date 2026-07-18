@@ -41,13 +41,9 @@ type dbConfig struct {
 
 func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 	t.Helper()
-	r := registry.New(&fail.Collector{})
 	var members []*registry.Descriptor
 	for id, cfg := range structs {
-		r.Register(id, &struct{ X int }{}, registry.Options{})
-		d, _ := r.ByID(id)
-		d.ConfigPtr = cfg
-		members = append(members, d)
+		members = append(members, &registry.Descriptor{ID: id, Aliases: []string{id}, ConfigPtr: cfg})
 	}
 	c := &fail.Collector{}
 	s := NewSchema(c, "cat", core, members, nil)
@@ -124,11 +120,7 @@ func TestSchemaErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := registry.New(&fail.Collector{})
-			r.Register("svc", &struct{ X int }{}, registry.Options{})
-			d, _ := r.ByID("svc")
-			d.ConfigPtr = tc.cfg
-			err := ValidateConfig(d)
+			err := ValidateConfigType("svc", reflect.TypeOf(tc.cfg))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("want error containing %q, got %v", tc.want, err)
 			}
@@ -143,15 +135,12 @@ func TestSchemaCrossServiceCollisions(t *testing.T) {
 	type two struct {
 		Y int `json:"y" arg:"shared"`
 	}
-	r := registry.New(&fail.Collector{})
-	r.Register("one", &struct{ A int }{}, registry.Options{})
-	r.Register("two", &struct{ B int }{}, registry.Options{})
-	d1, _ := r.ByID("one")
-	d1.ConfigPtr = &one{}
-	d2, _ := r.ByID("two")
-	d2.ConfigPtr = &two{}
+	members := []*registry.Descriptor{
+		{ID: "one", Aliases: []string{"one"}, ConfigPtr: &one{}},
+		{ID: "two", Aliases: []string{"two"}, ConfigPtr: &two{}},
+	}
 	c := &fail.Collector{}
-	NewSchema(c, "cat", &Core{}, r.All(), nil)
+	NewSchema(c, "cat", &Core{}, members, nil)
 	if c.Len() == 0 {
 		t.Error("duplicate long across services must be an error")
 	}

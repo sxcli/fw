@@ -59,16 +59,15 @@ func translatorWorld(t *testing.T, argv []string, fail bool, table map[string]st
 	w := newWorld(t, argv, nil, nil)
 	w.applet(0)
 	f := &fakeTranslator{log: &w.log, fail: fail, table: table}
-	w.rt.reg.Register("i18n", f, foldOptions([]RegisterOption{
-		Provides[Translator](),
-		WithConfig(&f.cfg),
-	}))
+	NewRegistration("i18n", func() *fakeTranslator { return f },
+		func(x *fakeTranslator) *trCfg { return &x.cfg }).
+		Alias("i18n").Provides(Iface[Translator]()).registerInto(w.cat, w.c)
 	return w, f
 }
 
 func TestTranslatorConfiguredFirstAndActive(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin"}, false, map[string]string{"hello": "здравей"})
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if strings.Join(w.log, ",") != "translator.configured,applet.configured,applet.run" {
@@ -83,7 +82,7 @@ func TestHelpRendersTranslated(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin", "--help"}, false, map[string]string{
 		"the greeting": "поздравът",
 	})
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(w.stdout.String(), "поздравът") {
@@ -96,7 +95,7 @@ func TestHelpRendersTranslated(t *testing.T) {
 
 func TestWriteConfigConfiguresTranslator(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin", "--write-config"}, false, nil)
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(strings.Join(w.log, ","), "translator.configured") {
@@ -108,8 +107,9 @@ func TestTwoTranslatorsAreAViolation(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin"}, false, nil)
 	second := &secondTranslator{}
 	second.log = &w.log
-	w.rt.reg.Register("other", second, foldOptions([]RegisterOption{Provides[Translator]()}))
-	if code := run(w.rt); code != 2 {
+	NewBareRegistration("other", func() *secondTranslator { return second }).
+		Alias("other").Provides(Iface[Translator]()).registerInto(w.cat, w.c)
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
 	if !strings.Contains(w.stderr.String(), "both provide Translator") {
@@ -119,7 +119,7 @@ func TestTwoTranslatorsAreAViolation(t *testing.T) {
 
 func TestTranslatorFailureDegradesQuietly(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin"}, true, map[string]string{"hello": "здравей"})
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("translator failure must not fail the run: exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if Tr("hello") != "hello" {
@@ -135,7 +135,7 @@ func TestTranslatorFailureDegradesQuietly(t *testing.T) {
 
 func TestDisabledTranslatorMeansMsgids(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin", "--disable", "i18n"}, false, map[string]string{"hello": "здравей"})
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if strings.Contains(strings.Join(w.log, ","), "translator.configured") {
@@ -192,11 +192,13 @@ func TestTranslatorDepFailureIsFatalExactlyOnce(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
 	failing := &failingCfgService{}
-	w.rt.reg.Register("faildep", failing, foldOptions(nil))
+	NewBareRegistration("faildep", func() *failingCfgService { return failing }).
+		Alias("faildep").registerInto(w.cat, w.c)
 	tr := &depTranslator{}
 	tr.log = &w.log
-	w.rt.reg.Register("i18n", tr, foldOptions([]RegisterOption{Provides[Translator]()}))
-	if code := run(w.rt); code != 2 {
+	NewBareRegistration("i18n", func() *depTranslator { return tr }).
+		Alias("i18n").Provides(Iface[Translator]()).registerInto(w.cat, w.c)
+	if code := w.run(); code != 2 {
 		t.Fatalf("a failing subtree dependency must be fatal: exit %d", code)
 	}
 	if !strings.Contains(w.stderr.String(), `service "faildep": dep broke`) {

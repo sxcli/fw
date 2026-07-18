@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package registry implements the structural service registry of the
+// Package registry implements the structural service catalog of the
 // sxcli framework. It is deliberately ignorant of the framework's
-// interfaces: it validates identity, shape and tags, and stores
-// descriptors. Semantic rules are supplied by the root package as Check
-// functions run against every descriptor at registration time.
+// interfaces: the root package's registration chain runs every semantic
+// check in typed land and commits finished descriptors; the registry
+// validates only what it owns — id uniqueness and inject-tag structure.
 package registry
 
 import (
@@ -24,22 +24,6 @@ import (
 
 	"sxcli.dev/fw/internal/fail"
 )
-
-// Check is a semantic validation hook supplied by the framework root. A
-// non-nil result is recorded like any other registration violation.
-type Check func(d *Descriptor) error
-
-// Options carries the folded result of the root package's RegisterOption
-// values for a single Register call. Metadata is opaque to the
-// registry: the root's metadata check validates it and normalizes it
-// into the representation the config machinery reads.
-type Options struct {
-	Interfaces []reflect.Type
-	Config     any
-	Metadata   any
-	Hidden     bool // applet visibility policy; semantics enforced by root checks
-	System     bool
-}
 
 // DepField describes one `inject`-annotated field of a registered
 // instance.
@@ -78,9 +62,7 @@ type Descriptor struct {
 // violation is recorded into the shared startup collector so startup can
 // fail listing all problems at once.
 type Registry struct {
-	c        *fail.Collector
-	checks   []Check
-	ordered  []*Descriptor
-	byID     map[string]*Descriptor
-	concrete map[reflect.Type]string // concrete type → id that claimed it
+	c       *fail.Collector
+	ordered []*Descriptor
+	byID    map[string]*Descriptor
 }

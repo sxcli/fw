@@ -26,7 +26,9 @@ func annotatedWorld(t *testing.T, md *Metadata) (*world, *extraService) {
 	w := newWorld(t, []string{"bin", "meta"}, nil, nil)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Flag: "fast"}}
-	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{WithConfig(&extra.cfg), WithMetadata(md)}))
+	NewRegistration("extra", func() *extraService { return extra },
+		func(x *extraService) *extraCfg { return &x.cfg }).
+		Alias("extra").Metadata(md).registerInto(w.cat, w.c)
 	return w, extra
 }
 
@@ -44,8 +46,9 @@ func TestMetadataFlowsIntoIntrospection(t *testing.T) {
 		desc = i.Describe("extra")
 		infos, _ = i.Arguments("app", []string{"--enable", "extra"})
 	}}
-	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
-	if code := run(w.rt); code != 0 {
+	NewBareRegistration("meta", func() *argsProbe { return probe }).
+		Alias("meta").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if desc != "an example service with a closed flag domain" {
@@ -95,9 +98,10 @@ func TestMetadataViolations(t *testing.T) {
 func TestMetadataFieldsWithoutConfigIsViolation(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	w.rt.reg.Register("bare", &plainService{}, foldOptions([]RegisterOption{
-		WithMetadata(&Metadata{Fields: map[string]any{"X": FieldMetadata[string]{}}}),
-	}))
+	NewBareRegistration("bare", func() *plainService { return &plainService{} }).
+		Alias("bare").
+		Metadata(&Metadata{Fields: map[string]any{"X": FieldMetadata[string]{}}}).
+		registerInto(w.cat, w.c)
 	if w.c.Len() == 0 {
 		t.Fatal("field metadata without a config struct must be a violation")
 	}
@@ -106,9 +110,10 @@ func TestMetadataFieldsWithoutConfigIsViolation(t *testing.T) {
 func TestDescriptionAloneWithoutConfigIsFine(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	w.rt.reg.Register("bare", &plainService{}, foldOptions([]RegisterOption{
-		WithMetadata(&Metadata{Description: "a config-less but well-described service"}),
-	}))
+	NewBareRegistration("bare", func() *plainService { return &plainService{} }).
+		Alias("bare").
+		Metadata(&Metadata{Description: "a config-less but well-described service"}).
+		registerInto(w.cat, w.c)
 	if w.c.Len() != 0 {
 		t.Fatalf("description-only metadata must be fine: %v", w.c.All())
 	}
@@ -119,26 +124,26 @@ func enforcementWorld(t *testing.T, argv []string, files, env map[string]string)
 	w := newWorld(t, argv, files, env)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Flag: "fast"}}
-	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{
-		WithConfig(&extra.cfg),
-		WithMetadata(&Metadata{Fields: map[string]any{
+	NewRegistration("extra", func() *extraService { return extra },
+		func(x *extraService) *extraCfg { return &x.cfg }).
+		Alias("extra").
+		Metadata(&Metadata{Fields: map[string]any{
 			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}},
 			"Tags": FieldMetadata[string]{Allowed: []string{"a", "b"}},
-		}}),
-	}))
+		}}).registerInto(w.cat, w.c)
 	return w, extra
 }
 
 func TestDomainEnforcedOnArguments(t *testing.T) {
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-flag", "turbo"}, nil, nil)
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
 	}
 	if !strings.Contains(w.stderr.String(), "not among the allowed values") {
 		t.Errorf("domain violation not reported:\n%s", w.stderr.String())
 	}
 	w2, extra := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-flag", "slow"}, nil, nil)
-	if code := run(w2.rt); code != 0 {
+	if code := w2.run(); code != 0 {
 		t.Fatalf("in-domain value must pass: exit %d\n%s", code, w2.stderr.String())
 	}
 	if extra.cfg.Flag != "slow" {
@@ -148,7 +153,7 @@ func TestDomainEnforcedOnArguments(t *testing.T) {
 
 func TestDomainEnforcedOnEnvironment(t *testing.T) {
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP_EXTRA_FLAG": "turbo"})
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(w.stderr.String(), "$APP_EXTRA_FLAG") {
@@ -159,7 +164,7 @@ func TestDomainEnforcedOnEnvironment(t *testing.T) {
 func TestDomainEnforcedOnFiles(t *testing.T) {
 	files := map[string]string{"/etc/app/config.json": `{"extra": {"flag": "turbo"}}`}
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, files, nil)
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(w.stderr.String(), "config extra.flag") {
@@ -169,11 +174,11 @@ func TestDomainEnforcedOnFiles(t *testing.T) {
 
 func TestSliceDomainEnforced(t *testing.T) {
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-tag", "a", "--extra-tag", "z"}, nil, nil)
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("bad slice element must fail: exit %d", code)
 	}
 	w2, extra := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-tag", "a", "--extra-tag", "b"}, nil, nil)
-	if code := run(w2.rt); code != 0 {
+	if code := w2.run(); code != 0 {
 		t.Fatalf("in-domain elements must pass: exit %d\n%s", code, w2.stderr.String())
 	}
 	if strings.Join(extra.cfg.Tags, ",") != "a,b" {
@@ -181,25 +186,32 @@ func TestSliceDomainEnforced(t *testing.T) {
 	}
 }
 
-func TestDefaultOutsideDomainIsRegistrationViolation(t *testing.T) {
+// Ledger note: the default-in-domain check is value-level and moved
+// from registration to Build with the two-phase split — instances
+// exist only there. The z_builder suite covers the Build side; this
+// proves the end-to-end refusal.
+func TestDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	extra := &extraService{cfg: extraCfg{Flag: "turbo"}} // default not in the domain
-	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{
-		WithConfig(&extra.cfg),
-		WithMetadata(&Metadata{Fields: map[string]any{
+	NewRegistration("extra", func() *extraService {
+		return &extraService{cfg: extraCfg{Flag: "turbo"}} // default not in the domain
+	}, func(x *extraService) *extraCfg { return &x.cfg }).
+		Alias("extra").
+		Metadata(&Metadata{Fields: map[string]any{
 			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}},
-		}}),
-	}))
-	if w.c.Len() == 0 {
-		t.Fatal("a default outside its own declared domain must be a registration violation")
+		}}).registerInto(w.cat, w.c)
+	if w.c.Len() != 0 {
+		t.Fatalf("the commit is type-level and must pass: %v", w.c.All())
+	}
+	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "not among the allowed values") {
+		t.Errorf("the run must refuse the bad default: code=%d\n%s", code, w.stderr.String())
 	}
 }
 
 func TestSliceDomainEnforcedFromFiles(t *testing.T) {
 	files := map[string]string{"/etc/app/config.json": `{"extra": {"tags": ["a", "z"]}}`}
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, files, nil)
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(w.stderr.String(), "config extra.tags") {
@@ -209,7 +221,7 @@ func TestSliceDomainEnforcedFromFiles(t *testing.T) {
 
 func TestSliceDomainEnforcedFromEnvironment(t *testing.T) {
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP_EXTRA_TAG": "a,z"})
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(w.stderr.String(), "$APP_EXTRA_TAG") {
@@ -217,26 +229,23 @@ func TestSliceDomainEnforcedFromEnvironment(t *testing.T) {
 	}
 }
 
-func TestSliceDefaultOutsideDomainIsRegistrationViolation(t *testing.T) {
+func TestSliceDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Flag: "fast", Tags: []string{"a", "zz"}}}
-	w.rt.reg.Register("extra", extra, foldOptions([]RegisterOption{
-		WithConfig(&extra.cfg),
-		WithMetadata(&Metadata{Fields: map[string]any{
+	NewRegistration("extra", func() *extraService { return extra },
+		func(x *extraService) *extraCfg { return &x.cfg }).
+		Alias("extra").
+		Metadata(&Metadata{Fields: map[string]any{
 			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}},
 			"Tags": FieldMetadata[string]{Allowed: []string{"a", "b"}},
-		}}),
-	}))
-	if w.c.Len() == 0 {
-		t.Fatal("a default slice element outside the domain must be a registration violation")
+		}}).registerInto(w.cat, w.c)
+	if w.c.Len() != 0 {
+		t.Fatalf("the commit is type-level and must pass: %v", w.c.All())
 	}
-	found := false
-	for _, err := range w.c.All() {
-		found = found || strings.Contains(err.Error(), "default element")
-	}
-	if !found {
-		t.Errorf("violation must name the offending default element: %v", w.c.All())
+	// the value-level default check belongs to Build
+	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "default element") {
+		t.Errorf("the run must name the offending default element: code=%d\n%s", code, w.stderr.String())
 	}
 }
 
@@ -246,12 +255,13 @@ func TestNilAndAbsentMetadataAreHarmless(t *testing.T) {
 	// present (this panicked once, in the yaml provider's init)
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	plain := &extraService{cfg: extraCfg{Flag: "fast"}}
-	w.rt.reg.Register("plainmeta", plain, foldOptions([]RegisterOption{WithConfig(&plain.cfg), WithMetadata(nil)}))
+	NewRegistration("plainmeta", func() *extraService { return &extraService{cfg: extraCfg{Flag: "fast"}} },
+		func(x *extraService) *extraCfg { return &x.cfg }).
+		Alias("plainmeta").Metadata(nil).registerInto(w.cat, w.c)
 	if w.c.Len() != 0 {
 		t.Fatalf("nil metadata must be treated as absent: %v", w.c.All())
 	}
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 }
@@ -265,8 +275,9 @@ func TestDescribeEdgeCases(t *testing.T) {
 		unknown = i.Describe("nope")
 		unannotated = i.Describe("dep")
 	}}
-	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
-	if code := run(w.rt); code != 0 {
+	NewBareRegistration("meta", func() *argsProbe { return probe }).
+		Alias("meta").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if unknown != "" || unannotated != "" {
@@ -288,22 +299,22 @@ func intWorld(t *testing.T, argv []string) (*world, *intService) {
 	w := newWorld(t, argv, nil, nil)
 	w.applet(0)
 	svc := &intService{cfg: intCfg{Retries: 1}}
-	w.rt.reg.Register("intsvc", svc, foldOptions([]RegisterOption{
-		WithConfig(&svc.cfg),
-		WithMetadata(&Metadata{Fields: map[string]any{
+	NewRegistration("intsvc", func() *intService { return svc },
+		func(x *intService) *intCfg { return &x.cfg }).
+		Alias("intsvc").
+		Metadata(&Metadata{Fields: map[string]any{
 			"Retries": FieldMetadata[int]{Allowed: []int{1, 3, 5}},
-		}}),
-	}))
+		}}).registerInto(w.cat, w.c)
 	return w, svc
 }
 
 func TestIntDomainEnforcedEndToEnd(t *testing.T) {
 	w, _ := intWorld(t, []string{"bin", "--enable", "intsvc", "--retries-x", "7"})
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("out-of-domain int must fail: exit %d\n%s", code, w.stderr.String())
 	}
 	w2, svc := intWorld(t, []string{"bin", "--enable", "intsvc", "--retries-x", "3"})
-	if code := run(w2.rt); code != 0 {
+	if code := w2.run(); code != 0 {
 		t.Fatalf("in-domain int must pass: exit %d\n%s", code, w2.stderr.String())
 	}
 	if svc.cfg.Retries != 3 {
@@ -322,8 +333,9 @@ func TestArgInfoSliceTypeIsElementType(t *testing.T) {
 			}
 		}
 	}}
-	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
-	if code := run(w.rt); code != 0 {
+	NewBareRegistration("meta", func() *argsProbe { return probe }).
+		Alias("meta").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if tagInfo == nil {
@@ -381,13 +393,12 @@ func TestHintViolations(t *testing.T) {
 func TestHintOnNonStringFieldIsViolation(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	svc := &intService{cfg: intCfg{Retries: 1}}
-	w.rt.reg.Register("intsvc", svc, foldOptions([]RegisterOption{
-		WithConfig(&svc.cfg),
-		WithMetadata(&Metadata{Fields: map[string]any{
+	NewRegistration("intsvc", func() *intService { return &intService{cfg: intCfg{Retries: 1}} },
+		func(x *intService) *intCfg { return &x.cfg }).
+		Alias("intsvc").
+		Metadata(&Metadata{Fields: map[string]any{
 			"Retries": FieldMetadata[int]{Hint: HintFile},
-		}}),
-	}))
+		}}).registerInto(w.cat, w.c)
 	if w.c.Len() == 0 {
 		t.Fatal("hint on an int field must be a violation")
 	}
@@ -418,8 +429,9 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 			}
 		}
 	}}
-	w.rt.reg.Register("meta", probe, foldOptions([]RegisterOption{}))
-	if code := run(w.rt); code != 0 {
+	NewBareRegistration("meta", func() *argsProbe { return probe }).
+		Alias("meta").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if flagHint != HintFile {

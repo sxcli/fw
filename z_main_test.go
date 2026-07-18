@@ -17,6 +17,7 @@ package sxclifw
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -111,6 +112,7 @@ func (a *secondApplet) Run() int {
 // ---- harness -----------------------------------------------------------
 
 type world struct {
+	cat    *registry.Registry // the private catalog; chains registerInto it
 	rt     *runtime
 	c      *fail.Collector
 	log    []string
@@ -121,9 +123,8 @@ type world struct {
 func newWorld(t *testing.T, argv []string, files map[string]string, env map[string]string) *world {
 	t.Helper()
 	w := &world{c: &fail.Collector{}}
-	reg := registry.New(w.c, checkReservedID, checkAppletLifecycle, checkVisibility, config.ValidateConfig, checkMetadata)
+	w.cat = registry.New(w.c)
 	w.rt = &runtime{
-		reg:  reg,
 		c:    w.c,
 		argv: argv,
 		lookupEnv: func(name string) (string, bool) {
@@ -159,25 +160,45 @@ func newWorld(t *testing.T, argv []string, files map[string]string, env map[stri
 	return w
 }
 
-func (w *world) applet(code int, opts ...RegisterOption) *mainApplet {
+// build composes the catalog (AcceptAll — worlds are busybox-shaped)
+// without running; tests inspecting composed state use it directly.
+func (w *world) build() error {
+	app, err := Builder().AcceptAll().buildFrom(w.cat, w.c)
+	if err == nil {
+		w.rt.reg = app.reg
+	}
+	return err
+}
+
+// run composes and drives the pipeline. A Build failure reports like
+// production: all violations to stderr, exit 2.
+func (w *world) run() int {
+	code := 2
+	if err := w.build(); err != nil {
+		fmt.Fprintf(&w.stderr, "error: %v\n", err)
+	} else {
+		code = run(w.rt)
+	}
+	return code
+}
+
+// applet registers the world's main applet. World factories return
+// the pre-built instance so tests can hold it across the run — a
+// deliberate deviation from the fresh-per-Make contract that worlds,
+// building exactly once, are entitled to.
+func (w *world) applet(code int) *mainApplet {
 	a := &mainApplet{log: &w.log, code: code}
-	all := append([]RegisterOption{WithConfig(&a.cfg)}, opts...)
-	w.rt.reg.Register("app", a, foldOptions(all))
+	NewRegistration("app", func() *mainApplet { return a },
+		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
+		Alias("app").registerInto(w.cat, w.c)
 	return a
 }
 
 func (w *world) dep(failStart bool) *depService {
 	d := &depService{log: &w.log, failStart: failStart}
-	w.rt.reg.Register("dep", d, foldOptions([]RegisterOption{Provides[depIface]()}))
+	NewBareRegistration("dep", func() *depService { return d }).
+		Alias("dep").Provides(Iface[depIface]()).registerInto(w.cat, w.c)
 	return d
-}
-
-func foldOptions(opts []RegisterOption) registry.Options {
-	var o registerOptions
-	for _, opt := range opts {
-		opt(&o)
-	}
-	return registry.Options{Interfaces: o.interfaces, Config: o.config, Metadata: o.metadata, Hidden: o.hidden || o.system, System: o.system}
 }
 
 // ---- tests -------------------------------------------------------------
@@ -188,8 +209,8 @@ func TestHappyPathLifecycleOrder(t *testing.T) {
 	a.D = nil
 	w.dep(false)
 	// make the applet require the dep so it joins the closure
-	w.rt.reg.All()[0].Deps[0].Optional = false
-	code := run(w.rt)
+	w.cat.All()[0].Deps[0].Optional = false
+	code := w.run()
 	if code != 7 {
 		t.Fatalf("exit code = %d, want 7; stderr:\n%s", code, w.stderr.String())
 	}
@@ -202,7 +223,7 @@ func TestHappyPathLifecycleOrder(t *testing.T) {
 func TestSingleAppletModeCollectsPositionals(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--greeting=hi", "one", "two"}, nil, nil)
 	a := w.applet(0)
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	if a.cfg.Greeting != "hi" {
@@ -218,7 +239,7 @@ func TestPrecedenceFileEnvArg(t *testing.T) {
 	env := map[string]string{"APP_GREETING": "env"}
 	w := newWorld(t, []string{"bin"}, files, env)
 	a := w.applet(0)
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	if a.cfg.Greeting != "env" {
@@ -226,7 +247,7 @@ func TestPrecedenceFileEnvArg(t *testing.T) {
 	}
 	w2 := newWorld(t, []string{"bin", "-g", "arg"}, files, env)
 	a2 := w2.applet(0)
-	run(w2.rt)
+	w2.run()
 	if a2.cfg.Greeting != "arg" {
 		t.Errorf("arg must beat env: %q", a2.cfg.Greeting)
 	}
@@ -235,8 +256,9 @@ func TestPrecedenceFileEnvArg(t *testing.T) {
 func TestMultiAppletDispatch(t *testing.T) {
 	w := newWorld(t, []string{"bin", "second"}, nil, nil)
 	w.applet(0)
-	w.rt.reg.Register("second", &secondApplet{log: &w.log}, registry.Options{})
-	if code := run(w.rt); code != 0 {
+	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("second").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	if strings.Join(w.log, ",") != "second.run" {
@@ -247,8 +269,9 @@ func TestMultiAppletDispatch(t *testing.T) {
 func TestDispatchByBinaryName(t *testing.T) {
 	w := newWorld(t, []string{"/usr/bin/second"}, nil, nil)
 	w.applet(0)
-	w.rt.reg.Register("second", &secondApplet{log: &w.log}, registry.Options{})
-	if code := run(w.rt); code != 0 {
+	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("second").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	if strings.Join(w.log, ",") != "second.run" {
@@ -259,8 +282,9 @@ func TestDispatchByBinaryName(t *testing.T) {
 func TestDispatchFailuresPrintUsage(t *testing.T) {
 	w := newWorld(t, []string{"bin", "ghost"}, nil, nil)
 	w.applet(0)
-	w.rt.reg.Register("second", &secondApplet{log: &w.log}, registry.Options{})
-	if code := run(w.rt); code != 2 {
+	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("second").registerInto(w.cat, w.c)
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 	text := w.stderr.String()
@@ -272,8 +296,9 @@ func TestDispatchFailuresPrintUsage(t *testing.T) {
 func TestRegistrationErrorsAbort(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	w.rt.reg.Register("app", &secondApplet{log: &w.log}, registry.Options{}) // duplicate id
-	if code := run(w.rt); code != 2 {
+	NewBareRegistration("app", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("app").registerInto(w.cat, w.c) // duplicate id
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 	if !strings.Contains(w.stderr.String(), "duplicate id") {
@@ -284,7 +309,7 @@ func TestRegistrationErrorsAbort(t *testing.T) {
 func TestUnknownArgumentFails(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--nope"}, nil, nil)
 	w.applet(0)
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 	if !strings.Contains(w.stderr.String(), "unknown argument --nope") {
@@ -296,7 +321,7 @@ func TestSuppressedFeatureIsUnknown(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--config", "x.json"}, nil, nil)
 	w.applet(0)
 	w.rt.suppressed = []string{"config"}
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 }
@@ -305,7 +330,7 @@ func TestConfiguredFailureAbortsBeforeStart(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	a := w.applet(0)
 	a.fail = true
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 	if strings.Contains(strings.Join(w.log, ","), "applet.run") {
@@ -321,12 +346,13 @@ func TestStartFailureStopsStarted(t *testing.T) {
 	w.applet(0)
 	w.dep(false)
 	failer := &failerService{log: &w.log}
-	w.rt.reg.Register("failer", failer, foldOptions([]RegisterOption{Provides[depIface]()}))
+	NewBareRegistration("failer", func() *failerService { return failer }).
+		Alias("failer").Provides(Iface[depIface]()).registerInto(w.cat, w.c)
 	// applet → failer (by id) → dep: dep starts first, failer's Start
 	// breaks, dep must be stopped
-	w.rt.reg.All()[0].Deps[0].Optional = false
-	w.rt.reg.All()[0].Deps[0].IDs = []string{"failer"}
-	code := run(w.rt)
+	w.cat.All()[0].Deps[0].Optional = false
+	w.cat.All()[0].Deps[0].IDs = []string{"failer"}
+	code := w.run()
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2; stderr:\n%s", code, w.stderr.String())
 	}
@@ -343,8 +369,8 @@ func TestDisableStripsOptionalDependency(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--disable", "dep"}, nil, nil)
 	a := w.applet(0)
 	w.dep(false)
-	w.rt.reg.All()[0].Deps[0].IDs = []string{"dep"}
-	if code := run(w.rt); code != 0 {
+	w.cat.All()[0].Deps[0].IDs = []string{"dep"}
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	if a.D != nil {
@@ -358,7 +384,7 @@ func TestDisableStripsOptionalDependency(t *testing.T) {
 func TestWriteConfigToStdout(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--write-config", "--greeting", "dumped"}, nil, nil)
 	w.applet(0)
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	out := w.stdout.String()
@@ -376,7 +402,7 @@ func TestWriteConfigToStdout(t *testing.T) {
 func TestHelpRendersSchema(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--help"}, nil, nil)
 	w.applet(0)
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}
 	out := w.stdout.String()
@@ -391,7 +417,7 @@ func TestHelpRendersSchema(t *testing.T) {
 func TestStartupLogsReachFallbackStderr(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--greeting", "logged"}, nil, nil)
 	w.applet(0)
-	if code := run(w.rt); code != 0 {
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d", code)
 	}
 	if !strings.Contains(w.stderr.String(), "greeting=logged") {

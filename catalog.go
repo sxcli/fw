@@ -22,6 +22,14 @@ import (
 	"sxcli.dev/fw/internal/registry"
 )
 
+// defaultCollector accumulates every startup violation across all
+// phases; Main reports its content and exits when it is non-empty.
+var defaultCollector = &fail.Collector{}
+
+// defaultRegistry is THE catalog: populated by registration chains
+// committing from init() or main; composed by the Builder.
+var defaultRegistry = registry.New(defaultCollector)
+
 // Registration is a service registration under construction: created
 // by NewRegistration or NewBareRegistration, enriched by the chain
 // methods, committed to the catalog by the Register terminal —

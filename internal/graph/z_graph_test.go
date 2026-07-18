@@ -93,8 +93,12 @@ func (s *selfish) Work() {}
 var workerType = reflect.TypeOf((*worker)(nil)).Elem()
 var storageType = reflect.TypeOf((*storage)(nil)).Elem()
 
-func provides(types ...reflect.Type) registry.Options {
-	return registry.Options{Interfaces: types}
+// reg commits instance under id the way the root's chain does: the
+// descriptor arrives with identity validated and Provides verified.
+func reg(r *registry.Registry, id string, instance any, provides ...reflect.Type) *registry.Descriptor {
+	d := &registry.Descriptor{ID: id, Instance: instance, Concrete: reflect.TypeOf(instance), Aliases: []string{id}, Provides: provides}
+	r.Commit(d)
+	return d
 }
 
 func ids(res Result) []string {
@@ -140,9 +144,9 @@ func mustResolveRoot(t *testing.T, reg *registry.Registry, root *registry.Descri
 
 func TestChainOrderAndBindings(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workerb", &workerB{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workerb", &workerB{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "app", Controls{})
 	if len(res.Ordered) != 3 || len(res.Cycles) != 0 {
 		t.Fatalf("got order %v, cycles %v", ids(res), res.Cycles)
@@ -158,9 +162,9 @@ func TestChainOrderAndBindings(t *testing.T) {
 
 func TestColdServicesStayOut(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType)) // nothing pulls it
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "storea", &storeA{}, storageType) // nothing pulls it
 	res := mustResolve(t, r, "app", Controls{})
 	if len(res.Ordered) != 2 {
 		t.Errorf("cold service leaked into closure: %v", ids(res))
@@ -173,10 +177,10 @@ func TestColdServicesStayOut(t *testing.T) {
 
 func TestRankedWinsTie(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	first, _ := r.ByID("workera")
 	first.Ranked = true // what Build sets for Order-listed members
 	res := mustResolve(t, r, "app", Controls{})
@@ -191,10 +195,10 @@ func TestRankedWinsTie(t *testing.T) {
 
 func TestUnrankedTieIsViolation(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	c := &fail.Collector{}
 	root, _ := r.ByID("app")
 	Resolve(c, r, root, Controls{})
@@ -209,10 +213,10 @@ func TestUnrankedTieIsViolation(t *testing.T) {
 
 func TestSliceGathersLateJoiners(t *testing.T) {
 	r := newRegistry()
-	r.Register("appseeded", &appSeeded{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType)) // joins via Enable, not via injection
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "appseeded", &appSeeded{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType) // joins via Enable, not via injection
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "appseeded", Controls{Enable: []string{"workerb"}})
 	m := res.Ordered[position(t, res, "appseeded")]
 	var got []string
@@ -226,10 +230,10 @@ func TestSliceGathersLateJoiners(t *testing.T) {
 
 func TestBareSlicePullsAllRegistered(t *testing.T) {
 	r := newRegistry()
-	r.Register("appall", &appAll{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "appall", &appAll{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "appall", Controls{})
 	if len(res.Ordered) != 4 {
 		t.Errorf("bare slice must pull every registered match: %v", ids(res))
@@ -238,7 +242,7 @@ func TestBareSlicePullsAllRegistered(t *testing.T) {
 
 func TestOptionalMissingIsFine(t *testing.T) {
 	r := newRegistry()
-	r.Register("appopt", &appOptional{}, registry.Options{})
+	reg(r, "appopt", &appOptional{})
 	res := mustResolve(t, r, "appopt", Controls{})
 	m := res.Ordered[0]
 	if len(m.Bindings) != 1 || len(m.Bindings[0].Targets) != 0 {
@@ -254,39 +258,39 @@ func TestResolutionErrors(t *testing.T) {
 		ctl    Controls
 	}{
 		{"required dependency missing", func(r *registry.Registry) {
-			r.Register("app", &app{}, registry.Options{})
+			reg(r, "app", &app{})
 		}, "app", Controls{}},
 		{"unknown id in tag", func(r *registry.Registry) {
-			r.Register("appbyid", &appByID{}, registry.Options{})
+			reg(r, "appbyid", &appByID{})
 		}, "appbyid", Controls{}},
 		// "unknown applet" and "disabled applet" moved out of the
 		// graph: the root arrives as a descriptor, so existence and
 		// the human disabled-message are the root package's job now
 		{"disabled required by-id dependency", func(r *registry.Registry) {
-			r.Register("appbyid", &appByID{}, registry.Options{})
-			r.Register("workerb", &workerB{}, provides(workerType))
-			r.Register("storea", &storeA{}, provides(storageType))
+			reg(r, "appbyid", &appByID{})
+			reg(r, "workerb", &workerB{}, workerType)
+			reg(r, "storea", &storeA{}, storageType)
 		}, "appbyid", Controls{Disable: []string{"workerb"}}},
 		{"disable unknown id", func(r *registry.Registry) {
-			r.Register("app", &app{}, registry.Options{})
-			r.Register("workera", &workerA{}, provides(workerType))
+			reg(r, "app", &app{})
+			reg(r, "workera", &workerA{}, workerType)
 		}, "app", Controls{Disable: []string{"ghost"}}},
 		{"enable unknown id", func(r *registry.Registry) {
-			r.Register("app", &app{}, registry.Options{})
-			r.Register("workera", &workerA{}, provides(workerType))
+			reg(r, "app", &app{})
+			reg(r, "workera", &workerA{}, workerType)
 		}, "app", Controls{Enable: []string{"ghost"}}},
 		{"enabled and disabled", func(r *registry.Registry) {
-			r.Register("app", &app{}, registry.Options{})
-			r.Register("workera", &workerA{}, provides(workerType))
+			reg(r, "app", &app{})
+			reg(r, "workera", &workerA{}, workerType)
 		}, "app", Controls{Enable: []string{"workera"}, Disable: []string{"workera"}}},
 		{"override to unknown substitute", func(r *registry.Registry) {
-			r.Register("app", &app{}, registry.Options{})
-			r.Register("workera", &workerA{}, provides(workerType))
+			reg(r, "app", &app{})
+			reg(r, "workera", &workerA{}, workerType)
 		}, "app", Controls{Override: map[string]string{"workera": "ghost"}}},
 		{"override type mismatch", func(r *registry.Registry) {
-			r.Register("appbyid", &appByID{}, registry.Options{})
-			r.Register("workerb", &workerB{}, provides(workerType))
-			r.Register("storea", &storeA{}, provides(storageType))
+			reg(r, "appbyid", &appByID{})
+			reg(r, "workerb", &workerB{}, workerType)
+			reg(r, "storea", &storeA{}, storageType)
 		}, "appbyid", Controls{Override: map[string]string{"workerb": "storea"}}},
 	}
 	for _, tc := range cases {
@@ -308,10 +312,10 @@ func TestResolutionErrors(t *testing.T) {
 
 func TestDisableSteersBareField(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "app", Controls{Disable: []string{"workera"}})
 	m := res.Ordered[position(t, res, "app")]
 	if m.Bindings[0].Targets[0].ID != "workerb" {
@@ -321,10 +325,10 @@ func TestDisableSteersBareField(t *testing.T) {
 
 func TestOverrideSubstitutes(t *testing.T) {
 	r := newRegistry()
-	r.Register("appbyid", &appByID{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "appbyid", &appByID{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "appbyid", Controls{Disable: []string{"workerb"}, Override: map[string]string{"workerb": "workera"}})
 	m := res.Ordered[position(t, res, "appbyid")]
 	if m.Bindings[0].Targets[0].ID != "workera" {
@@ -342,8 +346,8 @@ func TestOverrideSubstitutes(t *testing.T) {
 
 func TestUnusedOverridesAreReported(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
 	res := mustResolve(t, r, "app", Controls{Override: map[string]string{
 		"ghost":   "workera", // unregistered key: legal rescue mapping, but unused here
 		"unfired": "workera",
@@ -355,10 +359,10 @@ func TestUnusedOverridesAreReported(t *testing.T) {
 
 func TestEnableForcesColdService(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType)) // cold unless enabled; drags storea
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType) // cold unless enabled; drags storea
+	reg(r, "storea", &storeA{}, storageType)
 	first, _ := r.ByID("workera")
 	first.Ranked = true // resolve the tie the composed way; the test is about Enable
 	res := mustResolve(t, r, "app", Controls{Enable: []string{"workerb"}})
@@ -372,8 +376,8 @@ func TestEnableForcesColdService(t *testing.T) {
 
 func TestConcreteTypeDependency(t *testing.T) {
 	r := newRegistry()
-	r.Register("appstore", &appStore{}, registry.Options{})
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "appstore", &appStore{})
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "appstore", Controls{})
 	m := res.Ordered[position(t, res, "appstore")]
 	if m.Bindings[0].Targets[0].ID != "storea" {
@@ -383,8 +387,8 @@ func TestConcreteTypeDependency(t *testing.T) {
 
 func TestCycleIsWarningNotError(t *testing.T) {
 	r := newRegistry()
-	r.Register("ping", &ping{}, provides(workerType))
-	r.Register("pong", &pong{}, provides(storageType))
+	reg(r, "ping", &ping{}, workerType)
+	reg(r, "pong", &pong{}, storageType)
 	res := mustResolve(t, r, "ping", Controls{})
 	if len(res.Ordered) != 2 {
 		t.Fatalf("cycle members must stay in the closure: %v", ids(res))
@@ -399,7 +403,7 @@ func TestCycleIsWarningNotError(t *testing.T) {
 
 func TestSelfLoopIsReported(t *testing.T) {
 	r := newRegistry()
-	r.Register("selfish", &selfish{}, provides(workerType))
+	reg(r, "selfish", &selfish{}, workerType)
 	res := mustResolve(t, r, "selfish", Controls{})
 	if !reflect.DeepEqual(res.Cycles, [][]string{{"selfish"}}) {
 		t.Errorf("self-loop not reported: %v", res.Cycles)
@@ -416,9 +420,9 @@ type virtualRoot struct {
 
 func TestVirtualRootEdgesJoinAndDisabledOptionalSkips(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workera", &workerA{}, provides(workerType))
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workera", &workerA{}, workerType)
+	reg(r, "storea", &storeA{}, storageType)
 	root := r.Virtual("core", &virtualRoot{}, &fail.Collector{})
 	res := mustResolveRoot(t, r, root, Controls{})
 	if len(res.Ordered) != 4 {
@@ -435,10 +439,10 @@ func TestVirtualRootEdgesJoinAndDisabledOptionalSkips(t *testing.T) {
 
 func TestDiamondResolvesOnce(t *testing.T) {
 	r := newRegistry()
-	r.Register("appall", &appAll{}, registry.Options{})
-	r.Register("ping", &ping{}, provides(workerType))
-	r.Register("workerb", &workerB{}, provides(workerType)) // both need storage
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "appall", &appAll{})
+	reg(r, "ping", &ping{}, workerType)
+	reg(r, "workerb", &workerB{}, workerType) // both need storage
+	reg(r, "storea", &storeA{}, storageType)
 	res := mustResolve(t, r, "appall", Controls{})
 	if len(res.Ordered) != 4 {
 		t.Fatalf("diamond dependency duplicated or lost: %v", ids(res))
@@ -450,9 +454,9 @@ func TestDiamondResolvesOnce(t *testing.T) {
 
 func TestSubtreeWalksBindings(t *testing.T) {
 	r := newRegistry()
-	r.Register("app", &app{}, registry.Options{})
-	r.Register("workerb", &workerB{}, provides(workerType)) // needs storage
-	r.Register("storea", &storeA{}, provides(storageType))
+	reg(r, "app", &app{})
+	reg(r, "workerb", &workerB{}, workerType) // needs storage
+	reg(r, "storea", &storeA{}, storageType)
 	root := r.Virtual("core", &virtualRoot{}, &fail.Collector{})
 	res := mustResolveRoot(t, r, root, Controls{})
 	sub, ok := res.Subtree("workerb")

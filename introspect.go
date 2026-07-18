@@ -180,7 +180,7 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 }
 
 // Describe returns the long-form description a service declared via
-// WithMetadata, or "" when it declared none (or the id is unknown).
+// its chain Metadata, or "" when it declared none (or the id is unknown).
 func (i *Introspector) Describe(serviceID string) string {
 	out := ""
 	if serviceID == CoreAlias || serviceID == CoreID {

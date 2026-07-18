@@ -15,6 +15,7 @@
 package sxclifw
 
 import (
+	"sxcli.dev/fw/internal/config"
 	"sxcli.dev/fw/internal/registry"
 )
 
@@ -31,6 +32,11 @@ const IntrospectionID = CoreID + "/introspection"
 // IntrospectionAlias is the Introspector's operator name — what
 // --enable takes and listings show. Reserved, like CoreAlias.
 const IntrospectionAlias = "introspection"
+
+// CoreAlias is the operator-facing name of the framework core — its
+// config section, the virtual root's name, and the synthesized
+// introspection entry. No service may claim it.
+const CoreAlias = config.CoreID
 
 // validServiceID reports whether id is path-shaped: slash-separated,
 // non-empty segments of lowercase letters, digits, dots, hyphens and

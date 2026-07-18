@@ -24,7 +24,7 @@ import (
 func TestDisablingDispatchedAppletFails(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--disable", "app"}, nil, nil)
 	w.applet(0)
-	if code := run(w.rt); code != 2 {
+	if code := w.run(); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
 	if !strings.Contains(w.stderr.String(), `applet "app" is disabled`) {
@@ -37,6 +37,9 @@ func TestDisablingDispatchedAppletFails(t *testing.T) {
 func TestIntrospectionSynthesizesCore(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
+	if err := w.build(); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
 	i := &Introspector{rt: w.rt}
 	services := i.Services()
 	if len(services) == 0 || services[0] != "core" {
@@ -53,8 +56,8 @@ func TestCoreNodeIsLifecycleInert(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
 	w.dep(false)
-	w.rt.reg.All()[0].Deps[0].Optional = false
-	if code := run(w.rt); code != 0 {
+	w.cat.All()[0].Deps[0].Optional = false
+	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d; stderr:\n%s", code, w.stderr.String())
 	}
 	want := "dep.configured,applet.configured,dep.start,applet.run,dep.stop"

@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Ledger note: this file once exercised the Register method — id shape,
+// instance shape, Provides and config validation, semantic checks. All
+// of that moved into the root package's typed registration chain
+// (z_catalog_test.go pins it); the registry now owns id uniqueness,
+// inject-tag collection, retention and the debug dump, tested here.
 package registry
 
 import (
@@ -23,17 +28,21 @@ import (
 	"sxcli.dev/fw/internal/fail"
 )
 
-func newReg(checks ...Check) (*Registry, *fail.Collector) {
+func newReg() (*Registry, *fail.Collector) {
 	c := &fail.Collector{}
-	return New(c, checks...), c
+	return New(c), c
+}
+
+// commit stores instance under id the way the root's chain does: the
+// descriptor arrives with identity and shape already validated.
+func commit(r *Registry, id string, instance any) *Descriptor {
+	d := &Descriptor{ID: id, Instance: instance, Concrete: reflect.TypeOf(instance), Aliases: []string{id}}
+	r.Commit(d)
+	return d
 }
 
 type greeter interface {
 	Greet() string
-}
-
-type farewell interface {
-	Bye() string
 }
 
 type svcA struct{}
@@ -73,13 +82,11 @@ type svcBadKind struct {
 type svcPlain struct{}
 
 var greeterType = reflect.TypeOf((*greeter)(nil)).Elem()
-var farewellType = reflect.TypeOf((*farewell)(nil)).Elem()
 
-func TestRegisterHappyPath(t *testing.T) {
+func TestCommitHappyPath(t *testing.T) {
 	r, c := newReg()
-	cfg := &struct{ N int }{N: 42}
-	r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{greeterType}})
-	r.Register("svcb", &svcB{}, Options{Interfaces: []reflect.Type{greeterType}, Config: cfg})
+	commit(r, "svca", &svcA{})
+	commit(r, "svcb", &svcB{})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
 	}
@@ -87,20 +94,11 @@ func TestRegisterHappyPath(t *testing.T) {
 		t.Fatalf("expected 2 descriptors, got %d", len(r.All()))
 	}
 	if r.All()[0].ID != "svca" || r.All()[1].ID != "svcb" {
-		t.Errorf("registration order not preserved: %q, %q", r.All()[0].ID, r.All()[1].ID)
+		t.Errorf("commit order not preserved: %q, %q", r.All()[0].ID, r.All()[1].ID)
 	}
 	d, ok := r.ByID("svcb")
 	if !ok {
 		t.Fatal("svcb not found by id")
-	}
-	if d.ConfigPtr != cfg {
-		t.Error("config pointer not stored")
-	}
-	if len(d.Provides) != 1 || d.Provides[0] != greeterType {
-		t.Errorf("provides not recorded: %v", d.Provides)
-	}
-	if d.Concrete != reflect.TypeOf(&svcB{}) {
-		t.Errorf("concrete type wrong: %v", d.Concrete)
 	}
 	if len(d.Deps) != 5 {
 		t.Fatalf("expected 5 dep fields, got %d: %+v", len(d.Deps), d.Deps)
@@ -119,81 +117,49 @@ func TestRegisterHappyPath(t *testing.T) {
 	}
 }
 
-func TestRegisterIdentityViolations(t *testing.T) {
-	cases := []struct {
-		name     string
-		register func(r *Registry)
-		stored   int
-	}{
-		{"invalid id uppercase", func(r *Registry) { r.Register("SvcA", &svcA{}, Options{}) }, 0},
-		{"invalid id empty", func(r *Registry) { r.Register("", &svcA{}, Options{}) }, 0},
-		{"invalid id digit start", func(r *Registry) { r.Register("1svc", &svcA{}, Options{}) }, 0},
-		// "svc-a" became a LEGAL id with the identity model
-		{"invalid id blank identifier", func(r *Registry) { r.Register("_", &svcA{}, Options{}) }, 0},
-		{"duplicate id", func(r *Registry) {
-			r.Register("svca", &svcA{}, Options{})
-			r.Register("svca", &svcPlain{}, Options{})
-		}, 1},
-		{"duplicate concrete type", func(r *Registry) {
-			r.Register("one", &svcA{}, Options{})
-			r.Register("two", &svcA{}, Options{})
-		}, 1},
-		{"nil instance", func(r *Registry) { r.Register("svca", nil, Options{}) }, 0},
-		{"typed nil pointer", func(r *Registry) { r.Register("svca", (*svcA)(nil), Options{}) }, 0},
-		{"non-pointer instance", func(r *Registry) { r.Register("svca", svcA{}, Options{}) }, 0},
-		{"pointer to non-struct", func(r *Registry) { i := 5; r.Register("svca", &i, Options{}) }, 0},
+func TestCommitRejectsDuplicateID(t *testing.T) {
+	r, c := newReg()
+	commit(r, "svca", &svcA{})
+	commit(r, "svca", &svcPlain{})
+	if c.Len() == 0 {
+		t.Error("duplicate id must be recorded")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r, c := newReg()
-			tc.register(r)
-			if c.Len() == 0 {
-				t.Error("expected a recorded error, got none")
-			}
-			if len(r.All()) != tc.stored {
-				t.Errorf("expected %d stored descriptors, got %d", tc.stored, len(r.All()))
-			}
-		})
+	if len(r.All()) != 1 {
+		t.Errorf("expected 1 stored descriptor, got %d", len(r.All()))
 	}
 }
 
-func TestRegisterNonIdentityViolationsStillStore(t *testing.T) {
+// The same concrete type MAY be cataloged twice; only accepting both
+// into one composition is a violation, and that is Build's check.
+func TestCommitToleratesDuplicateConcreteType(t *testing.T) {
+	r, c := newReg()
+	commit(r, "one", &svcA{})
+	commit(r, "two", &svcA{})
+	if c.Len() != 0 {
+		t.Errorf("unexpected errors: %v", c.All())
+	}
+	if len(r.All()) != 2 {
+		t.Errorf("expected 2 stored descriptors, got %d", len(r.All()))
+	}
+}
+
+// Tag-structure violations are the registry's own: collectDeps finds
+// them at commit while the descriptor is still stored.
+func TestCommitTagViolationsStillStore(t *testing.T) {
 	cases := []struct {
 		name     string
-		register func(r *Registry)
+		instance any
 	}{
-		{"provides non-interface", func(r *Registry) {
-			r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{reflect.TypeOf(svcA{})}})
-		}},
-		{"provides unimplemented interface", func(r *Registry) {
-			r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{farewellType}})
-		}},
-		{"config not a pointer", func(r *Registry) {
-			r.Register("svca", &svcA{}, Options{Config: struct{}{}})
-		}},
-		{"config typed nil pointer", func(r *Registry) {
-			r.Register("svca", &svcA{}, Options{Config: (*struct{ N int })(nil)})
-		}},
-		{"inject on unexported field", func(r *Registry) {
-			r.Register("svcu", &svcUnexported{}, Options{})
-		}},
-		{"inject slice of concrete type", func(r *Registry) {
-			r.Register("svcs", &svcSlicePtr{}, Options{})
-		}},
-		{"inject unknown flag", func(r *Registry) {
-			r.Register("svcf", &svcBadFlag{}, Options{})
-		}},
-		{"inject multiple ids on single field", func(r *Registry) {
-			r.Register("svcm", &svcMultiIDSingle{}, Options{})
-		}},
-		{"inject unsupported field kind", func(r *Registry) {
-			r.Register("svck", &svcBadKind{}, Options{})
-		}},
+		{"inject on unexported field", &svcUnexported{}},
+		{"inject slice of concrete type", &svcSlicePtr{}},
+		{"inject unknown flag", &svcBadFlag{}},
+		{"inject multiple ids on single field", &svcMultiIDSingle{}},
+		{"inject unsupported field kind", &svcBadKind{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r, c := newReg()
-			tc.register(r)
+			commit(r, "svc", tc.instance)
 			if c.Len() == 0 {
 				t.Error("expected a recorded error, got none")
 			}
@@ -204,23 +170,21 @@ func TestRegisterNonIdentityViolationsStillStore(t *testing.T) {
 	}
 }
 
-func TestChecksRunAndRecord(t *testing.T) {
-	var seen []string
-	failing := func(d *Descriptor) error {
-		seen = append(seen, d.ID)
-		return fmt.Errorf("check rejects %q", d.ID)
+// Commit must tolerate re-collection: Build copies catalog descriptors
+// and commits the copies into the composition's registry, so a second
+// collectDeps over an already-collected descriptor must not double the
+// dependency list.
+func TestCommitIsIdempotentOverDeps(t *testing.T) {
+	r, _ := newReg()
+	d := commit(r, "svcb", &svcB{})
+	r2, c2 := newReg()
+	cp := *d
+	r2.Commit(&cp)
+	if c2.Len() != 0 {
+		t.Fatalf("unexpected errors: %v", c2.All())
 	}
-	passing := func(d *Descriptor) error { return nil }
-	r, c := newReg(failing, passing)
-	r.Register("svca", &svcA{}, Options{})
-	if len(seen) != 1 || seen[0] != "svca" {
-		t.Errorf("check not invoked with descriptor: %v", seen)
-	}
-	if c.Len() != 1 {
-		t.Errorf("expected exactly the failing check's error, got %v", c.All())
-	}
-	if len(r.All()) != 1 {
-		t.Errorf("check failures must not discard the descriptor, got %d stored", len(r.All()))
+	if len(cp.Deps) != 5 {
+		t.Errorf("re-commit doubled the deps: %d", len(cp.Deps))
 	}
 }
 
@@ -260,9 +224,9 @@ func TestParseInjectTag(t *testing.T) {
 
 func TestRetainEjectsCold(t *testing.T) {
 	r, _ := newReg()
-	r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{greeterType}})
-	r.Register("svcb", &svcB{}, Options{Interfaces: []reflect.Type{greeterType}})
-	r.Register("plain", &svcPlain{}, Options{})
+	commit(r, "svca", &svcA{})
+	commit(r, "svcb", &svcB{})
+	commit(r, "plain", &svcPlain{})
 	r.Retain(map[string]bool{"svca": true, "plain": true})
 	if len(r.All()) != 2 {
 		t.Fatalf("expected 2 retained descriptors, got %d", len(r.All()))
@@ -281,10 +245,12 @@ func TestDumpReadable(t *testing.T) {
 		Path  string
 		Level int
 	}{Path: "/var/log/app.log"}
-	r.Register("svca", &svcA{}, Options{Interfaces: []reflect.Type{greeterType}})
-	r.Register("svcb", &svcB{}, Options{Interfaces: []reflect.Type{greeterType}, Config: cfg})
-	r.Register("plain", &svcPlain{}, Options{})
-	r.Register("svca", &svcBadFlag{}, Options{}) // duplicate id → recorded error
+	da := commit(r, "svca", &svcA{})
+	da.Provides = []reflect.Type{greeterType}
+	db := commit(r, "svcb", &svcB{})
+	db.ConfigPtr = cfg
+	commit(r, "plain", &svcPlain{})
+	commit(r, "svca", &svcBadFlag{}) // duplicate id → recorded error
 	var b strings.Builder
 	r.Dump(&b)
 	t.Logf("registry dump:\n%s", b.String())

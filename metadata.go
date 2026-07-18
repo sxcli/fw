@@ -19,14 +19,13 @@ import (
 	"reflect"
 
 	"sxcli.dev/fw/internal/config"
-	"sxcli.dev/fw/internal/registry"
 )
 
 // Metadata is the optional, declarative description of a service — the
 // instance and its config struct are one service, so one Metadata
 // covers both: a long-form Description of the service itself and
 // per-field annotations for its configuration. Attach it at
-// registration with WithMetadata; it is inert data with no methods to
+// registration with the Metadata chain method; it is inert data with no methods to
 // implement, validated at registration like everything else and served
 // to meta consumers (completion, documentation) via the Introspector.
 type Metadata struct {
@@ -85,13 +84,6 @@ type FieldMetadata[T any] struct {
 type fieldMetadataMarker interface{ fieldMetadata() }
 
 func (FieldMetadata[T]) fieldMetadata() {}
-
-// WithMetadata attaches a service's Metadata. md must be non-nil.
-func WithMetadata(md *Metadata) RegisterOption {
-	return func(o *registerOptions) {
-		o.metadata = md
-	}
-}
 
 // defaultDomainViolations checks that a field's registered default —
 // the value the struct holds at registration — is itself inside the
@@ -168,22 +160,4 @@ func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[stri
 		}
 	}
 	return meta, errs
-}
-
-// checkMetadata is the registry check validating and normalizing a
-// registration's Metadata on the old instance-based path.
-func checkMetadata(d *registry.Descriptor) error {
-	var err error
-	if raw, has := d.Metadata.(*Metadata); has && raw != nil {
-		meta, errs := normalizeMetadata(d.ID, raw, d.ConfigPtr != nil, config.ProbeFields(d.ConfigPtr), true)
-		if len(errs) > 0 {
-			err = errs[0]
-			for _, extra := range errs[1:] {
-				err = fmt.Errorf("%v; %v", err, extra)
-			}
-		} else {
-			d.Metadata = meta
-		}
-	}
-	return err
 }

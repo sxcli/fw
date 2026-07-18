@@ -97,6 +97,7 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 		openPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
 	}
 	t.Cleanup(func() { positionals = nil; activeTranslator = nil })
+	// the app is already built above; drive the pipeline directly
 	return w, run(w.rt)
 }
 

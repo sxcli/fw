@@ -152,7 +152,7 @@ type Field struct {
 // serviceSchema is the schema of one service's config struct.
 type serviceSchema struct {
 	id     string
-	cfg    reflect.Value // the *Struct registered via WithConfig
+	cfg    reflect.Value // the *Struct the registration chain declared
 	fields []*Field
 }
 
