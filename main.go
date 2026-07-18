@@ -254,7 +254,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 		loaded := p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 {
 			positionals = loaded.Positionals
-			pre := rt.prepareTranslator(p.res, p.ctl)
+			pre := rt.prepareTranslator(p.res)
 			if p.core.Help {
 				code = rt.help(p.sch)
 			} else if p.core.WriteConfig {
@@ -271,12 +271,27 @@ func (rt *runtime) execute(buffer *logging.Buffer, appletID string, applet Apple
 }
 
 // prepared records the outcome of the translator-first Configured
-// pass: members already configured (skipped by the lifecycle's own
-// Configured loop) and the degraded translator itself (skipped
-// entirely — an unconfigured translator must not be started).
+// pass: members already injected and configured (skipped by the main
+// lifecycle's corresponding passes), the degraded translator itself
+// (skipped entirely — an unconfigured translator must not be
+// started), and the recorded error of a failed subtree DEPENDENCY —
+// replayed fatally by the lifecycle without invoking the service's
+// Configured a second time: Configured is called once, even on the
+// failure path.
 type prepared struct {
+	injected   map[string]bool
 	configured map[string]bool
 	skip       map[string]bool
+	depID      string
+	depErr     error
+}
+
+func (p *prepared) injectedSet() map[string]bool {
+	var out map[string]bool
+	if p != nil {
+		out = p.injected
+	}
+	return out
 }
 
 func (p *prepared) isConfigured(id string) bool {
@@ -290,60 +305,53 @@ func (p *prepared) isSkipped(id string) bool {
 // prepareTranslator runs Inject + Configured over the registered
 // Translator's dependency subtree before anything renders — on the
 // help/write-config short-circuits this is the only lifecycle that
-// happens (spec §7). The translator's own failure degrades quietly:
-// one buffered warning, raw msgids, never a failed startup. A failing
-// subtree DEPENDENCY is left unmarked — the main lifecycle re-runs
-// its Configured and reports the failure under the normal fatal
-// rules; only translation degrades silently, not services. The main
-// Inject re-injects subtree members harmlessly (same instances into
-// the same fields, resolved under the same controls).
-func (rt *runtime) prepareTranslator(res graph.Result, ctl graph.Controls) *prepared {
+// happens (spec §7). The subtree is a query against the one
+// resolution (the bindings are the edges); nothing resolves twice.
+// The translator's own failure degrades quietly: one buffered
+// warning, raw msgids, never a failed startup. A failing subtree
+// DEPENDENCY records its error instead — the run path surfaces it
+// fatally under the normal rules, the short-circuit paths render
+// untranslated; only translation degrades silently, not services.
+func (rt *runtime) prepareTranslator(res graph.Result) *prepared {
 	var out *prepared
-	inClosure := false
-	for _, m := range res.Ordered {
-		if m.Desc.ID == rt.translatorID {
-			inClosure = true
-		}
-	}
-	if rt.translatorID != "" && inClosure {
-		sub := &fail.Collector{}
-		var subRes graph.Result
-		if trDesc, registered := rt.reg.ByID(rt.translatorID); registered {
-			// the translator's own descriptor is the root: "resolve
-			// this service's closure" is what the root parameter means
-			subRes = graph.Resolve(sub, rt.reg, trDesc, ctl)
-		} else {
-			sub.Fail("translator %q is not registered", rt.translatorID)
-		}
-		subRes.Inject(sub)
-		if sub.Len() == 0 {
-			out = &prepared{configured: map[string]bool{}, skip: map[string]bool{}}
-			ok := true
-			for i := 0; i < len(subRes.Ordered) && ok; i++ {
-				m := subRes.Ordered[i]
-				if c, isConfigurable := m.Desc.Instance.(Configurable); isConfigurable {
-					if err := c.Configured(); err == nil {
-						out.configured[m.Desc.ID] = true
-					} else {
-						ok = false
-						if m.Desc.ID == rt.translatorID {
-							slog.Warn("translator unavailable, proceeding untranslated", "service", m.Desc.ID, "error", err)
+	if rt.translatorID != "" {
+		if sub, member := res.Subtree(rt.translatorID); member {
+			subC := &fail.Collector{}
+			sub.Inject(subC)
+			if subC.Len() == 0 {
+				out = &prepared{injected: map[string]bool{}, configured: map[string]bool{}, skip: map[string]bool{}}
+				for _, m := range sub.Ordered {
+					out.injected[m.Desc.ID] = true
+				}
+				ok := true
+				for i := 0; i < len(sub.Ordered) && ok; i++ {
+					m := sub.Ordered[i]
+					if c, isConfigurable := m.Desc.Instance.(Configurable); isConfigurable {
+						if err := c.Configured(); err == nil {
+							out.configured[m.Desc.ID] = true
+						} else {
+							ok = false
 							out.skip[m.Desc.ID] = true
+							if m.Desc.ID == rt.translatorID {
+								slog.Warn("translator unavailable, proceeding untranslated", "service", m.Desc.ID, "error", err)
+							} else {
+								out.depID, out.depErr = m.Desc.ID, err
+							}
 						}
 					}
 				}
-			}
-			if ok {
-				for _, m := range subRes.Ordered {
-					if m.Desc.ID == rt.translatorID {
-						if tr, isTranslator := m.Desc.Instance.(Translator); isTranslator {
-							activeTranslator = tr
+				if ok {
+					for _, m := range sub.Ordered {
+						if m.Desc.ID == rt.translatorID {
+							if tr, isTranslator := m.Desc.Instance.(Translator); isTranslator {
+								activeTranslator = tr
+							}
 						}
 					}
 				}
+			} else {
+				slog.Warn("translator subtree injection failed, proceeding untranslated", "service", rt.translatorID)
 			}
-		} else {
-			slog.Warn("translator subtree unresolvable, proceeding untranslated", "service", rt.translatorID)
 		}
 	}
 	return out
@@ -356,9 +364,16 @@ func (rt *runtime) prepareTranslator(res graph.Result, ctl graph.Controls) *prep
 // a degraded translator is skipped entirely.
 func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Applet, pre *prepared) int {
 	code := 2
-	res.Inject(rt.c)
+	res.InjectExcept(rt.c, pre.injectedSet())
 	if rt.c.Len() == 0 {
 		configured := true
+		if pre != nil && pre.depErr != nil {
+			// a translator-subtree dependency failed in the early
+			// pass; surface it under the normal fatal rules without a
+			// second Configured call
+			rt.c.Fail("service %q: %v", pre.depID, pre.depErr)
+			configured = false
+		}
 		for i := 0; i < len(res.Ordered) && configured; i++ {
 			id := res.Ordered[i].Desc.ID
 			if c, ok := res.Ordered[i].Desc.Instance.(Configurable); ok && !pre.isConfigured(id) && !pre.isSkipped(id) {
@@ -536,7 +551,7 @@ func (rt *runtime) coreRoot(c *fail.Collector, appletID string, providerIDs []st
 				Tag:  reflect.StructTag(`inject:"` + id + `;optional"`),
 			})
 		}
-		root = rt.reg.Virtual(reservedCoreID, reflect.New(reflect.StructOf(fields)).Interface())
+		root = rt.reg.Virtual(CoreID, reflect.New(reflect.StructOf(fields)).Interface())
 	} else {
 		c.Fail("applet %q is not registered", appletID)
 	}

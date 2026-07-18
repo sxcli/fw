@@ -108,7 +108,7 @@ func (i *Introspector) Services() []string {
 	// the core is a virtual root, not a registry entry — its presence
 	// here is synthesized, because it is truthfully part of every
 	// binary (spec §5)
-	out := []string{reservedCoreID}
+	out := []string{CoreID}
 	for _, d := range i.rt.reg.All() {
 		out = append(out, d.ID)
 	}
@@ -172,7 +172,7 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 // WithMetadata, or "" when it declared none (or the id is unknown).
 func (i *Introspector) Describe(serviceID string) string {
 	out := ""
-	if serviceID == reservedCoreID {
+	if serviceID == CoreID {
 		out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
 	} else if d, registered := i.rt.reg.ByID(serviceID); registered {
 		if meta, has := d.Metadata.(*config.Meta); has {

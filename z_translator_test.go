@@ -172,3 +172,40 @@ func TestTrNUsesTranslatorForms(t *testing.T) {
 		t.Errorf("miss fallback wrong: %q", got)
 	}
 }
+
+// A translator-subtree dependency that fails Configured is fatal under
+// the normal rules — but its Configured runs exactly once: the early
+// pass records the error and the lifecycle replays it.
+type failingCfgService struct{ calls int }
+
+func (f *failingCfgService) Configured() error {
+	f.calls++
+	return errors.New("dep broke")
+}
+
+type depTranslator struct {
+	fakeTranslator
+	Dep *failingCfgService `inject:""`
+}
+
+func TestTranslatorDepFailureIsFatalExactlyOnce(t *testing.T) {
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	failing := &failingCfgService{}
+	w.rt.reg.Register("faildep", failing, foldOptions(nil))
+	tr := &depTranslator{}
+	tr.log = &w.log
+	w.rt.reg.Register("i18n", tr, foldOptions([]RegisterOption{Provides[Translator]()}))
+	if code := run(w.rt); code != 2 {
+		t.Fatalf("a failing subtree dependency must be fatal: exit %d", code)
+	}
+	if !strings.Contains(w.stderr.String(), `service "faildep": dep broke`) {
+		t.Errorf("recorded error not surfaced:\n%s", w.stderr.String())
+	}
+	if failing.calls != 1 {
+		t.Errorf("Configured must run exactly once, ran %d times", failing.calls)
+	}
+	if strings.Contains(strings.Join(w.log, ","), "applet.run") {
+		t.Errorf("the run must not proceed: %v", w.log)
+	}
+}

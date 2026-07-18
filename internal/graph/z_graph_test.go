@@ -421,3 +421,22 @@ func TestDiamondResolvesOnce(t *testing.T) {
 		t.Errorf("shared dependency must precede both dependents: %v", ids(res))
 	}
 }
+
+func TestSubtreeWalksBindings(t *testing.T) {
+	r := newRegistry()
+	r.Register("app", &app{}, registry.Options{})
+	r.Register("workerb", &workerB{}, provides(workerType)) // needs storage
+	r.Register("storea", &storeA{}, provides(storageType))
+	root := r.Virtual("core", &virtualRoot{})
+	res := mustResolveRoot(t, r, root, Controls{})
+	sub, ok := res.Subtree("workerb")
+	if !ok {
+		t.Fatal("workerb is a closure member")
+	}
+	if len(sub.Ordered) != 2 || sub.Ordered[0].Desc.ID != "storea" || sub.Ordered[1].Desc.ID != "workerb" {
+		t.Errorf("subtree must be the reachable set in dependency order: %v", ids(sub))
+	}
+	if _, ok := res.Subtree("ghost"); ok {
+		t.Error("a non-member must report ok=false")
+	}
+}

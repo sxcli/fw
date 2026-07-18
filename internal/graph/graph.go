@@ -57,6 +57,42 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 	return r.result
 }
 
+// Subtree returns the sub-result reachable from the member named id
+// through its resolved bindings — the member itself included, the main
+// dependency order inherited, no re-resolution: the bindings ARE the
+// edges. ok is false when id is not a closure member (disabled, or
+// never resolved in).
+func (res Result) Subtree(id string) (Result, bool) {
+	byID := map[string]Member{}
+	for _, m := range res.Ordered {
+		byID[m.Desc.ID] = m
+	}
+	var out Result
+	_, ok := byID[id]
+	if ok {
+		keep := map[string]bool{}
+		queue := []string{id}
+		for len(queue) > 0 {
+			next := queue[0]
+			queue = queue[1:]
+			if !keep[next] {
+				keep[next] = true
+				for _, b := range byID[next].Bindings {
+					for _, target := range b.Targets {
+						queue = append(queue, target.ID)
+					}
+				}
+			}
+		}
+		for _, m := range res.Ordered {
+			if keep[m.Desc.ID] {
+				out.Ordered = append(out.Ordered, m)
+			}
+		}
+	}
+	return out, ok
+}
+
 // fail records a resolution violation.
 func (r *resolver) fail(format string, args ...any) {
 	r.c.Fail(format, args...)
