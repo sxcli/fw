@@ -24,8 +24,6 @@ import (
 	"time"
 
 	fw "sxcli.dev/fw"
-	_ "sxcli.dev/fw/configfmt/yaml"  // optional: yaml config files
-	_ "sxcli.dev/fw/sink/console"    // optional: configurable console sink
 )
 
 type Config struct {
@@ -43,14 +41,19 @@ func (s *Serve) Run() int {
 }
 
 func main() {
-	s := &Serve{cfg: Config{Listen: ":8080", Timeout: 30 * time.Second}}
-	fw.Register("serve", s, fw.WithConfig(&s.cfg))
-	fw.Main()
+	fw.Solo(fw.NewRegistration("example.com/mytool/serve",
+		func() *Serve { return &Serve{cfg: Config{Listen: ":8080", Timeout: 30 * time.Second}} },
+		func(s *Serve) *Config { return &s.cfg }).
+		Alias("serve"))
 }
 ```
 
-One registered applet means no subcommands, no ceremony — the binary
-*is* the applet, and all of these set the same field:
+A registration carries two names: the **id** (import-path-shaped,
+unique by construction — what code says in inject tags and
+compositions) and the **alias** (the short operator name — what humans
+say). `Solo` is the single-applet front door: no subcommands, no
+ceremony — the binary *is* the applet, and all of these set the same
+field:
 
 ```console
 $ mytool --listen :9090 --timeout 5s
@@ -72,16 +75,17 @@ Field tags declare the whole surface:
 | --- | --- |
 | `json:"name"` | the config-file key (required on every exported field) |
 | `arg:"long[,short]"` | opt-in CLI argument: `--long value`, `--long=value`, `-s value` |
-| `env:"NAME"` | explicit env var; omitted → derived (`APPLETID_` + long name); `env:"-"` → argument-only |
+| `env:"NAME"` | explicit env var; omitted → derived (applet alias + long name, uppercased); `env:"-"` → argument-only |
 | `usage:"..."` | help text, translation-ready |
 | `dump:"-"` | run-scoped: excluded from generated config files and refused from them |
 
 Config files are discovered next to the real binary
-(`<dir>/<applet>-config.<ext>`), in `/etc/<applet>/` (or
+(`<dir>/<alias>-config.<ext>`), in `/etc/<alias>/` (or
 `%ProgramData%`), and in the XDG user config directory — merged in that
 order — or replaced wholesale by an explicit `--config path`. JSON is
-native; importing `sxcli.dev/fw/configfmt/yaml` adds `.yaml`/`.yml`,
-and the format-provider interface is public for anything else.
+native; accepting `sxcli.dev/fw/configfmt/yaml` into the composition
+adds `.yaml`/`.yml`, and the format-provider interface is public for
+anything else.
 
 Built-in conveniences:
 
@@ -106,8 +110,9 @@ smuggled in via files or environment.
 ## Services and dependency injection
 
 Applets are just services. Any package can register services in
-`init()`; fields tagged `inject` receive other services by interface or
-concrete type:
+`init()` — registration fills a process-wide **catalog** of factories
+and declarations, and the binary decides what participates. Fields
+tagged `inject` receive other services by interface or concrete type:
 
 ```go
 type Store interface{ Get(key string) string }
@@ -129,23 +134,47 @@ Operators can recompose without recompiling: `--disable sqlite
 --enable mysql --override sqlite=mysql` remove, force, and remap
 services from the command line, environment, or config file.
 
-## Multi-applet binaries
+## Composition and multi-applet binaries
 
-The same registration scales to busybox-style multi-call binaries:
-register several applets and the framework dispatches by first argument
-(`mybox serve`) or by binary name (`ln -s mybox serve; ./serve`). Each
-applet pays only for its own dependency closure — a five-applet binary
-running `serve` never touches the other four applets' services or
-arguments.
+Beyond `Solo` sits the Builder: the binary names what it takes from
+the catalog, and imports are justified by the `ID` constants packages
+export — no blank-import magic:
+
+```go
+import (
+	fw "sxcli.dev/fw"
+	"sxcli.dev/fw/sink/console"
+	"example.com/box/grep"
+	"example.com/box/serve"
+)
+
+func main() {
+	fw.Builder().
+		Accept(serve.ID, grep.ID, console.ID).
+		Order(serve.ID, grep.ID). // listing order; ranked services win ties
+		Main()
+}
+```
+
+(`fw.Main()` is the take-everything shorthand — `AcceptAll` composed
+and run.) Several accepted applets make a busybox-style multi-call
+binary: the framework dispatches by first argument (`mybox serve`) or
+by binary name (`ln -s mybox serve; ./serve`). Each applet pays only
+for its own dependency closure — a five-applet binary running `serve`
+never touches the other four applets' services or arguments.
+`Builder.Alias` renames operator surfaces per composition (and pins
+them against upstream changes); ambiguity is never resolved silently —
+two unranked candidates for one dependency slot fail the build by
+name.
 
 ## Logging
 
 Logging always works: with no sink enabled, records land on stderr
 through a built-in plain handler — the logging floor. (No silence
 switch either; redirect stderr if you want quiet.) Richer sinks are
-ordinary services implementing `slog.Handler`, activated per
-invocation — console (stderr/stdout, text or json), file, and
-syslog/journald:
+ordinary services implementing `slog.Handler` — accepted into the
+composition like any other service, activated per invocation —
+console (stderr/stdout, text or json), file, and syslog/journald:
 
 ```console
 $ mytool --enable console --console-format json

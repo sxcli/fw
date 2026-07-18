@@ -138,5 +138,14 @@ deleting the assertion.
      (instance-carrying entries no longer ride through). The
      both-vocabulary controls (--enable/--disable/--override by alias
      OR id) are a FEATURE and stay.
-   - 7d pending: docs sweep — README front doors, spec stale
-     sentences, this file's closing pass
+   - 7d ✓ docs sweep: README front doors are Solo (single-applet) and
+     Builder+ID-imports (composition); alias-derived surfaces (env
+     prefix, config paths/sections) stated as such; spec's
+     WithConfig/WithMetadata sentences now speak the chain. Code and
+     docs grep clean of the dead API.
+
+The branch is DONE pending merge. Left deliberately outside it:
+sxclivet (separate module), completion-module bump (fw version +
+HintServiceID filters CoreAlias), site resync, fwtest,
+Suppress-under-Builder (open item). Release: the four rework phases +
+composition ship as ONE breaking release.

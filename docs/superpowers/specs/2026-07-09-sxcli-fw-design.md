@@ -757,8 +757,10 @@ SQLite database service but the user configures MySQL instead).
 
 ### The config struct
 
-Registered via `WithConfig(ptr)`; field values at registration are the
-defaults; the core fills the same struct in place before `Configured()`.
+Declared by the registration chain's config accessor
+(`NewRegistration[T, C]`'s third argument); the factory's field values
+are the defaults; the core fills the same struct in place before
+`Configured()`.
 
 ```go
 type FileSinkConfig struct {
@@ -1216,7 +1218,7 @@ the checks tests cannot express.
 | A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
 | Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
 | Logical/boolean `inject` expressions for single-valued fields (e.g. `inject:"mysql \|\| sqlite"` — a preference list letting the service express fallbacks without forcing user overrides) | future syntax extension; must compose with `override` remapping (each alternative remapped before resolution); until then a non-slice field names at most one id |
-| Positional declarations for introspection/completion | still open; field-level self-description landed as `WithMetadata` |
+| Positional declarations for introspection/completion | still open; field-level self-description landed as the chain's `Metadata` |
 | Shell completion service | decided: a SEPARATE module (`sxcli.dev` namespace), never in core — the first external Introspector consumer; registers per-shell `System` applets (invoked `binary <id> …` by the generated scripts); any capability gap it hits is fixed as a core API improvement, never a backdoor |
 | Disabling first-token applet dispatch entirely (build-time policy for binaries that want basename/single-applet behavior only) | idea noted while designing Hidden/System — registration/`Suppress`-style knob, unscheduled; interaction with System selectors must be resolved when designed |
 | Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
