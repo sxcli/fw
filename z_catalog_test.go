@@ -210,3 +210,22 @@ func TestBareAndAppletCommit(t *testing.T) {
 		t.Error("bare Make must produce the applet and no config pointer")
 	}
 }
+
+type badTagCfg struct {
+	X string `arg:"x"` // no json tag: a registration-time violation
+}
+
+type badTagSvc struct{ cfg badTagCfg }
+
+func TestCommitValidatesConfigTags(t *testing.T) {
+	reg, c := catalogWorld()
+	NewRegistration("example.com/x/badtag", func() *badTagSvc { return &badTagSvc{} },
+		func(s *badTagSvc) *badTagCfg { return &s.cfg }).
+		Alias("badtag").registerInto(reg, c)
+	if c.Len() == 0 {
+		t.Fatal("malformed config tags must be commit violations")
+	}
+	if !strings.Contains(c.All()[0].Error(), "json tag with a name is required") {
+		t.Errorf("violation text wrong: %v", c.All())
+	}
+}

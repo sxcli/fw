@@ -164,6 +164,14 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	if r.cfgType != nil && r.access == nil {
 		c.Fail("service %q: nil config accessor — use NewBareRegistration for config-less services", r.id)
 	}
+	if r.cfgType != nil {
+		// tag and field-type validation, type-level: the registration
+		// list promises "malformed tags" at registration, not at the
+		// first invocation that happens to plan this service
+		if err := config.ValidateConfigType(r.id, r.cfgType); err != nil {
+			c.Add(err)
+		}
+	}
 	var meta any
 	if r.metadata != nil {
 		normalized, errs := normalizeMetadata(r.id, r.metadata, r.cfgType != nil, config.ProbeType(r.cfgType), false)

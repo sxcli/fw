@@ -39,6 +39,19 @@ func ValidateConfig(d *registry.Descriptor) error {
 	return err
 }
 
+// ValidateConfigType is ValidateConfig without an instance: tag and
+// field-type validation of a config struct TYPE (a pointer-to-struct
+// type) at the registration commit, where no instance exists yet.
+func ValidateConfigType(id string, cfgPtr reflect.Type) error {
+	var err error
+	if cfgPtr != nil {
+		if _, errs := extract(id, cfgPtr.Elem(), nil, nil, "", true); len(errs) > 0 {
+			err = errors.Join(errs...)
+		}
+	}
+	return err
+}
+
 // coreMeta is the core's own field metadata — the same declarative
 // channel services use via WithMetadata, built directly since the core
 // is not registered: --config names a file (which may not exist yet
