@@ -234,3 +234,28 @@ func (a *catConsumer) Run() int {
 	*a.log = append(*a.log, fmt.Sprintf("consumer.run:%T", a.Dep))
 	return 0
 }
+
+func TestOrderSequenceDecidesAmongRanked(t *testing.T) {
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewBareRegistration("example.com/app/consumer", func() *catConsumer { return &catConsumer{log: log} }).
+			Alias("consumer").registerInto(reg, c)
+		NewBareRegistration("example.com/app/one", func() *bldA { return &bldA{} }).
+			Alias("one").Provides(Iface[catIface]()).registerInto(reg, c)
+		NewBareRegistration("example.com/app/two", func() *bldB { return &bldB{} }).
+			Alias("two").Provides(Iface[catIface]()).registerInto(reg, c)
+		NewBareRegistration("example.com/app/three", func() *catService { return &catService{} }).
+			Alias("three").Provides(Iface[catIface]()).registerInto(reg, c)
+	}
+	// two of three ranked: the Order-earlier one wins the field
+	w, code := appWorld(t, Builder().AcceptAll().
+		Order("example.com/app/two", "example.com/app/one"), []string{"bin"}, nil, nil, register)
+	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*sxclifw.bldB" {
+		t.Errorf("Order-earlier must win: code=%d log=%v stderr:\n%s", code, w.log, w.stderr.String())
+	}
+	// flipping the sequence flips the winner — the sequence IS the semantics
+	w, code = appWorld(t, Builder().AcceptAll().
+		Order("example.com/app/one", "example.com/app/two"), []string{"bin"}, nil, nil, register)
+	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*sxclifw.bldA" {
+		t.Errorf("flipped Order must flip the winner: code=%d log=%v", code, w.log)
+	}
+}

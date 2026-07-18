@@ -525,6 +525,9 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
 - Pointer-to-struct fields match by concrete type (unique by rule above).
 - Single-valued field → the named ID; with no id: the sole match, or —
   when several match — the one the composition **ranked** (`Order`).
+  Among several ranked candidates, **`Order` sequence decides** —
+  explicitly, in source: `Order(a, b)` means a beats b wherever both
+  match, the same sequence that orders slices and listings.
   Multiple matches with no ranked candidate is a resolution violation
   naming both claimants: **ties are never broken silently** — the
   first-registered rule of the pre-composition era is dead, and with
