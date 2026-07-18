@@ -134,6 +134,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 			if names, over := renamed[id]; over {
 				member.Aliases = names
 			}
+			_, member.Ranked = rank[id]
 			if member.Make != nil {
 				member.Instance, member.ConfigPtr = member.Make()
 			}

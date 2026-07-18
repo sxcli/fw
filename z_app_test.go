@@ -15,6 +15,7 @@
 package sxclifw
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"strings"
@@ -200,4 +201,36 @@ func TestBuildSurfacesCommitViolations(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "an alias is required") {
 		t.Errorf("Build must surface commit violations: %v", err)
 	}
+}
+
+func TestAmbiguityResolvedByOrderEndToEnd(t *testing.T) {
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewBareRegistration("example.com/app/consumer", func() *catConsumer { return &catConsumer{log: log} }).
+			Alias("consumer").registerInto(reg, c)
+		NewBareRegistration("example.com/app/one", func() *bldA { return &bldA{} }).
+			Alias("one").Provides(Iface[catIface]()).registerInto(reg, c)
+		NewBareRegistration("example.com/app/two", func() *bldB { return &bldB{} }).
+			Alias("two").Provides(Iface[catIface]()).registerInto(reg, c)
+	}
+	// unranked tie → startup violation pointing at the vet tool
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register)
+	if code != 2 || !strings.Contains(w.stderr.String(), "sxclivet") {
+		t.Errorf("unranked tie must refuse to start with the vet nudge: code=%d\n%s", code, w.stderr.String())
+	}
+	// Order resolves it — the ranked provider wins
+	w, code = appWorld(t, Builder().AcceptAll().Order("example.com/app/two"), []string{"bin"}, nil, nil, register)
+	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*sxclifw.bldB" {
+		t.Errorf("rank must choose: code=%d log=%v stderr:\n%s", code, w.log, w.stderr.String())
+	}
+}
+
+type catConsumer struct {
+	Dep catIface `inject:""`
+	log *[]string
+}
+
+func (a *catConsumer) Configured() error { return nil }
+func (a *catConsumer) Run() int {
+	*a.log = append(*a.log, fmt.Sprintf("consumer.run:%T", a.Dep))
+	return 0
 }

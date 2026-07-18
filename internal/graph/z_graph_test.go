@@ -167,19 +167,43 @@ func TestColdServicesStayOut(t *testing.T) {
 	}
 }
 
-func TestFirstRegisteredWins(t *testing.T) {
+// The old TestFirstRegisteredWins is consciously retired: silent
+// first-registered tie-breaking was the import-order hazard the
+// composition release outlawed. Its two successors:
+
+func TestRankedWinsTie(t *testing.T) {
 	r := newRegistry()
 	r.Register("app", &app{}, registry.Options{})
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType))
 	r.Register("storea", &storeA{}, provides(storageType))
+	first, _ := r.ByID("workera")
+	first.Ranked = true // what Build sets for Order-listed members
 	res := mustResolve(t, r, "app", Controls{})
 	m := res.Ordered[position(t, res, "app")]
 	if m.Bindings[0].Targets[0].ID != "workera" {
-		t.Errorf("expected first registered match, got %q", m.Bindings[0].Targets[0].ID)
+		t.Errorf("the ranked candidate must win, got %q", m.Bindings[0].Targets[0].ID)
 	}
 	if len(res.Ordered) != 2 {
-		t.Errorf("only the picked candidate should join the closure: %v", ids(res))
+		t.Errorf("only the winner should join the closure: %v", ids(res))
+	}
+}
+
+func TestUnrankedTieIsViolation(t *testing.T) {
+	r := newRegistry()
+	r.Register("app", &app{}, registry.Options{})
+	r.Register("workera", &workerA{}, provides(workerType))
+	r.Register("workerb", &workerB{}, provides(workerType))
+	r.Register("storea", &storeA{}, provides(storageType))
+	c := &fail.Collector{}
+	root, _ := r.ByID("app")
+	Resolve(c, r, root, Controls{})
+	if c.Len() == 0 {
+		t.Fatal("an unranked single-valued tie must be a violation")
+	}
+	msg := c.All()[0].Error()
+	if !strings.Contains(msg, "ambiguous") || !strings.Contains(msg, `"workera"`) || !strings.Contains(msg, `"workerb"`) || !strings.Contains(msg, "sxclivet") {
+		t.Errorf("the violation must name both candidates and point at the vet tool: %s", msg)
 	}
 }
 
@@ -335,6 +359,8 @@ func TestEnableForcesColdService(t *testing.T) {
 	r.Register("workera", &workerA{}, provides(workerType))
 	r.Register("workerb", &workerB{}, provides(workerType)) // cold unless enabled; drags storea
 	r.Register("storea", &storeA{}, provides(storageType))
+	first, _ := r.ByID("workera")
+	first.Ranked = true // resolve the tie the composed way; the test is about Enable
 	res := mustResolve(t, r, "app", Controls{Enable: []string{"workerb"}})
 	if len(res.Ordered) != 4 {
 		t.Errorf("enable must pull the service and its deps: %v", ids(res))

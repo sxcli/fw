@@ -174,9 +174,15 @@ func (r *resolver) expandDep(owner *registry.Descriptor, dep registry.DepField) 
 	} else {
 		out = r.candidates(dep)
 		if !dep.IsSlice && len(out) > 1 {
-			out = out[:1]
-		}
-		if len(out) == 0 && !dep.Optional {
+			// ties are never broken silently: a multi-candidate
+			// single-valued field is legal only when ranking chose
+			if out[0].Ranked {
+				out = out[:1]
+			} else {
+				r.fail("service %q field %s: %s is ambiguous — %q and %q both match; rank one with Order or name an id in the inject tag (the sxclivet tool catches this before it runs)", owner.ID, dep.Name, dep.Type, out[0].ID, out[1].ID)
+				out = nil
+			}
+		} else if len(out) == 0 && !dep.Optional {
 			r.fail("service %q field %s: no registered service satisfies %s", owner.ID, dep.Name, dep.Type)
 		}
 	}

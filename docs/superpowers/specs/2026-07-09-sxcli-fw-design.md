@@ -509,7 +509,7 @@ A struct tag on exported fields of the registered *instance*:
 
 ```go
 type MyService struct {
-    Log     slog.Handler    `inject:""`            // by interface, first registered
+    Log     slog.Handler    `inject:""`            // by interface: sole match, or the ranked one
     Sinks   []slog.Handler  `inject:""`            // by interface, ALL registered (all enter closure)
     Chosen  []slog.Handler  `inject:"id1,id2"`     // listed IDs seed the closure
     Store   *BoltStore      `inject:""`            // by concrete type (unique)
@@ -523,10 +523,18 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
 - Interface field types match only services that *declared* `Provides` of
   that interface — accidental structural matches never inject.
 - Pointer-to-struct fields match by concrete type (unique by rule above).
-- Single-valued field → the first registered match (or the named ID).
+- Single-valued field → the named ID; with no id: the sole match, or —
+  when several match — the one the composition **ranked** (`Order`).
+  Multiple matches with no ranked candidate is a resolution violation
+  naming both claimants: **ties are never broken silently** — the
+  first-registered rule of the pre-composition era is dead, and with
+  it the import-order hazard. Applies to `;optional` fields equally.
   A single-valued field may name **at most one** id — a list on a
   non-slice field is a registration error (see Open Items for the
   planned boolean preference syntax).
+  Convention for such runtime violations framework-wide: when
+  `sxclivet` would have caught the mistake statically, the message
+  says so — the error text is the tool's advertisement.
 - Slice fields: **interface element types only**. Injection delivers *all
   enabled* matching services in registration order — with listed IDs the
   slice may contain *more* than listed (seeded services and other
