@@ -15,16 +15,12 @@
 package fw
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 
-	"sxcli.dev/fw/conf"
+	"sxcli.dev/fw/conf/engine"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
@@ -229,13 +225,13 @@ func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 // the real run and Introspector.Arguments consume it, so introspection
 // truth cannot drift from execution truth.
 type invocationPlan struct {
-	src   conf.Sources
-	files *conf.Files
-	core  conf.Core
+	src   engine.Sources
+	files *engine.Files
+	core  engine.Core
 	ctrl  coreControls
 	ctl   graph.Controls
 	res   graph.Result
-	sch   *conf.Schema
+	sch   *engine.Schema
 }
 
 // coreControls is the framework's contribution to the composite core
@@ -251,26 +247,26 @@ type coreControls struct {
 // completion. Override takes from=to pairs, not plain service ids —
 // no honest hint fits; tooling that understands the pair form can
 // still act on the field by name.
-var controlsMeta = &conf.Meta{Fields: map[string]conf.FieldMeta{
-	"Disable": {Hint: conf.HintServiceID},
-	"Enable":  {Hint: conf.HintServiceID},
+var controlsMeta = &engine.Meta{Fields: map[string]engine.FieldMeta{
+	"Disable": {Hint: engine.HintServiceID},
+	"Enable":  {Hint: engine.HintServiceID},
 }}
 
 // coreContribs assembles the composite core: the engine's knobs
 // first (its short forms win), the framework's controls second.
-func coreContribs(core *conf.Core, ctrl *coreControls) []conf.Contribution {
-	return []conf.Contribution{conf.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}}
+func coreContribs(core *engine.Core, ctrl *coreControls) []engine.Contribution {
+	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}}
 }
 
 // sections maps a resolved closure to config sections: the primary
 // alias names each section and the metadata assertion happens here —
 // the config engine never sees a descriptor.
-func sections(ordered []graph.Member) []conf.Section {
-	var out []conf.Section
+func sections(ordered []graph.Member) []engine.Section {
+	var out []engine.Section
 	for _, m := range ordered {
 		if m.Desc.ConfigPtr != nil {
-			meta, _ := m.Desc.Metadata.(*conf.Meta)
-			out = append(out, conf.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta})
+			meta, _ := m.Desc.Metadata.(*engine.Meta)
+			out = append(out, engine.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta})
 		}
 	}
 	return out
@@ -287,7 +283,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	// the inject vocabulary speak its id
 	alias := primaryAlias(d)
 	p := &invocationPlan{}
-	p.src = conf.Sources{
+	p.src = engine.Sources{
 		Args:         args,
 		LookupEnv:    rt.lookupEnv,
 		Locations:    rt.locations(alias),
@@ -300,11 +296,11 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		MaxSize:      rt.maxConfig,
 	}
 	before := c.Len()
-	var peek conf.Core
+	var peek engine.Core
 	var peekCtrl coreControls
-	conf.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl))
+	engine.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl))
 	if c.Len() == before {
-		p.files = conf.LoadFiles(c, p.src, rt.explicitPath(peek))
+		p.files = engine.LoadFiles(c, p.src, rt.explicitPath(peek))
 	}
 	if c.Len() == before {
 		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, &p.ctrl))
@@ -323,7 +319,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = conf.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl), sections(p.res.Ordered), rt.suppressed)
+		p.sch = engine.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl), sections(p.res.Ordered), rt.suppressed)
 	}
 	return p
 }
@@ -561,7 +557,7 @@ func (rt *runtime) report(buffer *logging.Buffer) int {
 // explicitPath resolves the --config path of this run. In write-config
 // mode the target is input and output both: an existing target is
 // loaded (normalizing an existing file), a missing one is only created.
-func (rt *runtime) explicitPath(peek conf.Core) string {
+func (rt *runtime) explicitPath(peek engine.Core) string {
 	out := peek.Config
 	if peek.WriteConfig && out != "" {
 		if _, err := rt.stat(out); err != nil {
@@ -617,11 +613,11 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 
 // providers returns every registered service declaring
 // ConfigFormatProvider, in registration order.
-func (rt *runtime) providers() []conf.Provider {
-	var out []conf.Provider
+func (rt *runtime) providers() []engine.Provider {
+	var out []engine.Provider
 	for _, d := range rt.reg.All() {
 		if providesType(d, providerType) {
-			if p, ok := d.Instance.(conf.Provider); ok {
+			if p, ok := d.Instance.(engine.Provider); ok {
 				out = append(out, p)
 			}
 		}
@@ -632,7 +628,7 @@ func (rt *runtime) providers() []conf.Provider {
 // providerSeeds maps the format providers that actually transcoded a
 // file back to their service ids, so they join the closure and survive
 // ejection.
-func (rt *runtime) providerSeeds(files *conf.Files) []string {
+func (rt *runtime) providerSeeds(files *engine.Files) []string {
 	var out []string
 	for _, used := range files.Used {
 		for _, d := range rt.reg.All() {
@@ -676,7 +672,7 @@ func (rt *runtime) coreRoot(c *fail.Collector, d *registry.Descriptor, providerI
 
 // help renders the dispatched applet's full argument schema, grouped by
 // service id, and exits 0.
-func (rt *runtime) help(sch *conf.Schema) int {
+func (rt *runtime) help(sch *engine.Schema) int {
 	for _, section := range sch.HelpSections() {
 		fmt.Fprintf(rt.stdout, "%s:\n", section.ID)
 		for _, f := range section.Fields {
@@ -696,53 +692,15 @@ func (rt *runtime) help(sch *conf.Schema) int {
 	return 0
 }
 
-// writeConfig emits the merged configuration: to stdout as json with no
-// target, else to the target in the format its extension names.
-func (rt *runtime) writeConfig(sch *conf.Schema, target string, src conf.Sources) int {
-	code := 2
-	js, err := sch.MarshalIndent()
-	if err == nil {
-		if target == "" {
-			fmt.Fprintln(rt.stdout, string(js))
-			code = 0
-		} else {
-			var payload []byte
-			if payload, err = rt.transcode(js, target, src); err == nil {
-				if err = os.WriteFile(target, payload, 0o600); err == nil {
-					code = 0
-				}
-			}
-		}
-	}
-	if err != nil {
+// writeConfig emits the merged configuration through the engine,
+// recording a failure as a startup violation.
+func (rt *runtime) writeConfig(sch *engine.Schema, target string, src engine.Sources) int {
+	code := 0
+	if err := sch.WriteMerged(rt.stdout, target, src); err != nil {
 		rt.c.Fail("write-config: %v", err)
+		code = 2
 	}
 	return code
-}
-
-// transcode converts the json dump to the target's format by extension.
-func (rt *runtime) transcode(js []byte, target string, src conf.Sources) ([]byte, error) {
-	out := js
-	var err error
-	ext := strings.TrimPrefix(filepath.Ext(target), ".")
-	if ext != "json" {
-		found := false
-		for i := 0; i < len(src.Providers) && !found; i++ {
-			for _, candidate := range src.Providers[i].Extensions() {
-				if candidate == ext && !found {
-					found = true
-					var converted io.Reader
-					if converted, err = src.Providers[i].FromJSON(bytes.NewReader(js)); err == nil {
-						out, err = io.ReadAll(converted)
-					}
-				}
-			}
-		}
-		if !found && err == nil {
-			err = fmt.Errorf("no format provider handles extension %q", ext)
-		}
-	}
-	return out, err
 }
 
 func providesType(d *registry.Descriptor, t reflect.Type) bool {

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"sxcli.dev/fw/conf"
+	"sxcli.dev/fw/conf/engine"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/registry"
 )
@@ -72,8 +72,8 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 		},
 		stdout: &w.stdout,
 		stderr: &w.stderr,
-		locations: func(alias string) []conf.Location {
-			return []conf.Location{{Base: "/etc/" + alias + "/config"}}
+		locations: func(alias string) []engine.Location {
+			return []engine.Location{{Base: "/etc/" + alias + "/config"}}
 		},
 		stat: func(path string) (int64, error) {
 			var size int64

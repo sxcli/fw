@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package conf implements the configuration machinery of the sxcli
+// Package engine implements the configuration machinery of the sxcli
 // framework: schema extraction from tagged config structs, the lenient
 // and strict argument parsers, environment lookup, config file discovery
 // and transcoding, and source merging with in-place struct filling.
@@ -20,7 +20,7 @@
 // structs arrive as named Sections built by the caller, and format
 // providers arrive through a structural interface that the root
 // package's ConfigFormatProvider satisfies implicitly.
-package conf
+package engine
 
 import (
 	"encoding/json"

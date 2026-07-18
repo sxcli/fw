@@ -1,0 +1,197 @@
+// Copyright 2026 Plamen K. Kosseff
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package conf
+
+import (
+	"bytes"
+	"io"
+	"io/fs"
+	"strings"
+	"testing"
+	"time"
+
+	"sxcli.dev/fw/conf/engine"
+)
+
+type toolCfg struct {
+	Listen  string        `json:"listen" arg:"listen,l" usage:"address to serve on"`
+	Timeout time.Duration `json:"timeout" arg:"timeout"`
+}
+
+// world builds a hermetic front-door run: fake argv/env/fs, captured
+// output.
+type world struct {
+	stdout bytes.Buffer
+	stderr bytes.Buffer
+}
+
+func (w *world) builder(t *testing.T, args []string, files, env map[string]string) *LoaderBuilder {
+	t.Helper()
+	src := engine.Sources{
+		Args: args,
+		LookupEnv: func(name string) (string, bool) {
+			v, ok := env[name]
+			return v, ok
+		},
+		Locations: []engine.Location{{Base: "/etc/mytool/config"}},
+		Stat: func(path string) (int64, error) {
+			if content, ok := files[path]; ok {
+				return int64(len(content)), nil
+			}
+			return 0, fs.ErrNotExist
+		},
+		Open: func(path string) (io.ReadCloser, error) {
+			if content, ok := files[path]; ok {
+				return io.NopCloser(strings.NewReader(content)), nil
+			}
+			return nil, fs.ErrNotExist
+		},
+		OpenPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
+	}
+	return Builder("mytool").Section("mytool", &toolCfg{}).Sources(src).Output(&w.stdout, &w.stderr)
+}
+
+func TestLoadFillsAndReturnsPositionals(t *testing.T) {
+	w := &world{}
+	cfg := &toolCfg{Listen: ":8080"}
+	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"timeout": "5s"}}`}
+	b := w.builder(t, []string{"--listen", ":9090", "one", "two"}, files, nil)
+	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
+	ldr, served := b.Build()
+	if served {
+		t.Fatal("a plain run must not be served")
+	}
+	pos, err := ldr.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Listen != ":9090" || cfg.Timeout != 5*time.Second {
+		t.Errorf("merge wrong: %+v", cfg)
+	}
+	if strings.Join(pos, ",") != "one,two" {
+		t.Errorf("positionals wrong: %v", pos)
+	}
+}
+
+func TestEnvSpeaksTheSectionPrefix(t *testing.T) {
+	w := &world{}
+	cfg := &toolCfg{}
+	b := w.builder(t, nil, nil, map[string]string{"MYTOOL_LISTEN": ":7070"})
+	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
+	ldr, _ := b.Build()
+	if _, err := ldr.Load(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Listen != ":7070" {
+		t.Errorf("env not applied: %+v", cfg)
+	}
+}
+
+func TestHelpIsServedAndLeavesTheStructAlone(t *testing.T) {
+	w := &world{}
+	cfg := &toolCfg{Listen: ":8080"}
+	b := w.builder(t, []string{"--help", "--listen", ":9090"}, nil, nil)
+	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
+	ldr, served := b.Build()
+	if !served {
+		t.Fatal("--help must be served")
+	}
+	if !strings.Contains(w.stdout.String(), "--listen") {
+		t.Errorf("help must list the arguments:\n%s", w.stdout.String())
+	}
+	if cfg.Listen != ":8080" {
+		t.Errorf("a served run must leave the struct untouched: %+v", cfg)
+	}
+	if _, err := ldr.Load(); err == nil {
+		t.Error("loading a served run must be a loud misuse error")
+	}
+}
+
+func TestHelpIsBestEffortOverBrokenFiles(t *testing.T) {
+	w := &world{}
+	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"nope": true}}`}
+	ldr, served := w.builder(t, []string{"--help"}, files, nil).Build()
+	if !served {
+		t.Fatal("a broken config file must never take --help down")
+	}
+	if !strings.Contains(w.stdout.String(), "--listen") {
+		t.Errorf("help must still render:\n%s", w.stdout.String())
+	}
+	if !strings.Contains(w.stderr.String(), "unknown key") {
+		t.Errorf("the violations must not be swallowed:\n%s", w.stderr.String())
+	}
+	if ldr != nil {
+		t.Error("a served run returns no loader")
+	}
+}
+
+func TestWriteConfigServesTheMerge(t *testing.T) {
+	w := &world{}
+	cfg := &toolCfg{Listen: ":8080"}
+	b := w.builder(t, []string{"--write-config", "--listen", ":9090"}, nil, nil)
+	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
+	_, served := b.Build()
+	if !served {
+		t.Fatal("--write-config must be served")
+	}
+	if !strings.Contains(w.stdout.String(), `":9090"`) {
+		t.Errorf("emitted config must hold the merged value:\n%s", w.stdout.String())
+	}
+	if cfg.Listen != ":8080" {
+		t.Errorf("a served run must leave the struct untouched: %+v", cfg)
+	}
+}
+
+func TestWriteConfigRefusesAViolatedMerge(t *testing.T) {
+	w := &world{}
+	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"nope": true}}`}
+	ldr, served := w.builder(t, []string{"--write-config"}, files, nil).Build()
+	if served {
+		t.Fatal("write-config must not emit from a violated merge")
+	}
+	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Errorf("the violations must arrive via Load: %v", err)
+	}
+}
+
+func TestViolationsRestoreTheDefaults(t *testing.T) {
+	w := &world{}
+	cfg := &toolCfg{Listen: ":8080"}
+	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"listen": ":6060", "nope": true}}`}
+	b := w.builder(t, nil, files, nil)
+	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
+	ldr, served := b.Build()
+	if served {
+		t.Fatal("a violated run is not served")
+	}
+	if _, err := ldr.Load(); err == nil {
+		t.Fatal("violations must surface")
+	}
+	if cfg.Listen != ":8080" {
+		t.Errorf("on error the struct must hold its defaults: %+v", cfg)
+	}
+}
+
+func TestSuppressRemovesTheSurface(t *testing.T) {
+	w := &world{}
+	b := w.builder(t, []string{"--write-config"}, nil, nil).Suppress("write-config")
+	ldr, served := b.Build()
+	if served {
+		t.Fatal("a suppressed write-config must not serve")
+	}
+	if _, err := ldr.Load(); err == nil || !strings.Contains(err.Error(), "write-config") {
+		t.Errorf("the unknown argument must be a violation: %v", err)
+	}
+}

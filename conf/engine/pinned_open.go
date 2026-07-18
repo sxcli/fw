@@ -14,7 +14,7 @@
 
 //go:build !windows
 
-package fw
+package engine
 
 import (
 	"errors"
@@ -24,11 +24,11 @@ import (
 	"syscall"
 )
 
-// openPinned opens a binary-companion config file refusing a symlink at
+// OpenPinned opens a binary-companion config file refusing a symlink at
 // the final path component (O_NOFOLLOW, enforced atomically by the
 // kernel — no check-then-open race): the companion must be a regular
 // file that really lives next to the real binary.
-func openPinned(path string) (io.ReadCloser, error) {
+func OpenPinned(path string) (io.ReadCloser, error) {
 	var rc io.ReadCloser
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err == nil {

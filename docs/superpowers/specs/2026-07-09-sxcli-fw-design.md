@@ -48,9 +48,11 @@ sxcli-fw/
 ├── *.go                  — package fw: the entire public API
 ├── platform_unix.go      — args acquisition, no-op service hooks
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
-├── conf/                 — the config engine: schema, file discovery,
-│                           source merging, arg/env parsing (public — the
-│                           future sxcli.dev/conf, § below)
+├── conf/                 — the loading front door: Builder/New → Build
+│                           (serves --help/--write-config) → Load (public —
+│                           the future sxcli.dev/conf, § below)
+│   └── engine/           — the machinery: schema, file discovery, source
+│                           merging, arg/env parsing, production wiring
 ├── internal/
 │   ├── registry/         — service descriptors, registration validation
 │   ├── graph/            — closure resolution, topological order
@@ -804,12 +806,25 @@ single-command tools (dispatch is fw's territory; the busybox model IS
 the multi-command story). The pitch against viper: no store, no
 watching, no package-global mutable config object — the struct is the
 schema, filled once, immutable for the run, strict about unknowns.
-The ladder: (1) in-tree decoupling — `NewSchema` takes neutral
-`Section{Name, Ptr, Meta}` members and the registry import dies; (2)
-in-tree pipeline promotion — the discover→peek→lenient→env→strict→fill
-sequencing moves from fw's `plan()` into a conf front door fw then
-calls; (3) the module split at the v1 horizon, not before — a public
-surface frozen early ossifies before the model has proven itself.
+The ladder: (1) DONE — `NewSchema` takes neutral `Section{Name, Ptr,
+Meta}` members, the registry import is gone; (2) DONE — the machinery
+lives in `conf/engine` (production wiring — locations, hardening
+openers, `ProductionSources` — moved down from fw root) and `conf` is
+the front door: `Builder(name)` chain → `Build() (*Loader, served
+bool)` → `Load() ([]string, error)`. Construction and loading split
+so each result means ONE thing: `served` is a successfully consumed
+--help/--write-config run (never an error; a forgotten check is
+caught by Load's loud misuse error), Load's error is always genuine
+failure — the log.Fatal reflex is CORRECT. Help is best-effort by
+decree (violations to stderr, the schema still renders); write-config
+refuses a violated merge; the config structs hold their untouched
+defaults unless Load returns nil (snapshot/restore around the
+pipeline). fw does NOT call the front door — its plan() interleaves
+graph resolution between the same engine stages (`WriteMerged` is
+shared; help rendering stays fw-side for the Tr seam); (3) the module
+split at the v1 horizon, not before — a public surface frozen early
+ossifies before the model has proven itself. Positional-handling
+semantics get a final pass before the module ships.
 
 Decided:
 
@@ -1383,5 +1398,5 @@ the checks tests cannot express.
 | Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
 | Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
-| `sxcli.dev/conf` extraction (the config engine as a standalone module) | STAGED: the engine now lives at `sxcli.dev/fw/conf` (public package, moved out of internal 2026-07-18 after the Section decoupling left it importing only internal/fail); the module split at the v1 horizon becomes an import-path rename; the standalone front door (`conf.Load`, no Collector in its signature) arrives with the pipeline promotion |
+| `sxcli.dev/conf` extraction (the config engine as a standalone module) | STAGED: `sxcli.dev/fw/conf` (front door: Builder/New/Build/Load, no Collector in its signature) over `sxcli.dev/fw/conf/engine` (machinery + production wiring), both public since 2026-07-18; the module split at the v1 horizon is an import-path rename of the pair; open before shipping: positional semantics, whether fw's own --help goes best-effort to match the front door |
 | Config schema versioning & migration chain | DESIGNED 2026-07-18 (§6): mandated `Version uint32` + typed per-section `conf.Step` chain, version-implies-complete, migrate-then-merge; supersedes the earlier "renamed from" metadata idea; lands with the conf pipeline promotion |

@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-
-package fw
+package engine
 
 import (
 	"os"
 	"path/filepath"
 )
 
-// platformMain runs the pipeline with the process arguments; there is
-// no service mode on this platform.
-func platformMain(app *App) int {
-	return run(productionRuntime(app, os.Args, nil))
-}
-
-// binaryBasename extracts the applet-selector name from argv[0].
-func binaryBasename(argv0 string) string {
-	return filepath.Base(argv0)
+// realBinaryDir returns the directory of the real binary: the executable
+// path with every symlink resolved. Busybox-style applet symlinks must
+// never relocate the binary-companion config location — a symlink to the
+// binary in an attacker-writable directory would otherwise choose the
+// binary's configuration.
+func realBinaryDir() (string, error) {
+	var dir string
+	exe, err := os.Executable()
+	if err == nil {
+		if exe, err = filepath.EvalSymlinks(exe); err == nil {
+			dir = filepath.Dir(exe)
+		}
+	}
+	return dir, err
 }

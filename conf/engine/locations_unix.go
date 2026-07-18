@@ -12,25 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fw
+//go:build !windows
 
-import (
-	"os"
-	"path/filepath"
-)
+package engine
 
-// realBinaryDir returns the directory of the real binary: the executable
-// path with every symlink resolved. Busybox-style applet symlinks must
-// never relocate the binary-companion config location — a symlink to the
-// binary in an attacker-writable directory would otherwise choose the
-// binary's configuration.
-func realBinaryDir() (string, error) {
-	var dir string
-	exe, err := os.Executable()
-	if err == nil {
-		if exe, err = filepath.EvalSymlinks(exe); err == nil {
-			dir = filepath.Dir(exe)
-		}
-	}
-	return dir, err
+// systemConfigDir returns the system-wide config location root.
+func systemConfigDir() string {
+	return "/etc"
 }

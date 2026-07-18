@@ -15,7 +15,7 @@
 package fw
 
 import (
-	"sxcli.dev/fw/conf"
+	"sxcli.dev/fw/conf/engine"
 	"sxcli.dev/fw/internal/registry"
 )
 
@@ -36,7 +36,7 @@ const IntrospectionAlias = "introspection"
 // CoreAlias is the operator-facing name of the framework core — its
 // config section, the virtual root's name, and the synthesized
 // introspection entry. No service may claim it.
-const CoreAlias = conf.CoreID
+const CoreAlias = engine.CoreID
 
 // validServiceID reports whether id is path-shaped: slash-separated,
 // non-empty segments of lowercase letters, digits, dots, hyphens and

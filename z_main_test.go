@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"sxcli.dev/fw/conf"
+	"sxcli.dev/fw/conf/engine"
 	"sxcli.dev/fw/internal/fail"
 	"sxcli.dev/fw/internal/registry"
 )
@@ -133,8 +133,8 @@ func newWorld(t *testing.T, argv []string, files map[string]string, env map[stri
 		},
 		stdout: &w.stdout,
 		stderr: &w.stderr,
-		locations: func(appletID string) []conf.Location {
-			return []conf.Location{{Base: "/etc/" + appletID + "/config"}}
+		locations: func(appletID string) []engine.Location {
+			return []engine.Location{{Base: "/etc/" + appletID + "/config"}}
 		},
 		stat: func(path string) (int64, error) {
 			var size int64

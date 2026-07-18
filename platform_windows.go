@@ -97,15 +97,6 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 	return h.specific, h.code
 }
 
-// systemConfigDir returns the system-wide config location root.
-func systemConfigDir() string {
-	out := os.Getenv("ProgramData")
-	if out == "" {
-		out = `C:\ProgramData`
-	}
-	return out
-}
-
 // binaryBasename extracts the applet-selector name from argv[0],
 // dropping the .exe suffix.
 func binaryBasename(argv0 string) string {

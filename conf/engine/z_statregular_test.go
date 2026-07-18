@@ -14,7 +14,7 @@
 
 //go:build unix
 
-package fw
+package engine
 
 import (
 	"errors"
@@ -33,7 +33,7 @@ func TestStatRegular(t *testing.T) {
 	if err := os.WriteFile(regular, []byte(`{"core":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if size, err := statRegular(regular); err != nil || size != int64(len(`{"core":{}}`)) {
+	if size, err := StatRegular(regular); err != nil || size != int64(len(`{"core":{}}`)) {
 		t.Errorf("regular file must pass with its size: %d, %v", size, err)
 	}
 
@@ -41,7 +41,7 @@ func TestStatRegular(t *testing.T) {
 	if err := os.Symlink(regular, linked); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := statRegular(linked); err != nil {
+	if _, err := StatRegular(linked); err != nil {
 		t.Errorf("a symlink resolving to a regular file must pass: %v", err)
 	}
 
@@ -49,15 +49,15 @@ func TestStatRegular(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := statRegular(fifo); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+	if _, err := StatRegular(fifo); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Errorf("a fifo must be refused without opening it: %v", err)
 	}
 
-	if _, err := statRegular(dir); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+	if _, err := StatRegular(dir); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Errorf("a directory must be refused: %v", err)
 	}
 
-	if _, err := statRegular(filepath.Join(dir, "missing.json")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := StatRegular(filepath.Join(dir, "missing.json")); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("a missing file must report fs.ErrNotExist for the skip logic: %v", err)
 	}
 }

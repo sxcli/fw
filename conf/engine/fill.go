@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package conf
+package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -247,6 +251,74 @@ func (s *Schema) MarshalIndent() ([]byte, error) {
 		}
 	}
 	return json.MarshalIndent(root, "", "  ")
+}
+
+// WriteMerged serves --write-config: the merged configuration goes to
+// stdout as json when target is empty, else to the target file in the
+// format its extension names (a registered format provider transcodes
+// the native json).
+func (s *Schema) WriteMerged(stdout io.Writer, target string, src Sources) error {
+	js, err := s.MarshalIndent()
+	if err == nil {
+		if target == "" {
+			fmt.Fprintln(stdout, string(js))
+		} else {
+			var payload []byte
+			if payload, err = transcode(js, target, src); err == nil {
+				err = os.WriteFile(target, payload, 0o600)
+			}
+		}
+	}
+	return err
+}
+
+// transcode converts the json dump to the target's format by extension.
+func transcode(js []byte, target string, src Sources) ([]byte, error) {
+	out := js
+	var err error
+	ext := strings.TrimPrefix(filepath.Ext(target), ".")
+	if ext != "json" {
+		found := false
+		for i := 0; i < len(src.Providers) && !found; i++ {
+			for _, candidate := range src.Providers[i].Extensions() {
+				if candidate == ext && !found {
+					found = true
+					var converted io.Reader
+					if converted, err = src.Providers[i].FromJSON(bytes.NewReader(js)); err == nil {
+						out, err = io.ReadAll(converted)
+					}
+				}
+			}
+		}
+		if !found && err == nil {
+			err = fmt.Errorf("no format provider handles extension %q", ext)
+		}
+	}
+	return out, err
+}
+
+// WriteHelp renders the schema grouped by section: every argument with
+// its short form, usage and environment name against the current
+// (merged) values. Plain text — the framework renders its own help
+// through its translation seam; this is the engine's untranslated
+// canonical form.
+func (s *Schema) WriteHelp(w io.Writer) {
+	for _, section := range s.HelpSections() {
+		fmt.Fprintf(w, "%s:\n", section.ID)
+		for _, f := range section.Fields {
+			if f.Long != "" {
+				line := "  --" + f.Long
+				if f.Short != "" {
+					line += ", -" + f.Short
+				}
+				fmt.Fprintln(w, line)
+				if f.Usage != "" {
+					fmt.Fprintf(w, "        %s\n", f.Usage)
+				}
+				fmt.Fprintf(w, "        env: %s, value: %v\n", f.EnvName, s.Value(f))
+			}
+		}
+	}
 }
 
 // emptyValue reports whether a field holds nothing worth dumping: the

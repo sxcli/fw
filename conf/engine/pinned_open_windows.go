@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fw
+package engine
 
 import (
 	"fmt"
@@ -20,14 +20,14 @@ import (
 	"os"
 )
 
-// openPinned opens a binary-companion config file refusing anything that
+// OpenPinned opens a binary-companion config file refusing anything that
 // is not a regular file — symlinks, junctions and every other reparse
 // point or special file. The check is positive (IsRegular) because since
 // Go 1.23 Lstat reports junctions/mount points as ModeIrregular, NOT as
 // ModeSymlink; a negative symlink-only check would wave a junction
 // through. Unlike the unix O_NOFOLLOW variant this is check-then-open;
 // the small race is accepted on Windows.
-func openPinned(path string) (io.ReadCloser, error) {
+func OpenPinned(path string) (io.ReadCloser, error) {
 	var rc io.ReadCloser
 	fi, err := os.Lstat(path)
 	if err == nil {

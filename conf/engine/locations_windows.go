@@ -12,22 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
+package engine
 
-package fw
+import "os"
 
-import (
-	"os"
-	"path/filepath"
-)
-
-// platformMain runs the pipeline with the process arguments; there is
-// no service mode on this platform.
-func platformMain(app *App) int {
-	return run(productionRuntime(app, os.Args, nil))
-}
-
-// binaryBasename extracts the applet-selector name from argv[0].
-func binaryBasename(argv0 string) string {
-	return filepath.Base(argv0)
+// systemConfigDir returns the system-wide config location root.
+func systemConfigDir() string {
+	out := os.Getenv("ProgramData")
+	if out == "" {
+		out = `C:\ProgramData`
+	}
+	return out
 }
