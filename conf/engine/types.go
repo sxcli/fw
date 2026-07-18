@@ -103,9 +103,10 @@ type Contribution struct {
 // services to sections; a standalone caller builds them directly. The
 // engine never sees anything richer — this is the whole seam.
 type Section struct {
-	Name string // section name: config-file key, env prefix
-	Ptr  any    // pointer to the config struct; nil contributes nothing
-	Meta *Meta  // field metadata, nil when none declared
+	Name  string // section name: config-file key, env prefix
+	Ptr   any    // pointer to the config struct; nil contributes nothing
+	Meta  *Meta  // field metadata, nil when none declared
+	Steps []Step // migration chain, oldest first; empty = never evolved
 }
 
 // ProbedField describes one settable config field for registration-time
@@ -178,6 +179,7 @@ type serviceSchema struct {
 // Schema is the full argument/env/file schema of one invocation: the
 // core plus every closure member owning a config struct.
 type Schema struct {
+	chains   map[string]*chain // per-section version state (never the core)
 	appletID string
 	services []*serviceSchema
 	long     map[string]*Field
@@ -190,6 +192,7 @@ type Schema struct {
 // override earlier ones), plus the providers that transcoded them.
 type Files struct {
 	sections []map[string]json.RawMessage
+	paths    []string // origin of each sections entry, for messages
 	Used     []Provider
 	maxSize  int64
 }

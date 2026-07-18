@@ -171,6 +171,7 @@ func (f *Files) parse(c *fail.Collector, path string, r io.ReadCloser, provider 
 				c.Fail("config file %q: trailing data after the configuration object", path)
 			} else {
 				f.sections = append(f.sections, section)
+				f.paths = append(f.paths, path)
 				if provider != nil {
 					used := false
 					for _, u := range f.Used {
@@ -205,10 +206,14 @@ func (s *Schema) applyFiles(c *fail.Collector, files *Files) {
 		}
 		byID[svc.id] = append(byID[svc.id], svc.fields...)
 	}
-	for _, section := range files.sections {
+	for i, section := range files.sections {
 		for _, id := range ids {
 			if raw, present := section[id]; present {
-				applyObject(c, byID[id], 0, raw, id)
+				if ch, versioned := s.chains[id]; versioned {
+					s.applyVersioned(c, ch, raw, files.paths[i], id)
+				} else {
+					applyObject(c, byID[id], 0, raw, id)
+				}
 			}
 		}
 	}

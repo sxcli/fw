@@ -28,15 +28,26 @@ var durationType = reflect.TypeOf(time.Duration(0))
 
 // ValidateConfigType validates the tags and field types of a config
 // struct TYPE (a pointer-to-struct type) at the registration commit,
-// where no instance exists yet.
+// where no instance exists yet — including the Version mandate: the
+// version key must exist in files BEFORE any migration needs it, so
+// it is required from a schema's first release. (The factory default,
+// an instance-level fact, is checked when the schema is built.)
 func ValidateConfigType(id string, cfgPtr reflect.Type) error {
-	var err error
+	var errs []error
 	if cfgPtr != nil {
-		if _, errs := extract(id, cfgPtr.Elem(), nil, nil, "", true); len(errs) > 0 {
-			err = errors.Join(errs...)
+		if fields, es := extract(id, cfgPtr.Elem(), nil, nil, "", true); len(es) > 0 {
+			errs = es
+		} else {
+			versioned := false
+			for _, f := range fields {
+				versioned = versioned || len(f.JSONPath) == 1 && f.JSONPath[0] == "version" && f.Type.Kind() == reflect.Uint32
+			}
+			if !versioned {
+				errs = append(errs, fmt.Errorf(`service %q: the config struct must declare Version uint32 with json tag "version" — the file breadcrumb every future migration reads`, id))
+			}
 		}
 	}
-	return err
+	return errors.Join(errs...)
 }
 
 // coreMeta is the engine's own field metadata — the same declarative
@@ -69,6 +80,7 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 		long:     map[string]*Field{},
 		short:    map[string]*Field{},
 		owner:    map[*Field]*serviceSchema{},
+		chains:   map[string]*chain{},
 	}
 	// suppression spans the whole composite core: a name is only
 	// unknown when NO contribution carries it
@@ -87,7 +99,8 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 	s.checkCoreKeys(c)
 	for _, sec := range sections {
 		if sec.Ptr != nil {
-			s.add(c, sec.Name, reflect.ValueOf(sec.Ptr), nil, sec.Meta)
+			fields := s.add(c, sec.Name, reflect.ValueOf(sec.Ptr), nil, sec.Meta)
+			s.validateVersioning(c, sec, fields)
 		}
 	}
 	env := map[string]*Field{}
@@ -122,7 +135,7 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 	return s
 }
 
-func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, drop map[string]bool, meta *Meta) {
+func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, drop map[string]bool, meta *Meta) []*Field {
 	fields, errs := extract(id, cfgPtr.Type().Elem(), nil, nil, "", true)
 	for _, err := range errs {
 		c.Add(err)
@@ -155,6 +168,7 @@ func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, drop ma
 	for _, f := range fields {
 		s.owner[f] = svc
 	}
+	return fields
 }
 
 // checkCoreKeys rejects a json path claimed by two core contributions:

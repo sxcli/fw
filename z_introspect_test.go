@@ -59,8 +59,9 @@ func (p *argsProbe) Run() int {
 // extraService is cold unless enabled; its flag proves closure-true
 // argument introspection.
 type extraCfg struct {
-	Flag string   `json:"flag" arg:"extra-flag" usage:"only visible when extra is enabled"`
-	Tags []string `json:"tags" arg:"extra-tag" usage:"repeatable, domain-checkable"`
+	Version uint32   `json:"version"`
+	Flag    string   `json:"flag" arg:"extra-flag" usage:"only visible when extra is enabled"`
+	Tags    []string `json:"tags" arg:"extra-tag" usage:"repeatable, domain-checkable"`
 }
 
 type extraService struct {
@@ -84,7 +85,7 @@ func argsWorld(t *testing.T, files map[string]string, do func(i *Introspector)) 
 	probe := &argsProbe{do: do}
 	NewBareRegistration("meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
-	extra := &extraService{cfg: extraCfg{Flag: "default"}}
+	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "default"}}
 	NewRegistration("extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").registerInto(w.cat, w.c)
@@ -151,7 +152,7 @@ func TestArgumentsIsSideEffectFree(t *testing.T) {
 	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}, "extra": {"flag": "changed"}}`}
 	w := newWorld(t, []string{"bin", "meta"}, files, nil)
 	w.applet(0)
-	extra := &extraService{cfg: extraCfg{Flag: "default"}}
+	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "default"}}
 	NewRegistration("extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").registerInto(w.cat, w.c)

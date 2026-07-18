@@ -29,7 +29,7 @@ const ID = "sxcli.dev/fw/sink/console"
 
 func init() {
 	fw.NewRegistration(ID, func() *Console {
-		return &Console{cfg: Config{Level: "info", Format: "text", Output: "stderr"}}
+		return &Console{cfg: Config{Version: 1, Level: "info", Format: "text", Output: "stderr"}}
 	}, func(c *Console) *Config { return &c.cfg }).
 		Alias("console").
 		Provides(fw.Iface[slog.Handler]()).

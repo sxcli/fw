@@ -28,7 +28,7 @@ import (
 
 func init() {
 	fw.NewRegistration(ID, func() *Syslog {
-		return &Syslog{cfg: Config{Level: "info", Format: "text", Facility: "daemon"}}
+		return &Syslog{cfg: Config{Version: 1, Level: "info", Format: "text", Facility: "daemon"}}
 	}, func(s *Syslog) *Config { return &s.cfg }).
 		Alias("syslog").
 		Provides(fw.Iface[slog.Handler]()).

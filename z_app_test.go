@@ -30,6 +30,7 @@ import (
 // with alias-shaped operator surfaces.
 
 type appCfg struct {
+	Version  uint32 `json:"version"`
 	Greeting string `json:"greeting" arg:"greeting,g" usage:"the greeting"`
 }
 
@@ -102,7 +103,7 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 
 func registerSrv(alias ...string) func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 	return func(reg *registry.Registry, c *fail.Collector, log *[]string) {
-		NewRegistration("example.com/app/srv", func() *appSrv { return &appSrv{log: log, cfg: appCfg{Greeting: "default"}} },
+		NewRegistration("example.com/app/srv", func() *appSrv { return &appSrv{log: log, cfg: appCfg{Version: 1, Greeting: "default"}} },
 			func(s *appSrv) *appCfg { return &s.cfg }).
 			Alias(alias...).registerInto(reg, c)
 	}

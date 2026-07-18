@@ -25,7 +25,7 @@ func annotatedWorld(t *testing.T, md *Metadata) (*world, *extraService) {
 	t.Helper()
 	w := newWorld(t, []string{"bin", "meta"}, nil, nil)
 	w.applet(0)
-	extra := &extraService{cfg: extraCfg{Flag: "fast"}}
+	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}}
 	NewRegistration("extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").Metadata(md).registerInto(w.cat, w.c)
@@ -123,7 +123,7 @@ func enforcementWorld(t *testing.T, argv []string, files, env map[string]string)
 	t.Helper()
 	w := newWorld(t, argv, files, env)
 	w.applet(0)
-	extra := &extraService{cfg: extraCfg{Flag: "fast"}}
+	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}}
 	NewRegistration("extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").
@@ -194,7 +194,7 @@ func TestDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
 	NewRegistration("extra", func() *extraService {
-		return &extraService{cfg: extraCfg{Flag: "turbo"}} // default not in the domain
+		return &extraService{cfg: extraCfg{Version: 1, Flag: "turbo"}} // default not in the domain
 	}, func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").
 		Metadata(&Metadata{Fields: map[string]any{
@@ -232,7 +232,7 @@ func TestSliceDomainEnforcedFromEnvironment(t *testing.T) {
 func TestSliceDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	extra := &extraService{cfg: extraCfg{Flag: "fast", Tags: []string{"a", "zz"}}}
+	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "fast", Tags: []string{"a", "zz"}}}
 	NewRegistration("extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").
@@ -255,7 +255,7 @@ func TestNilAndAbsentMetadataAreHarmless(t *testing.T) {
 	// present (this panicked once, in the yaml provider's init)
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewRegistration("plainmeta", func() *extraService { return &extraService{cfg: extraCfg{Flag: "fast"}} },
+	NewRegistration("plainmeta", func() *extraService { return &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}} },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("plainmeta").Metadata(nil).registerInto(w.cat, w.c)
 	if w.c.Len() != 0 {
@@ -287,7 +287,8 @@ func TestDescribeEdgeCases(t *testing.T) {
 
 // intService proves non-string domains end to end.
 type intCfg struct {
-	Retries int `json:"retries" arg:"retries-x" usage:"attempts"`
+	Version uint32 `json:"version"`
+	Retries int    `json:"retries" arg:"retries-x" usage:"attempts"`
 }
 
 type intService struct {
@@ -298,7 +299,7 @@ func intWorld(t *testing.T, argv []string) (*world, *intService) {
 	t.Helper()
 	w := newWorld(t, argv, nil, nil)
 	w.applet(0)
-	svc := &intService{cfg: intCfg{Retries: 1}}
+	svc := &intService{cfg: intCfg{Version: 1, Retries: 1}}
 	NewRegistration("intsvc", func() *intService { return svc },
 		func(x *intService) *intCfg { return &x.cfg }).
 		Alias("intsvc").
@@ -393,7 +394,7 @@ func TestHintViolations(t *testing.T) {
 func TestHintOnNonStringFieldIsViolation(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewRegistration("intsvc", func() *intService { return &intService{cfg: intCfg{Retries: 1}} },
+	NewRegistration("intsvc", func() *intService { return &intService{cfg: intCfg{Version: 1, Retries: 1}} },
 		func(x *intService) *intCfg { return &x.cfg }).
 		Alias("intsvc").
 		Metadata(&Metadata{Fields: map[string]any{

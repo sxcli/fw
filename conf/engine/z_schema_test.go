@@ -24,6 +24,7 @@ import (
 )
 
 type sinkConfig struct {
+	Version  uint32        `json:"version"`
 	Path     string        `json:"path" arg:"log-path" usage:"log file location"`
 	Level    string        `json:"level" arg:"log-level,l" env:"LOG_LEVEL" usage:"minimum level"`
 	MaxAge   time.Duration `json:"maxAge" arg:"log-max-age"`
@@ -34,8 +35,9 @@ type sinkConfig struct {
 }
 
 type dbConfig struct {
-	DSN  string   `json:"dsn" arg:"dsn,d"`
-	Tags []string `json:"tags" arg:"tag,t"`
+	Version uint32   `json:"version"`
+	DSN     string   `json:"dsn" arg:"dsn,d"`
+	Tags    []string `json:"tags" arg:"tag,t"`
 }
 
 // testControls mirrors the framework's core contribution: composite-
@@ -65,7 +67,7 @@ func newTestSchema(t *testing.T, core *Core, structs map[string]any) *Schema {
 }
 
 func TestSchemaExtraction(t *testing.T) {
-	cfg := &sinkConfig{}
+	cfg := &sinkConfig{Version: 1}
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
 	var svc *serviceSchema
 	for _, candidate := range s.services {
@@ -73,7 +75,7 @@ func TestSchemaExtraction(t *testing.T) {
 			svc = candidate
 		}
 	}
-	if svc == nil || len(svc.fields) != 5 {
+	if svc == nil || len(svc.fields) != 6 { // 5 declared + the mandated Version
 		t.Fatalf("expected 5 fields, got %+v", svc)
 	}
 	byName := map[string]*Field{}
@@ -194,9 +196,10 @@ func TestSuppressUnknownNameFails(t *testing.T) {
 
 func TestShortFormFirstComeFirstServed(t *testing.T) {
 	type wantsC struct {
-		X int `json:"x" arg:"x-value,c"` // "c" is already core's --config short
+		Version uint32 `json:"version"`
+		X       int    `json:"x" arg:"x-value,c"` // "c" is already core's --config short
 	}
-	s := newTestSchema(t, &Core{}, map[string]any{"svc": &wantsC{}})
+	s := newTestSchema(t, &Core{}, map[string]any{"svc": &wantsC{Version: 1}})
 	if s.short["c"].ServiceID != "core" {
 		t.Errorf("core must keep -c, got %q", s.short["c"].ServiceID)
 	}

@@ -22,7 +22,8 @@ import (
 )
 
 type trCfg struct {
-	Locale string `json:"locale" arg:"locale" usage:"locale override"`
+	Version uint32 `json:"version"`
+	Locale  string `json:"locale" arg:"locale" usage:"locale override"`
 }
 
 type fakeTranslator struct {
@@ -58,7 +59,7 @@ func translatorWorld(t *testing.T, argv []string, fail bool, table map[string]st
 	t.Helper()
 	w := newWorld(t, argv, nil, nil)
 	w.applet(0)
-	f := &fakeTranslator{log: &w.log, fail: fail, table: table}
+	f := &fakeTranslator{log: &w.log, fail: fail, table: table, cfg: trCfg{Version: 1}}
 	NewRegistration("i18n", func() *fakeTranslator { return f },
 		func(x *fakeTranslator) *trCfg { return &x.cfg }).
 		Alias("i18n").Provides(Iface[Translator]()).registerInto(w.cat, w.c)

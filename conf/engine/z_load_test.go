@@ -77,6 +77,7 @@ func env(vars map[string]string) func(string) (string, bool) {
 }
 
 type loadSink struct {
+	Version  uint32        `json:"version"`
 	Path     string        `json:"path" arg:"log-path"`
 	MaxAge   time.Duration `json:"maxAge" arg:"log-max-age"`
 	Backups  int           `json:"backups"`
@@ -87,7 +88,7 @@ type loadSink struct {
 }
 
 func TestPrecedenceEndToEnd(t *testing.T) {
-	cfg := &loadSink{Path: "default.log", Backups: 1}
+	cfg := &loadSink{Version: 1, Path: "default.log", Backups: 1}
 	cfg.Rotation.Size = 10
 	disk := map[string]string{
 		"/bin/cat-config.json":  `{"filesink": {"path": "bin.log", "maxAge": "5m", "backups": 3, "tags": ["f1","f2"], "rotation": {"size": 99}}}`,
@@ -130,7 +131,7 @@ func TestPrecedenceEndToEnd(t *testing.T) {
 }
 
 func TestLaterLocationOverridesEarlier(t *testing.T) {
-	cfg := &loadSink{}
+	cfg := &loadSink{Version: 1}
 	disk := map[string]string{
 		"/bin/cat-config.json": `{"filesink": {"path": "bin.log", "backups": 3}}`,
 		"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
@@ -153,7 +154,7 @@ func TestLaterLocationOverridesEarlier(t *testing.T) {
 }
 
 func TestExplicitConfigReplacesSearch(t *testing.T) {
-	cfg := &loadSink{}
+	cfg := &loadSink{Version: 1}
 	disk := map[string]string{
 		"/etc/cat/config.json": `{"filesink": {"path": "etc.log"}}`,
 		"/tmp/mine.yml":        `{"filesink": {"path": "mine.log"}}`,
@@ -244,7 +245,7 @@ func TestDuplicateExtensionClaimFails(t *testing.T) {
 }
 
 func TestEmptyEnvValueMeansEmptySlice(t *testing.T) {
-	cfg := &loadSink{Tags: []string{"default"}}
+	cfg := &loadSink{Version: 1, Tags: []string{"default"}}
 	src := Sources{
 		LookupEnv: env(map[string]string{"CAT_TAG": ""}),
 	}
@@ -289,7 +290,7 @@ func TestDanglingSymlinkAtPinnedLocationIsLoud(t *testing.T) {
 }
 
 func TestPinnedLocationUsesPinnedOpener(t *testing.T) {
-	cfg := &loadSink{}
+	cfg := &loadSink{Version: 1}
 	pinnedCalled := false
 	disk := map[string]string{"/opt/box/cat-config.json": `{"filesink": {"path": "pinned.log"}}`}
 	src := Sources{
@@ -419,7 +420,7 @@ func TestSuppressedFileKeyIsLoud(t *testing.T) {
 }
 
 func TestUnknownKeyInOwnedSection(t *testing.T) {
-	cfg := &loadSink{}
+	cfg := &loadSink{Version: 1}
 	disk := map[string]string{"/etc/cat/config.json": `{"filesink": {"pth": "typo.log"}}`}
 	src := Sources{
 		Locations: []Location{{Base: "/etc/cat/config"}},
@@ -502,7 +503,7 @@ func TestArgumentOnlyCoreFieldsIgnoreEnvironment(t *testing.T) {
 }
 
 func TestMarshalIndentRoundTrip(t *testing.T) {
-	cfg := &loadSink{Path: "a.log", MaxAge: 90 * time.Minute, Tags: []string{"x"}}
+	cfg := &loadSink{Version: 1, Path: "a.log", MaxAge: 90 * time.Minute, Tags: []string{"x"}}
 	cfg.Rotation.Size = 5
 	s := newTestSchema(t, &Core{Config: "c.json"}, map[string]any{"filesink": cfg})
 	out, err := s.MarshalIndent()
@@ -529,7 +530,7 @@ func TestMarshalIndentRoundTrip(t *testing.T) {
 }
 
 func TestMarshalIndentSkipsEmptyNestedObjects(t *testing.T) {
-	cfg := &loadSink{Path: "a.log"} // rotation.size stays zero
+	cfg := &loadSink{Version: 1, Path: "a.log"} // rotation.size stays zero
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
 	out, err := s.MarshalIndent()
 	if err != nil {

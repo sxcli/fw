@@ -28,8 +28,9 @@ import (
 )
 
 type probeConfig struct {
-	Note string `json:"note" arg:"note,n" usage:"a note to print"`
-	Exit int    `json:"exit" arg:"exit" usage:"exit code to return"`
+	Version uint32 `json:"version"`
+	Note    string `json:"note" arg:"note,n" usage:"a note to print"`
+	Exit    int    `json:"exit" arg:"exit" usage:"exit code to return"`
 }
 
 type serviceProbe struct {
@@ -61,7 +62,7 @@ func main() {
 		fw.Enable(fw.FeatureSCMDebug)
 	}
 	fw.Solo(fw.NewRegistration("example.com/scmbox/svcprobe",
-		func() *serviceProbe { return &serviceProbe{} },
+		func() *serviceProbe { return &serviceProbe{cfg: probeConfig{Version: 1}} },
 		func(p *serviceProbe) *probeConfig { return &p.cfg }).
 		Alias("svcprobe"))
 }

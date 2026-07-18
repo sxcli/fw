@@ -958,11 +958,39 @@ engine interprets. The engine stays dumb: it walks a chain.
 - `--write-config` completes its arc as the **migration normalizer**:
   load old file → migrate → emit a complete current-version document.
 
-Open within the scheme: where `Migrate` lives (on the fw registration
-chain as sketched, forwarding to conf's `Section`, or conf-only);
-whether a chain may start above 1 to drop ancient versions (proposed:
-yes — older than the oldest step = loud "version N no longer
-supported" error, it is just the chain not reaching back).
+IMPLEMENTED 2026-07-18 (engine + front door), with refinements the
+implementation forced:
+
+- The mandate is enforced at BOTH doors: `ValidateConfigType` (the fw
+  registration commit — type-level presence of `Version uint32`
+  json:"version") and `NewSchema` (both worlds — presence plus the
+  instance-level default: 0 = "the factory forgot", versions start at
+  1). The composite core is exempt BY TYPE: the mandate covers
+  Sections; the core is Contributions, and two contributions cannot
+  both claim a "version" key in one namespace. Core-section migration
+  is a future design (whose version governs a composite?).
+- A file section WITHOUT a version key is legal (current-dialect
+  partial) but earns a `slog.Warn` naming file and section — the
+  engine's first log call; the floor surfaces it under fw, stdlib's
+  default handler standalone. Adding the key is what upgrades a file
+  from "judged as current" to "migratable forever". Errors go to the
+  developer, advice to the operator.
+- A migrated document applies by DIRECT FIELD COPY, not a JSON
+  round-trip: the chain's output (same Go type as the live struct)
+  copies field-by-field through the current schema's field list —
+  zeros included (version-implies-complete at its sharpest), Transient
+  skipped naturally (a round-trip would re-emit run-scoped keys into
+  the refusal the engine rightly makes), domains checked on every
+  written value, Version stamped by the engine before the copy.
+- Old documents strict-parse with DisallowUnknownFields against their
+  OWN version's type; violations name the file and the judging
+  version. Chainless sections refuse any version mismatch. Chains may
+  start above 1 — older = "no longer supported (oldest supported N)".
+- Placement: `engine.Step`/`NewStep` + `Section.Steps` + validation in
+  `NewSchema`; front door `conf.Step(1, func(old V1) V2)` (the spec's
+  exact spelling) + `.Migrate(section, steps...)`. Open: the fw
+  registration-chain `.Migrate` forwarding into the descriptor →
+  Section mapping — composes on this substrate, not yet built.
 
 ### Sources & precedence (least → most important)
 

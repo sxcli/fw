@@ -47,6 +47,7 @@ const ID = "sxcli.dev/fw/sink/syslog"
 
 // Config is the syslog sink configuration, section "syslog".
 type Config struct {
+	Version  uint32 `json:"version"`
 	Level    string `json:"level" arg:"syslog-level" usage:"minimum level logged to syslog (debug, info, warn, error)"`
 	Format   string `json:"format" arg:"syslog-format" usage:"syslog message format: text or json"`
 	Tag      string `json:"tag" arg:"syslog-tag" usage:"syslog tag; defaults to the process name"`

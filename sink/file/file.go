@@ -29,7 +29,7 @@ const ID = "sxcli.dev/fw/sink/file"
 
 func init() {
 	fw.NewRegistration(ID, func() *File {
-		return &File{cfg: Config{Level: "info", Format: "text", Mode: "0600"}}
+		return &File{cfg: Config{Version: 1, Level: "info", Format: "text", Mode: "0600"}}
 	}, func(f *File) *Config { return &f.cfg }).
 		Alias("logfile").
 		Provides(fw.Iface[slog.Handler]()).

@@ -48,6 +48,16 @@ import (
 // native JSON; see the engine package.
 type Provider = engine.Provider
 
+// Step declares one link of a section's migration chain: the typed
+// conversion from schema version `from` to the next. Old versions live
+// on as plain json-only types; fn receives the strictly-parsed old
+// document and returns its successor:
+//
+//	conf.Step(1, func(old ConfigV1) ConfigV2 { … })
+func Step[From, To any](from uint32, fn func(From) To) engine.Step {
+	return engine.NewStep(from, fn)
+}
+
 // Feature identifies one suppressible piece of the front door's
 // surface: a core argument, a tier of the config location search, or
 // a whole source. An argument feature's value IS the long argument
@@ -95,6 +105,7 @@ var tierFeatures = map[Feature]bool{
 type LoaderBuilder struct {
 	name     string
 	sections []engine.Section
+	migrated map[string][]engine.Step
 	features []Feature
 	maxSize  int64
 	provs    []Provider
@@ -126,6 +137,20 @@ func (b *LoaderBuilder) Section(name string, cfg any) *LoaderBuilder {
 // Sources owns its own location policy.
 func (b *LoaderBuilder) Suppress(features ...Feature) *LoaderBuilder {
 	b.features = append(b.features, features...)
+	return b
+}
+
+// Migrate attaches a section's migration chain, oldest step first —
+// how a schema evolves without stranding the files already deployed.
+// The chain is validated at Build: contiguous versions, each step's
+// output feeding the next step's input, terminating at the section's
+// current type, whose factory default Version must equal the terminal
+// version.
+func (b *LoaderBuilder) Migrate(section string, steps ...engine.Step) *LoaderBuilder {
+	if b.migrated == nil {
+		b.migrated = map[string][]engine.Step{}
+	}
+	b.migrated[section] = append(b.migrated[section], steps...)
 	return b
 }
 
@@ -192,6 +217,16 @@ func New(name string, cfg any) (*Loader, bool) {
 func (b *LoaderBuilder) Build() (*Loader, bool) {
 	c := &fail.Collector{}
 	src := b.sources()
+	named := map[string]bool{}
+	for i := range b.sections {
+		named[b.sections[i].Name] = true
+		b.sections[i].Steps = b.migrated[b.sections[i].Name]
+	}
+	for section := range b.migrated {
+		if !named[section] {
+			c.Fail("Migrate names unknown section %q", section)
+		}
+	}
 	var loader *Loader
 	served := false
 	var peek engine.Core

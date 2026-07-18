@@ -26,6 +26,7 @@ import (
 )
 
 type toolCfg struct {
+	Version uint32        `json:"version"`
 	Listen  string        `json:"listen" arg:"listen,l" usage:"address to serve on"`
 	Timeout time.Duration `json:"timeout" arg:"timeout"`
 	Token   string        `json:"token" env:"TOOL_TOKEN"`
@@ -61,12 +62,12 @@ func (w *world) builder(t *testing.T, args []string, files, env map[string]strin
 		},
 		OpenPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
 	}
-	return Builder("mytool").Section("mytool", &toolCfg{}).Sources(src).Output(&w.stdout, &w.stderr)
+	return Builder("mytool").Section("mytool", &toolCfg{Version: 1}).Sources(src).Output(&w.stdout, &w.stderr)
 }
 
 func TestLoadFillsAndReturnsPositionals(t *testing.T) {
 	w := &world{}
-	cfg := &toolCfg{Listen: ":8080"}
+	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"timeout": "5s"}}`}
 	b := w.builder(t, []string{"--listen", ":9090", "one", "two"}, files, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
@@ -88,7 +89,7 @@ func TestLoadFillsAndReturnsPositionals(t *testing.T) {
 
 func TestEnvSpeaksTheSectionPrefix(t *testing.T) {
 	w := &world{}
-	cfg := &toolCfg{}
+	cfg := &toolCfg{Version: 1}
 	b := w.builder(t, nil, nil, map[string]string{"MYTOOL_LISTEN": ":7070"})
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
 	ldr, _ := b.Build()
@@ -102,7 +103,7 @@ func TestEnvSpeaksTheSectionPrefix(t *testing.T) {
 
 func TestHelpIsServedAndLeavesTheStructAlone(t *testing.T) {
 	w := &world{}
-	cfg := &toolCfg{Listen: ":8080"}
+	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	b := w.builder(t, []string{"--help", "--listen", ":9090"}, nil, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
 	ldr, served := b.Build()
@@ -140,7 +141,7 @@ func TestHelpIsBestEffortOverBrokenFiles(t *testing.T) {
 
 func TestWriteConfigServesTheMerge(t *testing.T) {
 	w := &world{}
-	cfg := &toolCfg{Listen: ":8080"}
+	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	b := w.builder(t, []string{"--write-config", "--listen", ":9090"}, nil, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
 	_, served := b.Build()
@@ -169,7 +170,7 @@ func TestWriteConfigRefusesAViolatedMerge(t *testing.T) {
 
 func TestViolationsRestoreTheDefaults(t *testing.T) {
 	w := &world{}
-	cfg := &toolCfg{Listen: ":8080"}
+	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	files := map[string]string{"/etc/mytool/config.json": `{"mytool": {"listen": ":6060", "nope": true}}`}
 	b := w.builder(t, nil, files, nil)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
@@ -215,7 +216,7 @@ func TestTierSuppressionPrunesTheSearch(t *testing.T) {
 
 func TestEnvironmentSuppressionKillsTheWholeSource(t *testing.T) {
 	w := &world{}
-	cfg := &toolCfg{Listen: ":8080"}
+	cfg := &toolCfg{Version: 1, Listen: ":8080"}
 	env := map[string]string{"MYTOOL_LISTEN": ":7070", "TOOL_TOKEN": "sekrit"}
 	b := w.builder(t, nil, nil, env).Suppress(FeatureEnvironment)
 	b.sections = []engine.Section{{Name: "mytool", Ptr: cfg}}
@@ -228,5 +229,39 @@ func TestEnvironmentSuppressionKillsTheWholeSource(t *testing.T) {
 	}
 	if cfg.Token != "" {
 		t.Errorf("explicit env binding must die with the source: %+v", cfg)
+	}
+}
+
+func TestMigrateWiresTheChain(t *testing.T) {
+	type cfgV1 struct {
+		Version uint32 `json:"version"`
+		Addr    string `json:"addr"`
+	}
+	type cfgV2 struct {
+		Version uint32 `json:"version"`
+		Listen  string `json:"listen" arg:"listen"`
+	}
+	w := &world{}
+	cfg := &cfgV2{Version: 2}
+	files := map[string]string{"/etc/mytool/config.json": `{"tool": {"version": 1, "addr": ":8080"}}`}
+	b := w.builder(t, nil, files, nil)
+	b.sections = []engine.Section{{Name: "tool", Ptr: cfg}}
+	b.Migrate("tool", Step(1, func(old cfgV1) cfgV2 { return cfgV2{Listen: old.Addr} }))
+	ldr, served := b.Build()
+	if served {
+		t.Fatal("a migrating run is not served")
+	}
+	if _, err := ldr.Load(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Listen != ":8080" || cfg.Version != 2 {
+		t.Errorf("migration through the front door wrong: %+v", cfg)
+	}
+	if _, badServed := w.builder(t, nil, nil, nil).Migrate("ghost").Build(); badServed {
+		t.Fatal("unknown-section Migrate must not serve")
+	} else if ldr2, _ := w.builder(t, nil, nil, nil).Migrate("ghost").Build(); ldr2 != nil {
+		if _, err := ldr2.Load(); err == nil || !strings.Contains(err.Error(), "unknown section") {
+			t.Errorf("Migrate on an unknown section must be a violation: %v", err)
+		}
 	}
 }

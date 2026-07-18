@@ -58,6 +58,7 @@ func (d *depService) Stop() error {
 }
 
 type mainAppletCfg struct {
+	Version  uint32 `json:"version"`
 	Greeting string `json:"greeting" arg:"greeting,g" usage:"the greeting"`
 }
 
@@ -187,7 +188,7 @@ func (w *world) run() int {
 // deliberate deviation from the fresh-per-Make contract that worlds,
 // building exactly once, are entitled to.
 func (w *world) applet(code int) *mainApplet {
-	a := &mainApplet{log: &w.log, code: code}
+	a := &mainApplet{log: &w.log, code: code, cfg: mainAppletCfg{Version: 1}}
 	NewRegistration("app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").registerInto(w.cat, w.c)

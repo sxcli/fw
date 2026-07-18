@@ -23,7 +23,8 @@ import (
 )
 
 type catCfg struct {
-	Level string `json:"level" arg:"cat-level" usage:"verbosity"`
+	Version uint32 `json:"version"`
+	Level   string `json:"level" arg:"cat-level" usage:"verbosity"`
 }
 
 type catService struct {
@@ -51,7 +52,7 @@ func catalogWorld() (*registry.Registry, *fail.Collector) {
 func chain(id string, built *int) *Registration[catService] {
 	return NewRegistration(id, func() *catService {
 		*built++
-		return &catService{built: built, cfg: catCfg{Level: "info"}}
+		return &catService{built: built, cfg: catCfg{Version: 1, Level: "info"}}
 	}, func(s *catService) *catCfg { return &s.cfg }).Alias("cat")
 }
 
@@ -211,7 +212,8 @@ func TestBareAndAppletCommit(t *testing.T) {
 }
 
 type badTagCfg struct {
-	X string `arg:"x"` // no json tag: a registration-time violation
+	Version uint32 `json:"version"`
+	X       string `arg:"x"` // no json tag: a registration-time violation
 }
 
 type badTagSvc struct{ cfg badTagCfg }

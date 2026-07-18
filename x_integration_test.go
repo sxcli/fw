@@ -70,8 +70,9 @@ func (g *greeterService) Greet() string     { return "hi" }
 func (g *greeterService) Configured() error { return nil }
 
 type probeConfig struct {
-	Exit int    `json:"exit" arg:"exit"`
-	Note string `json:"note" arg:"note,n" usage:"a note to print"`
+	Version uint32 `json:"version"`
+	Exit    int    `json:"exit" arg:"exit"`
+	Note    string `json:"note" arg:"note,n" usage:"a note to print"`
 }
 
 type probeApplet struct {
@@ -89,7 +90,8 @@ func (p *probeApplet) Run() int {
 }
 
 type echoCfg struct {
-	Quiet bool `json:"quiet" arg:"quiet,q"`
+	Version uint32 `json:"version"`
+	Quiet   bool   `json:"quiet" arg:"quiet,q"`
 }
 
 type echoApplet struct{ cfg echoCfg }
@@ -101,7 +103,7 @@ func (e *echoApplet) Run() int {
 }
 
 func registerProbe() {
-	fw.NewRegistration("example.com/box/probe", func() *probeApplet { return &probeApplet{} },
+	fw.NewRegistration("example.com/box/probe", func() *probeApplet { return &probeApplet{cfg: probeConfig{Version: 1}} },
 		func(p *probeApplet) *probeConfig { return &p.cfg }).
 		Alias("probe").
 		Register()
@@ -128,7 +130,7 @@ func (l *loudService) Start() error {
 func (l *loudService) Stop() error { return nil }
 
 func registerEcho() {
-	fw.NewRegistration("example.com/box/echo", func() *echoApplet { return &echoApplet{} },
+	fw.NewRegistration("example.com/box/echo", func() *echoApplet { return &echoApplet{cfg: echoCfg{Version: 1}} },
 		func(e *echoApplet) *echoCfg { return &e.cfg }).
 		Alias("echo").
 		Register()
