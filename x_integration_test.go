@@ -88,7 +88,11 @@ func (p *probeApplet) Run() int {
 	return p.cfg.Exit
 }
 
-type echoApplet struct{}
+type echoCfg struct {
+	Quiet bool `json:"quiet" arg:"quiet,q"`
+}
+
+type echoApplet struct{ cfg echoCfg }
 
 func (e *echoApplet) Configured() error { return nil }
 func (e *echoApplet) Run() int {
@@ -97,13 +101,20 @@ func (e *echoApplet) Run() int {
 }
 
 func registerProbe() {
-	p := &probeApplet{}
-	sxclifw.Register("probe", p, sxclifw.WithConfig(&p.cfg))
+	sxclifw.NewRegistration("example.com/box/probe", func() *probeApplet { return &probeApplet{} },
+		func(p *probeApplet) *probeConfig { return &p.cfg }).
+		Alias("probe").
+		Register()
 }
 
 func registerGreeter() {
-	sxclifw.Register("greeter", &greeterService{}, sxclifw.Provides[greeter]())
-	sxclifw.Register("loud", &loudService{})
+	sxclifw.NewBareRegistration("example.com/box/greeter", func() *greeterService { return &greeterService{} }).
+		Alias("greeter").
+		Provides(sxclifw.Iface[greeter]()).
+		Register()
+	sxclifw.NewBareRegistration("example.com/box/loud", func() *loudService { return &loudService{} }).
+		Alias("loud").
+		Register()
 }
 
 // loudService is referenced by nobody: genuinely cold unless enabled.
@@ -117,9 +128,10 @@ func (l *loudService) Start() error {
 func (l *loudService) Stop() error { return nil }
 
 func registerEcho() {
-	sxclifw.Register("echo", &echoApplet{}, sxclifw.WithConfig(&struct {
-		Quiet bool `json:"quiet" arg:"quiet,q"`
-	}{}))
+	sxclifw.NewRegistration("example.com/box/echo", func() *echoApplet { return &echoApplet{} },
+		func(e *echoApplet) *echoCfg { return &e.cfg }).
+		Alias("echo").
+		Register()
 }
 
 // ---- harness -------------------------------------------------------------

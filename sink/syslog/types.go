@@ -41,6 +41,10 @@ import (
 	sxclifw "sxcli.dev/fw"
 )
 
+// ID is the syslog sink's identity; operators call it "syslog". The
+// sink is unix-only; the identity is portable.
+const ID = "sxcli.dev/fw/sink/syslog"
+
 // Config is the syslog sink configuration, section "syslog".
 type Config struct {
 	Level    string `json:"level" arg:"syslog-level" usage:"minimum level logged to syslog (debug, info, warn, error)"`

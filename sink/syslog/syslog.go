@@ -27,11 +27,12 @@ import (
 )
 
 func init() {
-	s := &Syslog{cfg: Config{Level: "info", Format: "text", Facility: "daemon"}}
-	sxclifw.Register("syslog", s,
-		sxclifw.Provides[slog.Handler](),
-		sxclifw.WithConfig(&s.cfg),
-		sxclifw.WithMetadata(&sxclifw.Metadata{
+	sxclifw.NewRegistration(ID, func() *Syslog {
+		return &Syslog{cfg: Config{Level: "info", Format: "text", Facility: "daemon"}}
+	}, func(s *Syslog) *Config { return &s.cfg }).
+		Alias("syslog").
+		Provides(sxclifw.Iface[slog.Handler]()).
+		Metadata(&sxclifw.Metadata{
 			Description: "syslog sink: writes slog records to the local syslog socket (journald under systemd) or a remote server; cold until enabled",
 			Fields: map[string]any{
 				"Level": sxclifw.FieldMetadata[string]{
@@ -57,8 +58,8 @@ func init() {
 					Doc: "host:port of the remote server; set together with network",
 				},
 			},
-		}),
-	)
+		}).
+		Register()
 }
 
 var facilities = map[string]syslog.Priority{

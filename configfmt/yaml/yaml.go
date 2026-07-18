@@ -24,13 +24,17 @@ import (
 	sxclifw "sxcli.dev/fw"
 )
 
+// ID is the yaml provider's identity; operators call it "yaml".
+const ID = "sxcli.dev/fw/configfmt/yaml"
+
 func init() {
-	sxclifw.Register("yaml", &YAML{},
-		sxclifw.Provides[sxclifw.ConfigFormatProvider](),
-		sxclifw.WithMetadata(&sxclifw.Metadata{
+	sxclifw.NewBareRegistration(ID, func() *YAML { return &YAML{} }).
+		Alias("yaml").
+		Provides(sxclifw.Iface[sxclifw.ConfigFormatProvider]()).
+		Metadata(&sxclifw.Metadata{
 			Description: "YAML config format provider: transcodes .yaml/.yml configuration files to and from the core's native JSON",
-		}),
-	)
+		}).
+		Register()
 }
 
 // Extensions returns the file extensions this provider transcodes.

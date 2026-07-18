@@ -24,12 +24,16 @@ import (
 	sxclifw "sxcli.dev/fw"
 )
 
+// ID is the log-file sink's identity; operators call it "logfile".
+const ID = "sxcli.dev/fw/sink/file"
+
 func init() {
-	f := &File{cfg: Config{Level: "info", Format: "text", Mode: "0600"}}
-	sxclifw.Register("logfile", f,
-		sxclifw.Provides[slog.Handler](),
-		sxclifw.WithConfig(&f.cfg),
-		sxclifw.WithMetadata(&sxclifw.Metadata{
+	sxclifw.NewRegistration(ID, func() *File {
+		return &File{cfg: Config{Level: "info", Format: "text", Mode: "0600"}}
+	}, func(f *File) *Config { return &f.cfg }).
+		Alias("logfile").
+		Provides(sxclifw.Iface[slog.Handler]()).
+		Metadata(&sxclifw.Metadata{
 			Description: "log-file sink: appends slog records to a file; no rotation (logrotate copytruncate works as-is); cold until enabled",
 			Fields: map[string]any{
 				"Path": sxclifw.FieldMetadata[string]{
@@ -43,8 +47,8 @@ func init() {
 					Doc: "octal permissions applied when the file is created, e.g. 0600; an existing file keeps its mode",
 				},
 			},
-		}),
-	)
+		}).
+		Register()
 }
 
 // Configured validates the configuration and — as its last act — opens

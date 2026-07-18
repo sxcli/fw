@@ -24,12 +24,16 @@ import (
 	sxclifw "sxcli.dev/fw"
 )
 
+// ID is the console sink's identity; operators call it "console".
+const ID = "sxcli.dev/fw/sink/console"
+
 func init() {
-	c := &Console{cfg: Config{Level: "info", Format: "text", Output: "stderr"}}
-	sxclifw.Register("console", c,
-		sxclifw.Provides[slog.Handler](),
-		sxclifw.WithConfig(&c.cfg),
-		sxclifw.WithMetadata(&sxclifw.Metadata{
+	sxclifw.NewRegistration(ID, func() *Console {
+		return &Console{cfg: Config{Level: "info", Format: "text", Output: "stderr"}}
+	}, func(c *Console) *Config { return &c.cfg }).
+		Alias("console").
+		Provides(sxclifw.Iface[slog.Handler]()).
+		Metadata(&sxclifw.Metadata{
 			Description: "console log sink: writes slog records to stderr (default) or stdout; opt-in — enable it with --enable console or a dependency, otherwise the framework's raw stderr fallback applies",
 			Fields: map[string]any{
 				"Level": sxclifw.FieldMetadata[string]{
@@ -40,8 +44,8 @@ func init() {
 				"Format": sxclifw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
 				"Output": sxclifw.FieldMetadata[string]{Allowed: []string{"stderr", "stdout"}},
 			},
-		}),
-	)
+		}).
+		Register()
 }
 
 // Configured builds the inner handler from the merged configuration.

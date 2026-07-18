@@ -57,10 +57,11 @@ func (p *serviceProbe) Execute(args []string, req <-chan svc.ChangeRequest, stat
 }
 
 func main() {
-	p := &serviceProbe{}
-	sxclifw.Register("svcprobe", p, sxclifw.WithConfig(&p.cfg))
 	if os.Getenv("SCMBOX_DEBUG_OFF") != "1" {
 		sxclifw.Enable(sxclifw.FeatureSCMDebug)
 	}
-	sxclifw.Main()
+	sxclifw.Solo(sxclifw.NewRegistration("example.com/scmbox/svcprobe",
+		func() *serviceProbe { return &serviceProbe{} },
+		func(p *serviceProbe) *probeConfig { return &p.cfg }).
+		Alias("svcprobe"))
 }
