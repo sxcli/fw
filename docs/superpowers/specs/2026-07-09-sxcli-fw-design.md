@@ -1428,6 +1428,30 @@ Checks:
   make distinct field paths collidable, and explicit `env:` names are
   global claims: every collision `Build()` would report at runtime is
   reported at compile time, across the whole composition.
+- **the Version mandate** — a config struct without `Version uint32`
+  json:"version" at any registration or Section site; pure type
+  inspection, the commit-time check mirrored.
+- **migration chain mirror** — contiguous from-versions, step
+  type-linkage and terminal-equals-section-type fall out of go/types
+  seeing the generic `Step` instantiations; the factory-default-
+  equals-terminal check reads the common composite-literal case
+  (`Config{Version: 3}`) and emits "cannot verify" for computed
+  defaults, never silence.
+- **Migrate names a declared section** — `.Migrate("x", …)` with no
+  `.Section("x", …)` in the chain.
+- **discarded `served`** — `l, _ := conf.New(…)` ignoring Load's
+  second return is the "tool runs after printing help" bug the
+  two-phase front door exists to prevent; the API made the mistake
+  checkable, this check makes it caught.
+- **raw `Feature` conversions** — `Feature("…")` naming nothing known;
+  warn-tier, the conversion is the documented escape hatch.
+
+Sequencing constraints: fw's runtime messages already nudge to
+sxclivet ("the sxclivet tool catches this before it runs"), so an MVP
+covering the nudge-referenced checks rides the release train — or the
+nudges soften until it exists; and the tag-grammar check targets the
+post-cutover grammar (`conf:`/`short:`/unified `env:`), so the
+`arg:`→`conf:` cutover lands before that analyzer is written.
 
 Stated limits: non-constant ids and dynamically built option slices
 produce a "cannot verify" diagnostic, never silence. Drift between the
