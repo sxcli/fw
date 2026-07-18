@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package sxclifw is the sxcli framework — sxcli stands for Simple
+// Package fw is the sxcli framework — sxcli stands for Simple
 // Extensible CLI — for building busybox-style single-binary tools. A
 // consumer registers services (applets are just services that
 // implement a specific interface) from package init() functions and calls
@@ -20,7 +20,7 @@
 // argument, resolves the dependency closure of the chosen applet, drives
 // configuration from arguments, environment variables and config files,
 // and runs the service lifecycle around the applet.
-package sxclifw
+package fw
 
 import "io"
 

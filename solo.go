@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sxclifw
+package fw
 
 // Solo is the single-applet front door and the registration chain's
 // second terminal: commit the registration, accept it (plus whatever

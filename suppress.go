@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sxclifw
+package fw
 
 // CoreFeature identifies one suppressible piece of the framework core's
 // configuration surface.

@@ -18,7 +18,7 @@
 // framework binary (TestMain switches on a personality env var and
 // calls Main), driving real dispatch, real config files, real env, real
 // exit codes.
-package sxclifw_test
+package fw_test
 
 import (
 	"bytes"
@@ -32,7 +32,7 @@ import (
 	"strings"
 	"testing"
 
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 	_ "sxcli.dev/fw/configfmt/yaml"
 	_ "sxcli.dev/fw/sink/console"
 	_ "sxcli.dev/fw/sink/file"
@@ -55,9 +55,9 @@ func TestMain(m *testing.M) {
 		registerEcho()
 	}
 	if personality == "hardened" {
-		sxclifw.Suppress(sxclifw.FeatureConfigFile)
+		fw.Suppress(fw.FeatureConfigFile)
 	}
-	sxclifw.Main()
+	fw.Main()
 }
 
 // ---- the personalities' services ----------------------------------------
@@ -83,7 +83,7 @@ func (p *probeApplet) Configured() error { return nil }
 
 func (p *probeApplet) Run() int {
 	greeted := p.G != nil && p.G.Greet() == "hi"
-	fmt.Printf("note=%s greeted=%v positionals=%v\n", p.cfg.Note, greeted, sxclifw.Positionals())
+	fmt.Printf("note=%s greeted=%v positionals=%v\n", p.cfg.Note, greeted, fw.Positionals())
 	slog.Info("probe ran", "note", p.cfg.Note)
 	return p.cfg.Exit
 }
@@ -101,18 +101,18 @@ func (e *echoApplet) Run() int {
 }
 
 func registerProbe() {
-	sxclifw.NewRegistration("example.com/box/probe", func() *probeApplet { return &probeApplet{} },
+	fw.NewRegistration("example.com/box/probe", func() *probeApplet { return &probeApplet{} },
 		func(p *probeApplet) *probeConfig { return &p.cfg }).
 		Alias("probe").
 		Register()
 }
 
 func registerGreeter() {
-	sxclifw.NewBareRegistration("example.com/box/greeter", func() *greeterService { return &greeterService{} }).
+	fw.NewBareRegistration("example.com/box/greeter", func() *greeterService { return &greeterService{} }).
 		Alias("greeter").
-		Provides(sxclifw.Iface[greeter]()).
+		Provides(fw.Iface[greeter]()).
 		Register()
-	sxclifw.NewBareRegistration("example.com/box/loud", func() *loudService { return &loudService{} }).
+	fw.NewBareRegistration("example.com/box/loud", func() *loudService { return &loudService{} }).
 		Alias("loud").
 		Register()
 }
@@ -128,7 +128,7 @@ func (l *loudService) Start() error {
 func (l *loudService) Stop() error { return nil }
 
 func registerEcho() {
-	sxclifw.NewRegistration("example.com/box/echo", func() *echoApplet { return &echoApplet{} },
+	fw.NewRegistration("example.com/box/echo", func() *echoApplet { return &echoApplet{} },
 		func(e *echoApplet) *echoCfg { return &e.cfg }).
 		Alias("echo").
 		Register()

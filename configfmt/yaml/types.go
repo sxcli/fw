@@ -21,9 +21,9 @@
 //	import _ "sxcli.dev/fw/configfmt/yaml"
 package yaml
 
-import sxclifw "sxcli.dev/fw"
+import "sxcli.dev/fw"
 
 // YAML is the provider service.
 type YAML struct{}
 
-var _ sxclifw.ConfigFormatProvider = (*YAML)(nil)
+var _ fw.ConfigFormatProvider = (*YAML)(nil)

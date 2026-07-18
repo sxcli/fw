@@ -14,7 +14,7 @@
 
 //go:build unix
 
-package sxclifw
+package fw
 
 import (
 	"errors"

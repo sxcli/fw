@@ -4,7 +4,7 @@ sxcli stands for **Simple Extensible CLI**.
 
 Date: 2026-07-09
 Status: approved section by section during brainstorming
-Module: `sxcli.dev/fw` · Package: `sxclifw` · Go: 1.26
+Module: `sxcli.dev/fw` · Package: `fw` · Go: 1.26
 
 ## 1. Purpose & Scope
 
@@ -45,7 +45,7 @@ binary with:
 ```
 sxcli-fw/
 ├── go.mod                — module sxcli.dev/fw
-├── *.go                  — package sxclifw: the entire public API
+├── *.go                  — package fw: the entire public API
 ├── platform_unix.go      — args acquisition, no-op service hooks
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
 ├── internal/
@@ -83,7 +83,7 @@ Providers only import the root package — no import cycles. Everything under
 
 ## 3. Service Model — Interfaces
 
-All in package `sxclifw` (Go-conventional `-er` names):
+All in package `fw` (Go-conventional `-er` names):
 
 ```go
 // Base lifecycle interface.
@@ -1114,7 +1114,7 @@ with `--enable`.
   collected as a positional and does not cause errors; a bare token
   *followed by* another flag is a strict-parse error ("positionals must
   come last"). Parsing/routing of positionals is deferred — v1 collects
-  them and exposes them via `sxclifw.Positionals()`, nothing more.
+  them and exposes them via `fw.Positionals()`, nothing more.
 - Durations are strict in every source: a unit suffix is required
   (`5s`, `5000ms`, `5000000ns`; bare numbers are rejected), and in JSON
   files a duration must be a *string* — never a number.

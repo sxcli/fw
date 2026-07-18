@@ -23,7 +23,7 @@ import (
 	"log/slog"
 	"time"
 
-	fw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 type Config struct {
@@ -142,7 +142,7 @@ export — no blank-import magic:
 
 ```go
 import (
-	fw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 	"sxcli.dev/fw/sink/console"
 	"example.com/box/grep"
 	"example.com/box/serve"

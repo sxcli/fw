@@ -14,7 +14,7 @@
 
 //go:build !windows
 
-package sxclifw
+package fw
 
 import (
 	"errors"

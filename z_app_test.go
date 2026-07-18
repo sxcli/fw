@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sxclifw
+package fw
 
 import (
 	"fmt"
@@ -219,7 +219,7 @@ func TestAmbiguityResolvedByOrderEndToEnd(t *testing.T) {
 	}
 	// Order resolves it — the ranked provider wins
 	w, code = appWorld(t, Builder().AcceptAll().Order("example.com/app/two"), []string{"bin"}, nil, nil, register)
-	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*sxclifw.bldB" {
+	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*fw.bldB" {
 		t.Errorf("rank must choose: code=%d log=%v stderr:\n%s", code, w.log, w.stderr.String())
 	}
 }
@@ -249,13 +249,13 @@ func TestOrderSequenceDecidesAmongRanked(t *testing.T) {
 	// two of three ranked: the Order-earlier one wins the field
 	w, code := appWorld(t, Builder().AcceptAll().
 		Order("example.com/app/two", "example.com/app/one"), []string{"bin"}, nil, nil, register)
-	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*sxclifw.bldB" {
+	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*fw.bldB" {
 		t.Errorf("Order-earlier must win: code=%d log=%v stderr:\n%s", code, w.log, w.stderr.String())
 	}
 	// flipping the sequence flips the winner — the sequence IS the semantics
 	w, code = appWorld(t, Builder().AcceptAll().
 		Order("example.com/app/one", "example.com/app/two"), []string{"bin"}, nil, nil, register)
-	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*sxclifw.bldA" {
+	if code != 0 || strings.Join(w.log, ",") != "consumer.run:*fw.bldA" {
 		t.Errorf("flipped Order must flip the winner: code=%d log=%v", code, w.log)
 	}
 }

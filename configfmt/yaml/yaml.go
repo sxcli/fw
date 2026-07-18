@@ -21,17 +21,17 @@ import (
 
 	goyaml "github.com/goccy/go-yaml"
 
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 // ID is the yaml provider's identity; operators call it "yaml".
 const ID = "sxcli.dev/fw/configfmt/yaml"
 
 func init() {
-	sxclifw.NewBareRegistration(ID, func() *YAML { return &YAML{} }).
+	fw.NewBareRegistration(ID, func() *YAML { return &YAML{} }).
 		Alias("yaml").
-		Provides(sxclifw.Iface[sxclifw.ConfigFormatProvider]()).
-		Metadata(&sxclifw.Metadata{
+		Provides(fw.Iface[fw.ConfigFormatProvider]()).
+		Metadata(&fw.Metadata{
 			Description: "YAML config format provider: transcodes .yaml/.yml configuration files to and from the core's native JSON",
 		}).
 		Register()

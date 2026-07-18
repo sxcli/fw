@@ -24,7 +24,7 @@ import (
 	"os"
 
 	"golang.org/x/sys/windows/svc"
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 type probeConfig struct {
@@ -58,9 +58,9 @@ func (p *serviceProbe) Execute(args []string, req <-chan svc.ChangeRequest, stat
 
 func main() {
 	if os.Getenv("SCMBOX_DEBUG_OFF") != "1" {
-		sxclifw.Enable(sxclifw.FeatureSCMDebug)
+		fw.Enable(fw.FeatureSCMDebug)
 	}
-	sxclifw.Solo(sxclifw.NewRegistration("example.com/scmbox/svcprobe",
+	fw.Solo(fw.NewRegistration("example.com/scmbox/svcprobe",
 		func() *serviceProbe { return &serviceProbe{} },
 		func(p *serviceProbe) *probeConfig { return &p.cfg }).
 		Alias("svcprobe"))

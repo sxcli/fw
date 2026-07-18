@@ -17,7 +17,7 @@
 // Wine-based SCM tests: cross-compile testdata/scmbox for windows and
 // drive its service path under wine via --scm-debug (svc/debug). Skipped
 // without wine on PATH or with -short.
-package sxclifw_test
+package fw_test
 
 import (
 	"bytes"

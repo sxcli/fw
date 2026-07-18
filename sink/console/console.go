@@ -21,28 +21,28 @@ import (
 	"log/slog"
 	"os"
 
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 // ID is the console sink's identity; operators call it "console".
 const ID = "sxcli.dev/fw/sink/console"
 
 func init() {
-	sxclifw.NewRegistration(ID, func() *Console {
+	fw.NewRegistration(ID, func() *Console {
 		return &Console{cfg: Config{Level: "info", Format: "text", Output: "stderr"}}
 	}, func(c *Console) *Config { return &c.cfg }).
 		Alias("console").
-		Provides(sxclifw.Iface[slog.Handler]()).
-		Metadata(&sxclifw.Metadata{
+		Provides(fw.Iface[slog.Handler]()).
+		Metadata(&fw.Metadata{
 			Description: "console log sink: writes slog records to stderr (default) or stdout; opt-in — enable it with --enable console or a dependency, otherwise the framework's raw stderr fallback applies",
 			Fields: map[string]any{
-				"Level": sxclifw.FieldMetadata[string]{
+				"Level": fw.FieldMetadata[string]{
 					// deliberately no Allowed: slog accepts offsets like
 					// "warn+2" and any case, so the domain is open
 					Doc: "any form slog.Level understands: debug, info, warn, error, case-insensitive, offsets like warn+2",
 				},
-				"Format": sxclifw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
-				"Output": sxclifw.FieldMetadata[string]{Allowed: []string{"stderr", "stdout"}},
+				"Format": fw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
+				"Output": fw.FieldMetadata[string]{Allowed: []string{"stderr", "stdout"}},
 			},
 		}).
 		Register()

@@ -29,7 +29,7 @@ import (
 	"log/slog"
 	"os"
 
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 // Config is the file sink configuration, section "logfile". Path has no
@@ -53,6 +53,6 @@ type File struct {
 	inner slog.Handler
 }
 
-var _ sxclifw.Starter = (*File)(nil)
-var _ sxclifw.Configurable = (*File)(nil)
+var _ fw.Starter = (*File)(nil)
+var _ fw.Configurable = (*File)(nil)
 var _ slog.Handler = (*File)(nil)

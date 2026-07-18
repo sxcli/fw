@@ -38,7 +38,7 @@ import (
 	"log/syslog"
 	"sync"
 
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 // ID is the syslog sink's identity; operators call it "syslog". The
@@ -75,7 +75,7 @@ type view struct {
 	inner  slog.Handler
 }
 
-var _ sxclifw.Starter = (*Syslog)(nil)
-var _ sxclifw.Configurable = (*Syslog)(nil)
+var _ fw.Starter = (*Syslog)(nil)
+var _ fw.Configurable = (*Syslog)(nil)
 var _ slog.Handler = (*Syslog)(nil)
 var _ slog.Handler = view{}

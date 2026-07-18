@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sxclifw
+package fw
 
 import (
 	"errors"
@@ -51,7 +51,7 @@ type ArgInfo struct {
 // truth does not federate. Consumers inject it by concrete type:
 //
 //	type CompletionApplet struct {
-//		I *sxclifw.Introspector `inject:""`
+//		I *fw.Introspector `inject:""`
 //	}
 //
 // The one price of introspection: a closure containing the Introspector

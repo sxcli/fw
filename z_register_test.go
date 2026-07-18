@@ -16,7 +16,7 @@
 // (options, instance registration). Everything it pinned lives on in
 // z_catalog_test.go against the chain; what remains here are the
 // shared fixture types and the applet-lifecycle table, ported.
-package sxclifw
+package fw
 
 import (
 	"testing"

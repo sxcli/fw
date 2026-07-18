@@ -24,7 +24,7 @@ package console
 import (
 	"log/slog"
 
-	sxclifw "sxcli.dev/fw"
+	"sxcli.dev/fw"
 )
 
 // Config is the console sink configuration, section "console".
@@ -42,6 +42,6 @@ type Console struct {
 	inner slog.Handler
 }
 
-var _ sxclifw.Starter = (*Console)(nil)
-var _ sxclifw.Configurable = (*Console)(nil)
+var _ fw.Starter = (*Console)(nil)
+var _ fw.Configurable = (*Console)(nil)
 var _ slog.Handler = (*Console)(nil)
