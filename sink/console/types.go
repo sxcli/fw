@@ -18,7 +18,7 @@
 // dependency; a binary that imports it but enables nothing falls to
 // the framework's raw stderr logging floor:
 //
-//	import _ "sxcli.dev/fw/sink/console"
+//	fw.Builder().Accept(console.ID, …)   // or any AcceptAll composition
 package console
 
 import (

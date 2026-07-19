@@ -21,7 +21,7 @@
 // journal protocol needed for ingestion. It is an ordinary service —
 // cold until an applet requires it or the operator enables it:
 //
-//	import _ "sxcli.dev/fw/sink/syslog"
+//	fw.Builder().Accept(syslog.ID, …)   // or any AcceptAll composition
 //	// then: mybox applet --enable syslog
 //
 // The sink is unavailable on non-unix platforms: importing the package

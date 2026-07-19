@@ -64,7 +64,8 @@ type Configurable interface {
 
 // Translator is the seam between Tr/TrN and an i18n catalog service.
 // The core itself depends on it: a service declares
-// Provides[Translator], and the core seeds it into every closure and
+// Provides(fw.Iface[Translator]()), and the core seeds it into every
+// closure and
 // runs its dependency subtree's Configured before anything renders —
 // on the --help and --write-config short-circuits too, which
 // otherwise run no lifecycle at all. Exactly one Translator may be

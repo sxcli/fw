@@ -17,7 +17,7 @@
 // ordinary service — cold until an applet requires it or the operator
 // enables it (core `enable`), exactly like the console sink now:
 //
-//	import _ "sxcli.dev/fw/sink/file"
+//	fw.Builder().Accept(file.ID, …)   // or any AcceptAll composition
 //	// then: mybox applet --enable logfile --logfile-path /var/log/box.log
 //
 // There is no rotation: the file is opened O_APPEND and external

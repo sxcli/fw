@@ -120,7 +120,7 @@ type Store interface{ Get(key string) string }
 
 type Serve struct {
 	cfg   Config
-	Store Store         `inject:""`          // first registered Store
+	Store Store         `inject:""`          // the accepted Store — a tie is a startup error, ranked by Order
 	Extra []slog.Handler `inject:";optional"` // all matching, if any
 }
 ```
