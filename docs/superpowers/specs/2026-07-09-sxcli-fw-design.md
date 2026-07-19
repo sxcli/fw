@@ -914,9 +914,12 @@ Decided since: the composite core (implemented — one namespace, two
 flat structs); the derivation grammar (`__` structural stitch, `_`
 in-name fold, separator-run ban — see The config struct above);
 `conf:` at depth unsupported with no escape hatch; the cutover itself
-(landed 2026-07-19, inside the breaking release train). Still open:
-whether a dedicated secret marker should replace the `dump:"-"`
-reuse.
+(landed 2026-07-19, inside the breaking release train); the Version
+mandate is UNIVERSAL with no opt-outs (2026-07-19: the promise-flag
+is a trap testifying against itself, and the files-suppressed
+carve-out saves one uint32 in a case nobody inhabits — cheapest
+insurance against the one hole proved fatal). Still open: whether a
+dedicated secret marker should replace the `dump:"-"` reuse.
 
 ### Config schema versioning & migration (decided 2026-07-18)
 
@@ -1583,9 +1586,10 @@ the checks tests cannot express.
 | Demo applet | undecided; will not mirror busybox applets |
 | Positional parsing/routing | RESOLVED 2026-07-19: declared positionals (see §6) — `fw.Positionals()` deleted, the tail is schema-owned |
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
-| Custom value parsers (e.g. `type UnixTime` with a user-provided parser service, discovered like format providers) | deliberately not in v1 — the converter is a single switch; a parser registry slots in front of it when someone actually needs one |
+| Custom value parsers | mechanics decided 2026-07-19, additive, post-train: composition-owned like format providers (a SERVICE in fw via Provides, a chain method standalone — never a global registry, that war was won), type-keyed with one-parser-per-type (collision = Build violation), entries carry BOTH directions (parse + format, else --write-config and help emit garbage) and per-source shape (arg string, env string, json value — one TextUnmarshaler across three sources is dubious, whole-struct values included) |
 | Embedded configs in the binary (e.g. a `go:embed`-ed default config compiled into the consumer's binary, lowest-priority file source before the on-disk locations) | future version; slots into the existing merge order as a pre-location source and needs no new precedence rules |
 | Async log sink decorator (bounded queue + writer goroutine wrapping any `slog.Handler`, drop-counting on overflow, flush on Stop) | deliberately not in v1 — the multihandler stays synchronous; decoupling is an opt-in wrapper service if the need materializes |
+| Bare-number durations | REFUSED as policy, revisit shape recorded 2026-07-19: there is NO standard (js=ms, Go=ns — viper casts 5000 to 5µs, shell=s); the refusal IS the never-silent feature. Near-term: the error message teaches ("bare numbers are ambiguous — write 5s or 5000ms"). If demand persists: DECLARED units, `FieldMetadata[time.Duration]{Unit: time.Millisecond}` — the author states what bare numbers mean per field, visible in help; the anti-viper answer to viper's convenience |
 | Showing defaults alongside effective values in `--help` (`value: X (default: Y)`) | deferred — needs a pre-merge snapshot in NewSchema (~20 lines, no API change); add when it earns its keep |
 | A core argument listing all registered applets (e.g. `--applets`) | future improvement — today the applet list only appears in dispatch-failure usage output |
 | Refusing to load group/world-**writable** configs (the injection vector — the read-side sibling of the pinned-location hardening; what sudoers/sshd refuse) | to be designed deliberately: unix-only, `/etc` + companion locations, XDG exempt (user-owned by definition), Windows ACLs out of scope |
