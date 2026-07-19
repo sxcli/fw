@@ -276,8 +276,9 @@ func applyObject(c *fail.Collector, fields []*Field, depth int, raw json.RawMess
 					target := leaf.root.Elem().FieldByIndex(leaf.Path)
 					if err := setFromJSON(target, value); err != nil {
 						c.Fail("config %s.%s: %v", where, key, err)
+						leaf.suspect = true
 					} else {
-						checkDomain(c, "config "+where+"."+key, leaf, target)
+						leaf.suspect = !checkDomain(c, "config "+where+"."+key, leaf, target)
 					}
 				}
 			} else if len(nested) > 0 {

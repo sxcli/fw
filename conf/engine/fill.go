@@ -168,18 +168,24 @@ func appendFromString(f reflect.Value, s string) error {
 // checkDomain enforces a field's closed value domain after a source
 // wrote to it: every value must be among Allowed. source labels the
 // writer for the violation ("--level", "$APP_LEVEL", "config app.level").
-func checkDomain(c *fail.Collector, source string, f *Field, target reflect.Value) {
+func checkDomain(c *fail.Collector, source string, f *Field, target reflect.Value) bool {
+	ok := true
 	if len(f.Allowed) > 0 {
 		if f.IsSlice {
 			for i := 0; i < target.Len(); i++ {
 				if !domainHas(f, target.Index(i)) {
 					c.Fail("%s: value %v is not among the allowed values %v", source, target.Index(i).Interface(), f.Allowed)
+					ok = false
 				}
 			}
 		} else if !domainHas(f, target) {
 			c.Fail("%s: value %v is not among the allowed values %v", source, target.Interface(), f.Allowed)
+			ok = false
 		}
 	}
+	// the write happened either way; ok reports whether the held value
+	// is trustworthy — callers fold it into the field's suspect mark
+	return ok
 }
 
 // domainHas reports membership; allowed values were converted to the

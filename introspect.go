@@ -160,13 +160,14 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 			fallback := &fail.Collector{}
 			var core engine.Core
 			var ctrl coreControls
+			var kn upgradeKnobs
 			root := i.rt.coreRoot(fallback, d, nil)
 			var res graph.Result
 			if fallback.Len() == 0 {
 				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
 			}
 			if fallback.Len() == 0 {
-				sch := engine.NewSchema(fallback, appletID, coreContribs(&core, &ctrl), sections(res.Ordered), i.rt.suppressed)
+				sch := engine.NewSchema(fallback, appletID, coreContribs(&core, &ctrl, &kn), sections(res.Ordered), i.rt.suppressed)
 				if fallback.Len() == 0 {
 					out = argInfos(sch)
 				}

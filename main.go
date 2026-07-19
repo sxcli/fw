@@ -229,9 +229,17 @@ type invocationPlan struct {
 	files *engine.Files
 	core  engine.Core
 	ctrl  coreControls
+	kn    upgradeKnobs
 	ctl   graph.Controls
 	res   graph.Result
 	sch   *engine.Schema
+
+	// peek-authoritative serve requests: all argument-only, so the
+	// lenient peek is their source of truth even when later stages die
+	help     bool
+	validate bool
+	upgrade  bool
+	target   string // --config at peek time, the upgrade target
 }
 
 // coreControls is the framework's contribution to the composite core
@@ -252,10 +260,19 @@ var controlsMeta = &engine.Meta{Fields: map[string]engine.FieldMeta{
 	"Enable":  {Hint: engine.HintServiceID},
 }}
 
+// upgradeKnobs is the framework's serving of the --upgrade-config
+// tool flags: run-scoped, argument-only, mirrored from the front
+// door's — each door owns its surface.
+type upgradeKnobs struct {
+	UpgradeConfig bool     `json:"upgradeConfig" conf:"upgrade-config" dump:"-" env:"-" usage:"migrate the --config file's sections to their current schema versions and exit"`
+	FromVersion   []string `json:"fromVersion" conf:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
+}
+
 // coreContribs assembles the composite core: the engine's knobs
-// first (its short forms win), the framework's controls second.
-func coreContribs(core *engine.Core, ctrl *coreControls) []engine.Contribution {
-	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}}
+// first (its short forms win), the framework's controls and tool
+// knobs after.
+func coreContribs(core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) []engine.Contribution {
+	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}, {Ptr: kn}}
 }
 
 // sections maps a resolved closure to config sections: the primary
@@ -266,7 +283,8 @@ func sections(ordered []graph.Member) []engine.Section {
 	for _, m := range ordered {
 		if m.Desc.ConfigPtr != nil {
 			meta, _ := m.Desc.Metadata.(*engine.Meta)
-			out = append(out, engine.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta})
+			steps, _ := m.Desc.Migrations.([]engine.Step)
+			out = append(out, engine.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta, Steps: steps})
 		}
 	}
 	return out
@@ -298,12 +316,23 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	before := c.Len()
 	var peek engine.Core
 	var peekCtrl coreControls
-	engine.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl))
+	var peekKn upgradeKnobs
+	engine.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl, &peekKn))
+	p.help = peek.Help
+	p.validate = peek.ValidateConfig
+	p.target = peek.Config
+	if peekKn.UpgradeConfig && c.Len() == before {
+		// the pure file transform never loads configuration; the rest
+		// of the plan is not its business
+		p.upgrade = true
+		p.kn = peekKn
+		return p
+	}
 	if c.Len() == before {
 		p.files = engine.LoadFiles(c, p.src, rt.explicitPath(peek))
 	}
 	if c.Len() == before {
-		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, &p.ctrl))
+		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, &p.ctrl, &p.kn))
 		p.ctl = rt.controls(c, p.ctrl)
 	}
 	if c.Len() == before {
@@ -319,7 +348,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = engine.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl), sections(p.res.Ordered), rt.suppressed)
+		p.sch = engine.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl, &p.kn), sections(p.res.Ordered), rt.suppressed)
 	}
 	return p
 }
@@ -329,6 +358,15 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, applet Applet, args []string) int {
 	code := 2
 	p := rt.plan(rt.c, d, args)
+	if p.upgrade {
+		if rt.c.Len() == 0 {
+			rt.upgradeConfig(d, p)
+		}
+		if rt.c.Len() > 0 {
+			return rt.report(buffer)
+		}
+		return 0
+	}
 	if rt.c.Len() == 0 {
 		keep := map[string]bool{}
 		for _, m := range p.res.Ordered {
@@ -343,8 +381,11 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 		if rt.c.Len() == 0 {
 			positionals = loaded.Positionals
 			pre := rt.prepareTranslator(p.res)
-			if p.core.Help {
+			if p.help {
 				code = rt.help(p.sch)
+			} else if p.validate {
+				// load-but-never-run: every check passed, say nothing
+				code = 0
 			} else if p.core.WriteConfig {
 				code = rt.writeConfig(p.sch, p.core.Config, p.src)
 			} else {
@@ -354,8 +395,62 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 	}
 	if rt.c.Len() > 0 {
 		code = rt.report(buffer)
+		if p.help {
+			// best-effort by decree: the violations are reported, the
+			// schema still renders, and the run counts as served
+			rt.help(rt.helpSchema(d, p))
+			code = 0
+		}
 	}
 	return code
+}
+
+// helpSchema delivers the best schema a violated plan allows: the
+// planned one when it exists (its values marked suspect where sources
+// erred), else the registration-level fallback the Introspector's
+// Arguments already uses — resolved with empty controls, no sources
+// applied, values showing factory defaults.
+func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine.Schema {
+	if p.sch != nil {
+		return p.sch
+	}
+	fallback := &fail.Collector{}
+	var core engine.Core
+	var ctrl coreControls
+	var kn upgradeKnobs
+	root := rt.coreRoot(fallback, d, nil)
+	var res graph.Result
+	if fallback.Len() == 0 {
+		res = graph.Resolve(fallback, rt.reg, root, graph.Controls{})
+	}
+	return engine.NewSchema(fallback, primaryAlias(d), coreContribs(&core, &ctrl, &kn), sections(res.Ordered), rt.suppressed)
+}
+
+// upgradeConfig serves --upgrade-config: the schema is built from the
+// WHOLE catalog — the file being transformed serves the whole binary,
+// not one applet's closure — and the transform runs against the
+// explicit --config target.
+func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
+	if p.target == "" {
+		rt.c.Fail("upgrade-config requires an explicit --config target")
+		return
+	}
+	from, bare := engine.ParseFromVersions(rt.c, p.kn.FromVersion)
+	var core engine.Core
+	var ctrl coreControls
+	var kn upgradeKnobs
+	var all []engine.Section
+	for _, member := range rt.reg.All() {
+		if member.ConfigPtr != nil {
+			meta, _ := member.Metadata.(*engine.Meta)
+			steps, _ := member.Migrations.([]engine.Step)
+			all = append(all, engine.Section{Name: primaryAlias(member), Ptr: member.ConfigPtr, Meta: meta, Steps: steps})
+		}
+	}
+	sch := engine.NewSchema(rt.c, primaryAlias(d), coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
+	if rt.c.Len() == 0 {
+		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
+	}
 }
 
 // prepared records the outcome of the translator-first Configured

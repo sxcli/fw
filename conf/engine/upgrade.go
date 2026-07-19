@@ -21,6 +21,8 @@ import (
 	"log/slog"
 	"os"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"sxcli.dev/fw/internal/fail"
 )
@@ -102,6 +104,35 @@ func (s *Schema) UpgradeFile(c *fail.Collector, path string, from map[string]uin
 	if c.Len() == 0 {
 		s.writeUpgraded(c, path, out, src)
 	}
+}
+
+// ParseFromVersions parses --from-version entries: repeatable
+// "section=N" pairs plus at most one bare "N" (the single-section
+// sugar). Violations land in c; both doors share this grammar.
+func ParseFromVersions(c *fail.Collector, entries []string) (map[string]uint32, *uint32) {
+	from := map[string]uint32{}
+	var bare *uint32
+	for _, entry := range entries {
+		section, value, scoped := strings.Cut(entry, "=")
+		if !scoped {
+			section, value = "", entry
+		}
+		n, err := strconv.ParseUint(value, 10, 32)
+		if err != nil || n == 0 {
+			c.Fail("from-version %q: versions are positive integers", entry)
+		} else if section == "" {
+			if bare != nil {
+				c.Fail("from-version: only one bare assertion is possible")
+			}
+			v := uint32(n)
+			bare = &v
+		} else if _, dup := from[section]; dup {
+			c.Fail("from-version: %q is asserted twice", section)
+		} else {
+			from[section] = uint32(n)
+		}
+	}
+	return from, bare
 }
 
 // bareTarget resolves the bare --from-version assertion: legal only

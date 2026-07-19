@@ -1025,9 +1025,12 @@ implementation forced:
   start above 1 — older = "no longer supported (oldest supported N)".
 - Placement: `engine.Step`/`NewStep` + `Section.Steps` + validation in
   `NewSchema`; front door `conf.Step(1, func(old V1) V2)` (the spec's
-  exact spelling) + `.Migrate(section, steps...)`. Open: the fw
-  registration-chain `.Migrate` forwarding into the descriptor →
-  Section mapping — composes on this substrate, not yet built.
+  exact spelling) + `.Migrate(section, steps...)`. The fw
+  registration-chain `.Migrate` landed at the parity pass
+  (2026-07-19): steps ride the descriptor opaquely (the registry stays
+  engine-ignorant, the Metadata pattern), `fw.Step` mirrors
+  `conf.Step`, and a `Migrate` on a bare registration is a commit
+  violation.
 
 ### --upgrade-config (designed AND implemented 2026-07-18)
 
@@ -1068,14 +1071,40 @@ $ mytool --upgrade-config --config /etc/mytool/config.json \
   `--write-config` wrote before the mandate existed, and hand-written
   full configs. Genuine partials keep their honest path: stay
   versionless, stay current-dialect, get fixed by hand on a rename.
-- Mechanically: the knobs (`upgradeKnobs`) are a FRONT-DOOR-ONLY core
-  contribution, not engine.Core fields — a framework binary that does
-  not serve them never parses them (a flag that parses but silently
-  does nothing is worse than an unknown argument). The transform is
+- Mechanically: each door carries its own `upgradeKnobs` core
+  contribution, never engine.Core fields — a binary that does not
+  serve them never parses them (a flag that parses but silently does
+  nothing is worse than an unknown argument). The transform is
   `engine.UpgradeFile` (foreign sections pass through verbatim, file
   mode preserved, current-version sections strict-reparsed and
-  restamped); fw grows its own serving + contribution at the parity
-  pass.
+  restamped); `--from-version` parsing is shared
+  (`engine.ParseFromVersions`). fw serves since the parity pass
+  (2026-07-19): the transform short-circuits at peek, and its schema
+  covers the WHOLE catalog — the file serves the whole binary, not
+  one applet's closure.
+
+### --validate-config and best-effort --help (decided AND implemented 2026-07-19)
+
+`--help` is best-effort in BOTH doors: the pipeline runs in full,
+every check fires, every violation lands on stderr — but their
+presence no longer withholds the help or flips the exit code; the run
+was served, exit 0. Help's value column is best-effort truth by
+declared policy: a field whose LAST source write errored shows
+`error` instead of a half-applied fiction (the `suspect` mark — set
+on a failed write, cleared by a later clean one, so precedence keeps
+the column honest); when the plan died before a schema existed, fw
+falls back to the registration-level schema the Introspector's
+Arguments already uses, values showing factory defaults. The
+structure of the surface never degrades — it is compiled in.
+
+`--validate-config` is the machine-checkable sibling: run every
+configuration check, report, exit — load-but-never-run. A clean
+config serves silently (exit 0); a violated one takes the normal
+failure road (exit 2, violations reported). It runs the config layer
+only — never `Configured()`, which is user code with side effects.
+Run-scoped, argument-only, suppressible in both doors
+(`FeatureValidateConfig`; `FeatureUpgradeConfig` suppresses
+`from-version` along, since it is inert alone).
 
 ### Sources & precedence (least → most important)
 
@@ -1535,5 +1564,5 @@ the checks tests cannot express.
 | Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
 | Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
-| `sxcli.dev/conf` extraction (the config engine as a standalone module) | STAGED: `sxcli.dev/fw/conf` (front door: Builder/New/Build/Load, no Collector in its signature) over `sxcli.dev/fw/conf/engine` (machinery + production wiring), both public since 2026-07-18; the module split at the v1 horizon is an import-path rename of the pair; open before shipping: positional semantics, whether fw's own --help goes best-effort to match the front door |
+| `sxcli.dev/conf` extraction (the config engine as a standalone module) | STAGED: `sxcli.dev/fw/conf` (front door: Builder/New/Build/Load, no Collector in its signature) over `sxcli.dev/fw/conf/engine` (machinery + production wiring), both public since 2026-07-18; the module split at the v1 horizon is an import-path rename of the pair; open before shipping: positional semantics (--help parity RESOLVED 2026-07-19: both doors best-effort) |
 | Config schema versioning & migration chain | DESIGNED 2026-07-18 (§6): mandated `Version uint32` + typed per-section `conf.Step` chain, version-implies-complete, migrate-then-merge; supersedes the earlier "renamed from" metadata idea; lands with the conf pipeline promotion |

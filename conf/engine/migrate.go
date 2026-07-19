@@ -175,7 +175,7 @@ func (s *Schema) migrate(c *fail.Collector, ch *chain, raw json.RawMessage, path
 		if !f.Transient {
 			target := f.root.Elem().FieldByIndex(f.Path)
 			target.Set(migrated.FieldByIndex(f.Path))
-			checkDomain(c, where, f, target)
+			f.suspect = !checkDomain(c, where, f, target)
 		}
 	}
 }

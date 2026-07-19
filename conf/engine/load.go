@@ -73,8 +73,9 @@ func (s *Schema) applyEnv(c *fail.Collector, lookup func(string) (string, bool))
 						}
 						if err != nil {
 							c.Fail("$%s: %v", f.EnvName, err)
+							f.suspect = true
 						} else {
-							checkDomain(c, "$"+f.EnvName, f, target)
+							f.suspect = !checkDomain(c, "$"+f.EnvName, f, target)
 						}
 					}
 				}

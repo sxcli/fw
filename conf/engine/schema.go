@@ -369,7 +369,13 @@ func (s *Schema) HelpSections() []HelpSection {
 func (s *Schema) Value(f *Field) any {
 	var out any
 	if _, owned := s.owner[f]; owned {
-		out = fieldValue(f.root.Elem().FieldByIndex(f.Path))
+		if f.suspect {
+			// the last source write to this field errored: showing the
+			// half-applied value would be fiction
+			out = "error"
+		} else {
+			out = fieldValue(f.root.Elem().FieldByIndex(f.Path))
+		}
 	}
 	return out
 }

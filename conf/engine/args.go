@@ -157,17 +157,22 @@ func (p *argParser) set(f *Field, display, value string) {
 			target.Set(reflect.MakeSlice(target.Type(), 0, 4))
 		}
 		err = appendFromString(target, value)
-		if err == nil && len(f.Allowed) > 0 && !domainHas(f, target.Index(target.Len()-1)) {
-			p.fail("%s: value %v is not among the allowed values %v", display, target.Index(target.Len()-1).Interface(), f.Allowed)
+		if err == nil {
+			f.suspect = false
+			if len(f.Allowed) > 0 && !domainHas(f, target.Index(target.Len()-1)) {
+				p.fail("%s: value %v is not among the allowed values %v", display, target.Index(target.Len()-1).Interface(), f.Allowed)
+				f.suspect = true
+			}
 		}
 	} else {
 		err = setFromString(target, value)
 		if err == nil {
-			checkDomain(p.c, display, f, target)
+			f.suspect = !checkDomain(p.c, display, f, target)
 		}
 	}
 	if err != nil {
 		p.fail("%s: %v", display, err)
+		f.suspect = true
 	}
 }
 

@@ -540,3 +540,42 @@ func TestMarshalIndentSkipsEmptyNestedObjects(t *testing.T) {
 		t.Errorf("an all-empty nested object must be omitted:\n%s", out)
 	}
 }
+
+// The suspect mark: a source error poisons the value column, a later
+// clean write from a higher-precedence source clears it.
+func TestSuspectMarksAndClears(t *testing.T) {
+	cfg := &loadSink{Version: 1}
+	disk := map[string]string{"/etc/cat/config.json": `{"filesink": {"backups": "not-a-number"}}`}
+	src := Sources{
+		Locations: []Location{{Base: "/etc/cat/config"}},
+		Stat:      fakeStat(disk),
+		Open:      fakeFS(disk),
+	}
+	files := mustLoadFiles(t, src, "")
+	c := &fail.Collector{}
+	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
+	s.Apply(c, files, src)
+	if c.Len() == 0 {
+		t.Fatal("the type error must be a violation")
+	}
+	var backups *Field
+	for _, svc := range s.services {
+		for _, f := range svc.fields {
+			if f.Name == "Backups" {
+				backups = f
+			}
+		}
+	}
+	if s.Value(backups) != "error" {
+		t.Errorf("a source-errored field must answer 'error': %v", s.Value(backups))
+	}
+	// same schema, env heals the field: the mark clears
+	c2 := &fail.Collector{}
+	s.applyEnv(c2, env(map[string]string{"CAT__FILESINK__BACKUPS": "5"}))
+	if c2.Len() != 0 {
+		t.Fatalf("unexpected env errors: %v", c2.All())
+	}
+	if s.Value(backups) != int(5) && s.Value(backups) != 5 {
+		t.Errorf("a clean later write must clear the mark: %v", s.Value(backups))
+	}
+}

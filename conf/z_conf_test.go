@@ -308,3 +308,20 @@ func TestUpgradeConfigRequiresTarget(t *testing.T) {
 		t.Errorf("the missing target must be the violation: %v", err)
 	}
 }
+
+func TestValidateConfigServesOrFails(t *testing.T) {
+	w := &world{}
+	_, served := w.loader(t, &toolCfg{Version: 1}, []string{"--validate-config"}, nil, nil).Load()
+	if !served {
+		t.Fatal("a clean config must validate as served")
+	}
+	files := map[string]string{"/etc/mytool/config.json": `{"nope": true}`}
+	w2 := &world{}
+	ldr, served := w2.loader(t, &toolCfg{Version: 1}, []string{"--validate-config"}, files, nil).Load()
+	if served {
+		t.Fatal("a violated config must not serve")
+	}
+	if _, err := ldr.Result(); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Errorf("the violations are the verdict: %v", err)
+	}
+}

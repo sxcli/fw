@@ -43,8 +43,6 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"strconv"
-	"strings"
 
 	"sxcli.dev/fw/conf/engine"
 	"sxcli.dev/fw/internal/fail"
@@ -79,6 +77,11 @@ const (
 	FeatureWriteConfig Feature = "write-config"
 	// FeatureHelp is the --help,-h argument.
 	FeatureHelp Feature = "help"
+	// FeatureValidateConfig is the --validate-config argument.
+	FeatureValidateConfig Feature = "validate-config"
+	// FeatureUpgradeConfig is the --upgrade-config tool, its
+	// --from-version companion included (inert alone).
+	FeatureUpgradeConfig Feature = "upgrade-config"
 
 	// FeatureCompanionConfig is the pinned config next to the real
 	// binary — a portable-app pattern; rarely wanted on unix.
@@ -259,6 +262,16 @@ func (l *Loader) Load() (*Loader, bool) {
 					sch.WriteHelp(l.stdout)
 					l.restore(saved)
 					l.served = true
+				} else if peek.ValidateConfig {
+					// load-but-never-run: a clean config serves (exit
+					// 0), a violated one takes the normal failure road
+					// and Result carries the verdict
+					l.restore(saved)
+					if err != nil {
+						l.err = err
+					} else {
+						l.served = true
+					}
 				} else if peek.WriteConfig && err == nil {
 					if werr := sch.WriteMerged(l.stdout, peek.Config, src); werr == nil {
 						l.restore(saved)
@@ -288,28 +301,7 @@ func (l *Loader) upgrade(c *fail.Collector, src engine.Sources, peek engine.Core
 	if peek.Config == "" {
 		c.Fail("upgrade-config requires an explicit --config target")
 	}
-	from := map[string]uint32{}
-	var bare *uint32
-	for _, entry := range knobs.FromVersion {
-		section, value, scoped := strings.Cut(entry, "=")
-		if !scoped {
-			section, value = "", entry
-		}
-		n, err := strconv.ParseUint(value, 10, 32)
-		if err != nil || n == 0 {
-			c.Fail("from-version %q: versions are positive integers", entry)
-		} else if section == "" {
-			if bare != nil {
-				c.Fail("from-version: only one bare assertion is possible")
-			}
-			v := uint32(n)
-			bare = &v
-		} else if _, dup := from[section]; dup {
-			c.Fail("from-version: %q is asserted twice", section)
-		} else {
-			from[section] = uint32(n)
-		}
-	}
+	from, bare := engine.ParseFromVersions(c, knobs.FromVersion)
 	var core engine.Core
 	var up upgradeKnobs
 	sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.rootSection(), src.SuppressCore)
@@ -344,6 +336,9 @@ func (l *Loader) sources() engine.Sources {
 			src.LookupEnv = nil
 		} else if !tierFeatures[f] {
 			src.SuppressCore = append(src.SuppressCore, string(f))
+			if f == FeatureUpgradeConfig {
+				src.SuppressCore = append(src.SuppressCore, "from-version")
+			}
 		}
 	}
 	src.Providers = append(src.Providers, l.provs...)

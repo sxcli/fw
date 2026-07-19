@@ -84,9 +84,10 @@ const DefaultMaxSize = 1 << 20
 // passes every gate). Anything else under "core" — the framework's
 // service controls, say — arrives as a further Contribution.
 type Core struct {
-	Config      string `json:"config" conf:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
-	WriteConfig bool   `json:"writeConfig" conf:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
-	Help        bool   `json:"help" conf:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
+	Config         string `json:"config" conf:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
+	WriteConfig    bool   `json:"writeConfig" conf:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
+	Help           bool   `json:"help" conf:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
+	ValidateConfig bool   `json:"validateConfig" conf:"validate-config" dump:"-" env:"-" usage:"run every configuration check, report the violations and exit"`
 }
 
 // Contribution is one flat struct claiming keys under the composite
@@ -166,7 +167,8 @@ type Field struct {
 	Doc       string
 	Hint      ValueHint // advisory value denotation from registration metadata
 
-	root reflect.Value // the config struct this field lives in (its *Struct value)
+	root    reflect.Value // the config struct this field lives in (its *Struct value)
+	suspect bool          // the last source write to this field errored; its held value is not trustworthy
 }
 
 // serviceSchema is the schema of one config struct under its section

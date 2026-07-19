@@ -43,6 +43,7 @@ type Registration[T any] struct {
 	aliases   []string     // primary first
 	provides  []reflect.Type
 	metadata  *Metadata
+	steps     []engine.Step
 	hidden    bool
 	system    bool
 	committed bool
@@ -95,6 +96,23 @@ func (r *Registration[T]) Alias(names ...string) *Registration[T] {
 // violation at the Register commit.
 func (r *Registration[T]) Provides(types ...reflect.Type) *Registration[T] {
 	r.provides = append(r.provides, types...)
+	return r
+}
+
+// Step declares one link of a config migration chain: the typed
+// conversion from schema version `from` to the next. Old versions
+// live on as plain json-only types:
+//
+//	fw.Step(1, func(old ConfigV1) ConfigV2 { … })
+func Step[From, To any](from uint32, fn func(From) To) engine.Step {
+	return engine.NewStep(from, fn)
+}
+
+// Migrate attaches the service's config migration chain, oldest step
+// first — how a schema evolves without stranding deployed files. The
+// chain shape is validated when each invocation's schema is built.
+func (r *Registration[T]) Migrate(steps ...engine.Step) *Registration[T] {
+	r.steps = append(r.steps, steps...)
 	return r
 }
 
@@ -172,6 +190,9 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	if r.cfgType != nil && r.access == nil {
 		c.Fail("service %q: nil config accessor — use NewBareRegistration for config-less services", r.id)
 	}
+	if len(r.steps) > 0 && r.cfgType == nil {
+		c.Fail("service %q: Migrate requires a config struct — a bare registration has no schema to evolve", r.id)
+	}
 	if r.cfgType != nil {
 		// tag and field-type validation, type-level: the registration
 		// list promises "malformed tags" at registration, not at the
@@ -192,14 +213,15 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		r.committed = true
 		factory, access := r.factory, r.access
 		reg.Commit(&registry.Descriptor{
-			ID:       r.id,
-			Concrete: concrete,
-			Provides: append([]reflect.Type(nil), r.provides...),
-			Metadata: meta,
-			Hidden:   r.hidden || r.system,
-			System:   r.system,
-			Aliases:  append([]string(nil), r.aliases...),
-			CfgType:  r.cfgType,
+			ID:         r.id,
+			Concrete:   concrete,
+			Provides:   append([]reflect.Type(nil), r.provides...),
+			Metadata:   meta,
+			Hidden:     r.hidden || r.system,
+			System:     r.system,
+			Aliases:    append([]string(nil), r.aliases...),
+			CfgType:    r.cfgType,
+			Migrations: append([]engine.Step(nil), r.steps...),
 			Make: func() (any, any) {
 				inst := factory()
 				var cfgPtr any

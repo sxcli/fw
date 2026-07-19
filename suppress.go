@@ -34,6 +34,11 @@ const (
 	// FeatureHelp is the --help,-h argument (argument-only: help has
 	// no environment door).
 	FeatureHelp
+	// FeatureValidateConfig is the --validate-config argument.
+	FeatureValidateConfig
+	// FeatureUpgradeConfig is the --upgrade-config tool, its
+	// --from-version companion included (inert alone).
+	FeatureUpgradeConfig
 	// FeatureSCMDebug is the windows-only --scm-debug argument: it runs
 	// the service pipeline under svc/debug outside the service manager,
 	// for testing. It is argument-only (never env or config file,
@@ -46,12 +51,14 @@ const (
 // coreFeatureLongs maps features to the long argument names of the
 // core's config fields.
 var coreFeatureLongs = map[CoreFeature]string{
-	FeatureConfigFile:  "config",
-	FeatureWriteConfig: "write-config",
-	FeatureDisable:     "disable",
-	FeatureEnable:      "enable",
-	FeatureOverride:    "override",
-	FeatureHelp:        "help",
+	FeatureConfigFile:     "config",
+	FeatureWriteConfig:    "write-config",
+	FeatureDisable:        "disable",
+	FeatureEnable:         "enable",
+	FeatureOverride:       "override",
+	FeatureHelp:           "help",
+	FeatureValidateConfig: "validate-config",
+	FeatureUpgradeConfig:  "upgrade-config",
 }
 
 // suppressedCore holds the long names of suppressed core fields; Main
@@ -116,6 +123,9 @@ func Suppress(features ...CoreFeature) {
 			}
 			if !dup {
 				suppressedCore = append(suppressedCore, long)
+				if feature == FeatureUpgradeConfig {
+					suppressedCore = append(suppressedCore, "from-version")
+				}
 			}
 		} else {
 			defaultCollector.Fail("Suppress: unknown core feature %d", feature)
