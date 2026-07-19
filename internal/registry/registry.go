@@ -173,12 +173,29 @@ func parseInjectTag(tag string) ([]string, bool, error) {
 	return ids, optional, err
 }
 
-// isValidID reports whether id is a non-empty, all-lowercase go
-// identifier (the blank identifier "_" is not a service id).
+// isValidID reports whether id is a legal service id: path-shaped,
+// lowercase segments of letters, digits, '.', '-' and '_', each
+// segment non-empty and starting with a letter or digit — the SAME
+// grammar the root package's registration commit enforces
+// (validServiceID); an inject tag must be able to reference every
+// legally registered service.
 func isValidID(id string) bool {
 	valid := id != "" && id != "_"
-	for i, c := range id {
-		valid = valid && (c == '_' || 'a' <= c && c <= 'z' || i > 0 && ('0' <= c && c <= '9' || c == '.' || c == '-' || c == '/'))
+	start := true
+	for _, c := range id {
+		if c == '/' {
+			if start {
+				return false // empty segment
+			}
+			start = true
+			continue
+		}
+		if start {
+			valid = valid && ('a' <= c && c <= 'z' || '0' <= c && c <= '9')
+			start = false
+		} else {
+			valid = valid && ('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '.' || c == '-' || c == '_')
+		}
 	}
-	return valid
+	return valid && !start
 }

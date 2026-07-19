@@ -218,3 +218,42 @@ func TestHelpRendersPositionalContract(t *testing.T) {
 		t.Errorf("help must render the positional contract:\n%s", w.stdout.String())
 	}
 }
+
+type twinCfg struct {
+	Version uint32 `json:"version"`
+	Same    string `json:"same" conf:"same" usage:"the shared long"`
+}
+
+type twinService struct{ cfg twinCfg }
+
+type twinBrother struct{ cfg twinCfg }
+
+func TestUpgradeConfigToleratesCrossClosureDuplicates(t *testing.T) {
+	// two services sharing a long is legal as long as no composed
+	// closure holds both; the transform spans the whole catalog, so
+	// its schema must not enforce closure-scoped uniqueness
+	path := filepath.Join(t.TempDir(), "config.json")
+	content := `{"twina": {"version": 1, "same": "a"}, "twinb": {"version": 1, "same": ""}}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w := newWorld(t, []string{"bin", "--upgrade-config", "--config", path}, nil, nil)
+	w.applet(0)
+	ta := &twinService{cfg: twinCfg{Version: 1}}
+	tb := &twinBrother{cfg: twinCfg{Version: 1}}
+	NewRegistration("twina", func() *twinService { return ta },
+		func(x *twinService) *twinCfg { return &x.cfg }).
+		Alias("twina").registerInto(w.cat, w.c)
+	NewRegistration("twinb", func() *twinBrother { return tb },
+		func(x *twinBrother) *twinCfg { return &x.cfg }).
+		Alias("twinb").registerInto(w.cat, w.c)
+	w.rt.stat = engine.StatRegular
+	w.rt.open = func(p string) (io.ReadCloser, error) { return os.Open(p) }
+	if code := w.run(); code != 0 {
+		t.Fatalf("duplicate longs across sections must not fail the transform: exit %d\n%s", code, w.stderr.String())
+	}
+	out, _ := os.ReadFile(path)
+	if !strings.Contains(string(out), `"same": "a"`) || !strings.Contains(string(out), `"same": ""`) {
+		t.Errorf("both sections must survive complete, zeros included: %s", out)
+	}
+}

@@ -47,7 +47,7 @@ type ArgInfo struct {
 // composition, for services that implement completions, documentation
 // generators and similar meta features outside the core. There is
 // exactly one: the core constructs and registers it itself under the
-// reserved id "introspection" — it reports the composition truth, and
+// alias "introspection" (id sxcli.dev/fw/introspection) — it reports the composition truth, and
 // truth does not federate. Consumers inject it by concrete type:
 //
 //	type CompletionApplet struct {
@@ -78,7 +78,7 @@ func (i *Introspector) Applets() []string {
 
 // SingleApplet reports the applet that would run with no selector
 // word: in single-applet mode — exactly one non-System applet
-// registered — its id and true, otherwise "" and false. This is
+// registered — its primary alias and true, otherwise "" and false. This is
 // dispatch-mode truth straight from the dispatch rules, and consumers
 // must not re-derive it from Applets: that listing is public-only,
 // while a Hidden non-System applet still counts for the mode.
@@ -153,9 +153,12 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 	} else {
 		c := &fail.Collector{}
 		p := i.rt.plan(c, d, args)
-		if c.Len() == 0 {
+		if c.Len() == 0 && p.sch != nil {
 			out = argInfos(p.sch)
 		} else {
+			// an --upgrade-config plan carries no schema (the pure
+			// transform never loads); introspection treats the token
+			// as inert data and answers registration-level
 			err = errors.Join(c.All()...)
 			fallback := &fail.Collector{}
 			var core engine.Core
@@ -167,7 +170,7 @@ func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, err
 				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
 			}
 			if fallback.Len() == 0 {
-				sch := engine.NewSchema(fallback, appletID, coreContribs(&core, &ctrl, &kn), sections(res.Ordered), i.rt.suppressed)
+				sch := engine.NewSchema(fallback, primaryAlias(d), coreContribs(&core, &ctrl, &kn), sections(res.Ordered), i.rt.suppressed)
 				if fallback.Len() == 0 {
 					out = argInfos(sch)
 				}

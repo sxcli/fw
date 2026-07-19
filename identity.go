@@ -77,10 +77,15 @@ func primaryAlias(d *registry.Descriptor) string {
 // Hyphens are legal here — env-var derivation maps them to
 // underscores, so "cherry-pick" is finally a command name.
 func validAlias(a string) bool {
-	ok := a != "" && a[0] >= 'a' && a[0] <= 'z'
+	// consecutive hyphens would forge a __ path boundary in derived
+	// environment names, and a trailing hyphen folds ambiguously —
+	// both are engine violations later; catching them here keeps
+	// "malformed alias" a registration-time verdict
+	ok := a != "" && a[0] >= 'a' && a[0] <= 'z' && a[len(a)-1] != '-'
 	for i := 1; i < len(a) && ok; i++ {
 		ch := a[i]
 		ok = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-'
+		ok = ok && !(ch == '-' && a[i-1] == '-')
 	}
 	return ok
 }

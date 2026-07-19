@@ -6,4 +6,4 @@ require golang.org/x/sys v0.47.0
 
 require github.com/goccy/go-yaml v1.19.2 // indirect
 
-require sxcli.dev/conf v0.1.0
+require sxcli.dev/conf v0.1.1

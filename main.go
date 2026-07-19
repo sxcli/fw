@@ -106,19 +106,23 @@ func run(rt *runtime) int {
 // the two disjoint (ids are path-shaped); the pathological tie — the
 // string naming one service's alias and a DIFFERENT service's id — is
 // a loud violation, never a silent pick.
-func (rt *runtime) resolveRef(c *fail.Collector, ref string) (*registry.Descriptor, bool) {
+func (rt *runtime) resolveRef(c *fail.Collector, ref string) (*registry.Descriptor, bool, bool) {
 	byAlias, aliasHit := rt.byAlias[ref]
 	byID, idHit := rt.reg.ByID(ref)
 	var out *registry.Descriptor
 	ok := false
+	tied := false
 	if aliasHit && idHit && byAlias != byID {
+		// reported here, in full; a caller adding "unknown service"
+		// would be lying — the ref is over-known, not unknown
 		c.Fail("%q names the alias of %q and the id of %q — say which", ref, byAlias.ID, byID.ID)
+		tied = true
 	} else if aliasHit {
 		out, ok = byAlias, true
 	} else if idHit {
 		out, ok = byID, true
 	}
-	return out, ok
+	return out, ok, tied
 }
 
 // dispatch picks the applet per the spec rules: single-applet mode
@@ -338,7 +342,20 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = engine.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl, &p.kn), sections(p.res.Ordered), rt.suppressed)
+		// sections in COMPOSED order (Order sequence, then id): the
+		// spec promises Order drives listings, help sections included;
+		// resolution order is dependency order, not listing order
+		keep := map[string]bool{}
+		for _, m := range p.res.Ordered {
+			keep[m.Desc.ID] = true
+		}
+		var members []graph.Member
+		for _, d := range rt.reg.All() {
+			if keep[d.ID] {
+				members = append(members, graph.Member{Desc: d})
+			}
+		}
+		p.sch = engine.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl, &p.kn), sections(members), rt.suppressed)
 	}
 	return p
 }
@@ -376,13 +393,14 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 				rt.c.Fail("unexpected positional %q — the applet declares no pos fields", loaded.Positionals[0])
 			}
 		}
-		if rt.c.Len() == 0 {
+		if rt.c.Len() == 0 && p.validate {
+			// load-but-never-run: every check passed, say nothing —
+			// and NOTHING ran: not even the translator's Configured
+			code = 0
+		} else if rt.c.Len() == 0 {
 			pre := rt.prepareTranslator(p.res)
 			if p.help {
 				code = rt.help(p.sch)
-			} else if p.validate {
-				// load-but-never-run: every check passed, say nothing
-				code = 0
 			} else if p.core.WriteConfig {
 				code = rt.writeConfig(p.sch, p.core.Config, p.src)
 			} else {
@@ -444,7 +462,11 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 			all = append(all, engine.Section{Name: primaryAlias(member), Ptr: member.ConfigPtr, Meta: meta, Steps: steps})
 		}
 	}
-	sch := engine.NewSchema(rt.c, primaryAlias(d), coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
+	// a FILE schema: sections, chains and fields only — argument and
+	// environment uniqueness is closure-scoped by spec and irrelevant
+	// to a file transform (two applets with disjoint closures may both
+	// say conf:"port"; their shared file must still upgrade)
+	sch := engine.NewFileSchema(rt.c, primaryAlias(d), coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
 	if rt.c.Len() == 0 {
 		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
 	}
@@ -669,16 +691,16 @@ func (rt *runtime) explicitPath(peek engine.Core) string {
 func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls {
 	ctl := graph.Controls{}
 	for _, ref := range ctrl.Disable {
-		if d, ok := rt.resolveRef(c, ref); ok {
+		if d, ok, tied := rt.resolveRef(c, ref); ok {
 			ctl.Disable = append(ctl.Disable, d.ID)
-		} else {
+		} else if !tied {
 			c.Fail("disable: unknown service %q", ref)
 		}
 	}
 	for _, ref := range ctrl.Enable {
-		if d, ok := rt.resolveRef(c, ref); ok {
+		if d, ok, tied := rt.resolveRef(c, ref); ok {
 			ctl.Enable = append(ctl.Enable, d.ID)
-		} else {
+		} else if !tied {
 			c.Fail("enable: unknown service %q", ref)
 		}
 	}
@@ -688,12 +710,12 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 			if ctl.Override == nil {
 				ctl.Override = map[string]string{}
 			}
-			if fromD, ok := rt.resolveRef(c, from); ok {
+			if fromD, ok, _ := rt.resolveRef(c, from); ok {
 				from = fromD.ID
 			}
-			if toD, ok := rt.resolveRef(c, to); ok {
+			if toD, ok, tied := rt.resolveRef(c, to); ok {
 				ctl.Override[from] = toD.ID
-			} else {
+			} else if !tied {
 				c.Fail("override: unknown substitute %q for %q", to, from)
 			}
 		} else {

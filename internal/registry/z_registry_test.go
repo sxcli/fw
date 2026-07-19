@@ -257,10 +257,11 @@ func TestDumpReadable(t *testing.T) {
 }
 
 func TestIsValidID(t *testing.T) {
-	// the identity model (composition release) legalized path-shaped
-	// ids: dots, hyphens and slashes are id characters now
-	valid := []string{"a", "svca", "svc_a", "_svc", "s1", "svc-a", "svc.a", "example.com/x/svc"}
-	invalid := []string{"", "A", "svcA", "1svc", "svc a", "-svc"}
+	// the ONE id grammar — validServiceID's: path-shaped, lowercase
+	// segments of letters, digits, '.', '-', '_', each segment
+	// starting with a letter or digit
+	valid := []string{"a", "svca", "svc_a", "s1", "1svc", "svc-a", "svc.a", "example.com/x/svc"}
+	invalid := []string{"", "A", "svcA", "_svc", "svc a", "-svc", "svc/", "/svc", "a//b"}
 	for _, id := range valid {
 		if !isValidID(id) {
 			t.Errorf("%q should be valid", id)

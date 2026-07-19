@@ -165,7 +165,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	seen := map[string]bool{}
 	for _, a := range r.aliases {
 		if !validAlias(a) {
-			c.Fail("service %q: alias %q must be lowercase letters, digits and hyphens, starting with a letter", r.id, a)
+			c.Fail("service %q: alias %q must be lowercase letters, digits and hyphens, starting with a letter, no consecutive or trailing hyphens", r.id, a)
 		} else if a == CoreAlias || a == IntrospectionAlias {
 			c.Fail("service %q: alias %q is reserved", r.id, a)
 		} else if seen[a] {
@@ -181,7 +181,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		}
 	}
 	isApplet := concrete.Implements(appletType)
-	if isApplet && concrete.Implements(stopperType) {
+	if isApplet && (concrete.Implements(starterType) || concrete.Implements(stopperType)) {
 		c.Fail("service %q: an applet must not implement Starter or Stopper", r.id)
 	}
 	if (r.hidden || r.system) && !isApplet {
@@ -192,6 +192,11 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	}
 	if len(r.steps) > 0 && r.cfgType == nil {
 		c.Fail("service %q: Migrate requires a config struct — a bare registration has no schema to evolve", r.id)
+	} else if err := engine.ValidateSteps(r.id, r.steps, r.cfgType); err != nil {
+		// the chain's SHAPE is type-level work and the commit owns it
+		// (spec: "the commit validates the chain"); the factory-default
+		// version, an instance fact, stays schema-time
+		c.Add(err)
 	}
 	if !isApplet && engine.HasPositionals(r.cfgType) {
 		c.Fail("service %q: positionals are invocation data — only applet configs may declare pos fields", r.id)
@@ -238,4 +243,5 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 }
 
 var appletType = reflect.TypeOf((*Applet)(nil)).Elem()
+var starterType = reflect.TypeOf((*Starter)(nil)).Elem()
 var stopperType = reflect.TypeOf((*Stopper)(nil)).Elem()

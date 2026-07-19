@@ -260,3 +260,24 @@ func TestIntrospectorSquattingFailsLoudly(t *testing.T) {
 		t.Errorf("expected the reserved-type violation:\n%s", w.stderr.String())
 	}
 }
+
+func TestArgumentsTreatsUpgradeConfigAsInert(t *testing.T) {
+	// an --upgrade-config plan carries no schema (the pure transform
+	// never loads); a completion probe passing the token through must
+	// get the registration-level answer, never a crash
+	var infos []ArgInfo
+	var err error
+	w := argsWorld(t, nil, func(i *Introspector) {
+		infos, err = i.Arguments("app", []string{"--upgrade-config", "--config", "/nowhere.json"})
+	})
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if err != nil {
+		t.Fatalf("the token must be inert data, not a failure: %v", err)
+	}
+	all := longs(infos)
+	if !strings.Contains(all, ",greeting,") || !strings.Contains(all, ",config,") {
+		t.Errorf("the fallback must still answer registration-level: %v", all)
+	}
+}
