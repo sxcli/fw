@@ -179,7 +179,7 @@ func (r *resolver) expandDep(owner *registry.Descriptor, dep registry.DepField) 
 			if out[0].Ranked {
 				out = out[:1]
 			} else {
-				r.fail("service %q field %s: %s is ambiguous — %q and %q both match; rank one with Order or name an id in the inject tag (the sxclivet tool catches this before it runs)", owner.ID, dep.Name, dep.Type, out[0].ID, out[1].ID)
+				r.fail("service %q field %s: %s is ambiguous — %q and %q both match; rank one with Order or name an id in the inject tag (the sxcli-vet tool catches this before it runs)", owner.ID, dep.Name, dep.Type, out[0].ID, out[1].ID)
 				out = nil
 			}
 		} else if len(out) == 0 && !dep.Optional {

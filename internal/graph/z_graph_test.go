@@ -206,7 +206,7 @@ func TestUnrankedTieIsViolation(t *testing.T) {
 		t.Fatal("an unranked single-valued tie must be a violation")
 	}
 	msg := c.All()[0].Error()
-	if !strings.Contains(msg, "ambiguous") || !strings.Contains(msg, `"workera"`) || !strings.Contains(msg, `"workerb"`) || !strings.Contains(msg, "sxclivet") {
+	if !strings.Contains(msg, "ambiguous") || !strings.Contains(msg, `"workera"`) || !strings.Contains(msg, `"workerb"`) || !strings.Contains(msg, "sxcli-vet") {
 		t.Errorf("the violation must name both candidates and point at the vet tool: %s", msg)
 	}
 }

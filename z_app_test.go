@@ -215,7 +215,7 @@ func TestAmbiguityResolvedByOrderEndToEnd(t *testing.T) {
 	}
 	// unranked tie → startup violation pointing at the vet tool
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register)
-	if code != 2 || !strings.Contains(w.stderr.String(), "sxclivet") {
+	if code != 2 || !strings.Contains(w.stderr.String(), "sxcli-vet") {
 		t.Errorf("unranked tie must refuse to start with the vet nudge: code=%d\n%s", code, w.stderr.String())
 	}
 	// Order resolves it — the ranked provider wins

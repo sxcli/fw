@@ -199,7 +199,7 @@ served six masters and is retired:
   (`sxcli.dev/fw/sink/console`, `example.com/mytool/srv`). Uniqueness
   is inherited from Go's own module namespace — domain-owned,
   collision-proof by the same rules as imports — and provenance is
-  legible in every error message. `sxclivet` verifies the exported
+  legible in every error message. `sxcli-vet` verifies the exported
   `ID` constant begins with the package's import path (the runtime
   cannot know import paths; the guarantee is the tool's). Inject tags
   reference IDs — verbose, copy-pasteable, and correctly so: naming a
@@ -238,7 +238,7 @@ commit**, registration-time, all-at-once like every other violation.
 A chain may end two ways: `.Register()` into the catalog for
 composition, or consumed by `Solo` (the second terminal). A forgotten
 terminal compiles — explicit `Accept` catches it loudly ("unknown
-id"); `sxclivet` closes the silent `AcceptAll` case statically:
+id"); `sxcli-vet` closes the silent `AcceptAll` case statically:
 
 ```go
 func NewRegistration[T, C any](id string, factory func() *T, cfg func(*T) *C) *Registration[T]
@@ -280,7 +280,7 @@ inject tags, applet-ness, Starter/Stopper rules, declared interfaces
 `Configured` (the sink contract's philosophy, extended to birth).
 Every registering package **exports its id** as a constant (`ID`;
 `XxxID` when a package registers several) — the constant is the
-package's public handle and what compositions reference; `sxclivet`
+package's public handle and what compositions reference; `sxcli-vet`
 enforces the convention (§Tooling).
 
 **Applet visibility** is registration-time policy, not a capability —
@@ -363,7 +363,7 @@ moment.** Registration validates types and declarations (never
 panics; violations are recorded and reported all at once):
 
 - malformed ID (path-shaped, lowercase; `sxcli.dev/fw` and the core's
-  Introspector id are reserved — import-path *equality* is `sxclivet`'s
+  Introspector id are reserved — import-path *equality* is `sxcli-vet`'s
   check, the runtime cannot know import paths),
 - malformed alias (lowercase, digits, hyphens, starts with a letter),
 - declared interface the concrete type does not implement,
@@ -540,7 +540,7 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
   non-slice field is a registration error (see Open Items for the
   planned boolean preference syntax).
   Convention for such runtime violations framework-wide: when
-  `sxclivet` would have caught the mistake statically, the message
+  `sxcli-vet` would have caught the mistake statically, the message
   says so — the error text is the tool's advertisement.
 - Slice fields: **interface element types only**. Injection delivers *all
   enabled* matching services in registration order — with listed IDs the
@@ -877,7 +877,7 @@ Decided:
   fields *gain* derived names (segments from json names).
 - **Derived-name collisions are Build errors** naming both fields —
   underscore joins make distinct paths collidable — with the vet
-  nudge; sxclivet reports the same collision at compile time (§8).
+  nudge; sxcli-vet reports the same collision at compile time (§8).
 - **One operator name.** `arg:` died (cutover landed 2026-07-19);
   **`conf:"long[,short]"`** names
   the field's whole operator surface: it grants `--long`/`-s` AND
@@ -950,7 +950,7 @@ engine interprets. The engine stays dumb: it walks a chain.
   The **commit validates the chain** — contiguous from-versions, each
   link's output type feeding the next link's input, terminating at
   the current config type — type-level work that belongs to the
-  registration commit under two-phase validation; sxclivet mirrors it
+  registration commit under two-phase validation; sxcli-vet mirrors it
   at compile time. No chain registered = versions must match exactly,
   mismatch = loud error: never-silent by default, ceremony only when
   a schema actually evolves.
@@ -1479,7 +1479,7 @@ the seam, the module owns gettext.
 The reflection-and-tags bet is only defensible with tooling that
 catches its failure modes before runtime; this is the price of the
 bet, paid explicitly. A separate module — **`sxcli.dev/vet`**, binary
-`sxclivet`, built on `golang.org/x/tools/go/analysis` — runs standalone
+`sxcli-vet`, built on `golang.org/x/tools/go/analysis` — runs standalone
 and as `go vet -vettool=`; the `x/tools` dependency never touches the
 core's go.mod. The composition model is what makes deep static
 analysis tractable: ids are exported constants, `Accept`/`Order`
@@ -1539,13 +1539,13 @@ Checks:
   warn-tier, the conversion is the documented escape hatch.
 
 Sequencing constraints: fw's runtime messages already nudge to
-sxclivet ("the sxclivet tool catches this before it runs"), so an MVP
+sxcli-vet ("the sxcli-vet tool catches this before it runs"), so an MVP
 covering the nudge-referenced checks rides the release train — or the
 nudges soften until it exists; and the tag-grammar check targets the
 post-cutover grammar (`conf:`/`short:`/unified `env:`), so the
 `arg:`→`conf:` cutover lands before that analyzer is written.
 
-MVP SHIPPED 2026-07-19 (`sxcli.dev/vet`, binary `sxclivet`, own repo,
+MVP SHIPPED 2026-07-19 (`sxcli.dev/vet`, binary `sxcli-vet`, own repo,
 signed from birth): the **sxreg** analyzer (identity + exported-id +
 terminal/alias + the FULL tag mirror incl. Version mandate, pos
 shape, sep-runs, dead arg: + migration-chain mirror via go/types
@@ -1568,7 +1568,7 @@ that fw's `Build()` tests and the analyzer's tests must judge
 identically (code cannot cross the internal boundary; verdicts can).
 The runtime 90% needs no tooling at all: `Build()` returns an error,
 so a one-line `TestComposition` asserts the whole graph in CI.
-`sxclivet`'s added value is IDE/CI feedback before any test runs, and
+`sxcli-vet`'s added value is IDE/CI feedback before any test runs, and
 the checks tests cannot express.
 
 ## 9. Testing Strategy

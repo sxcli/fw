@@ -42,7 +42,7 @@ const CoreAlias = engine.CoreID
 // non-empty segments of lowercase letters, digits, dots, hyphens and
 // underscores, each starting with a letter or digit. The convention
 // that an id BEGINS WITH the package's import path cannot be checked
-// at runtime — that guarantee is sxclivet's.
+// at runtime — that guarantee is sxcli-vet's.
 func validServiceID(id string) bool {
 	ok := id != ""
 	start := 0

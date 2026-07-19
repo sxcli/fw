@@ -145,7 +145,7 @@ deleting the assertion.
      docs grep clean of the dead API.
 
 The branch is DONE pending merge. Left deliberately outside it:
-sxclivet (separate module), completion-module bump (fw version +
+sxcli-vet (separate module), completion-module bump (fw version +
 HintServiceID filters CoreAlias), site resync, fwtest,
 Suppress-under-Builder (open item). Release: the four rework phases +
 composition ship as ONE breaking release.

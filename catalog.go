@@ -52,7 +52,7 @@ type Registration[T any] struct {
 // NewRegistration starts the registration of a service owning a
 // Configuration struct. The id is the service's identity — by
 // convention the package's import path (with a /name suffix when one
-// package registers several services); sxclivet verifies the
+// package registers several services); sxcli-vet verifies the
 // convention, the runtime verifies only the shape. The factory
 // constructs the instance — constructors are CHEAP by contract:
 // allocate and set the config defaults, nothing else; I/O belongs to
