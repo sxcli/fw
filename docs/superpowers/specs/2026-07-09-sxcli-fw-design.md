@@ -1554,11 +1554,18 @@ producer and consumer are one analyzer, the x/tools idiom) and
 **sxserved** (the discarded-served check). Verified against the real
 tree: production sinks/yaml/adapters come back CLEAN; the only flags
 are test fixtures' deliberately fake ids — the analyzer telling the
-truth. NOT yet in the MVP: the graph-viability/ambiguity mirror
-(needs Provides + inject-tag facts), unaccepted-services, and the
-derived-name collision check — the AMBIGUITY nudge in runtime
-messages therefore still references an unbuilt check: build it next
-or soften that one nudge before the train departs.
+truth. The GRAPH MIRROR landed the same day: facts carry
+each registration's concrete identity, declared Provides (verified
+via types.Implements at the chain) and inject-tag dependencies
+(grammar mirrored); the composition pass reconstructs Build — members
+in composed order (Order sequence, then id), candidates by DECLARED
+Provides or concrete identity (the runtime matches declarations, not
+open-world Implements — so the mirror is pure string-set logic), with
+the runtime's exact verdicts: unresolvable required deps, missing
+named ids, unranked single-valued ties. Solo/fw.Main()/AcceptAll are
+recognized as accept-everything compositions. THE AMBIGUITY NUDGE IS
+NOW TRUE. Still future: unaccepted-services (warn/-strict) and the
+derived-name collision check.
 
 Stated limits: non-constant ids and dynamically built option slices
 produce a "cannot verify" diagnostic, never silence. Drift between the
