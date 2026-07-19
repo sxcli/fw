@@ -325,3 +325,27 @@ func TestValidateConfigServesOrFails(t *testing.T) {
 		t.Errorf("the violations are the verdict: %v", err)
 	}
 }
+
+func TestDeclaredPositionalsOwnTheTail(t *testing.T) {
+	type posCfg struct {
+		Version uint32   `json:"version"`
+		Name    string   `json:"name" pos:"0" usage:"who to greet"`
+		Extra   []string `json:"extra" pos:"rest"`
+	}
+	w := &world{}
+	cfg := &posCfg{Version: 1}
+	ldr, served := w.loader(t, cfg, []string{"world", "and", "others"}, nil, nil).Load()
+	if served {
+		t.Fatal("not a served run")
+	}
+	pos, err := ldr.Result()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Name != "world" || strings.Join(cfg.Extra, ",") != "and,others" {
+		t.Errorf("declared positionals must bind: %+v", cfg)
+	}
+	if pos != nil {
+		t.Errorf("a declaring config owns the tail; Result carries no leftovers: %v", pos)
+	}
+}

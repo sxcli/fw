@@ -169,6 +169,13 @@ type Field struct {
 
 	root    reflect.Value // the config struct this field lives in (its *Struct value)
 	suspect bool          // the last source write to this field errored; its held value is not trustworthy
+
+	// declared positional binding: invocation data, argument-only by
+	// category (pos implies transient + no env)
+	hasPos  bool
+	pos     int  // the index; meaningful when hasPos && !posRest
+	posRest bool // the trailing collector; requires a slice field
+	posOpt  bool // indexed positionals are required unless opted out
 }
 
 // serviceSchema is the schema of one config struct under its section
@@ -181,12 +188,14 @@ type serviceSchema struct {
 // Schema is the full argument/env/file schema of one invocation: the
 // core plus every closure member owning a config struct.
 type Schema struct {
-	chains   map[string]*chain // per-section version state (never the core)
-	appletID string
-	services []*serviceSchema
-	long     map[string]*Field
-	short    map[string]*Field
-	owner    map[*Field]*serviceSchema
+	chains    map[string]*chain // per-section version state (never the core)
+	posFields []*Field          // the active config's indexed positionals, sorted
+	posRest   *Field            // its trailing collector, nil when absent
+	appletID  string
+	services  []*serviceSchema
+	long      map[string]*Field
+	short     map[string]*Field
+	owner     map[*Field]*serviceSchema
 }
 
 // Files is the parsed content of every loaded config file: one
@@ -201,6 +210,9 @@ type Files struct {
 
 // Loaded is the outcome of a strict Schema.Apply.
 type Loaded struct {
+	// Positionals holds the raw trailing tokens ONLY when the active
+	// config declares no pos fields; any declaration makes the schema
+	// own the tail entirely (assignment, counting, violations).
 	Positionals []string
 }
 

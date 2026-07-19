@@ -319,12 +319,38 @@ func transcode(js []byte, target string, src Sources) ([]byte, error) {
 	return out, err
 }
 
+// writePositionals renders the declared positional line of a help
+// dump; tr translates usage strings (identity standalone, Tr in fw).
+func writePositionals(w io.Writer, indexed []*Field, rest *Field, tr func(string) string) {
+	if len(indexed) == 0 && rest == nil {
+		return
+	}
+	fmt.Fprintf(w, "positionals:\n")
+	for _, f := range indexed {
+		marker := ""
+		if f.posOpt {
+			marker = " (optional)"
+		}
+		fmt.Fprintf(w, "  <%s>%s\n", f.JSONPath[len(f.JSONPath)-1], marker)
+		if f.Usage != "" {
+			fmt.Fprintf(w, "        %s\n", tr(f.Usage))
+		}
+	}
+	if rest != nil {
+		fmt.Fprintf(w, "  <%s...>\n", rest.JSONPath[len(rest.JSONPath)-1])
+		if rest.Usage != "" {
+			fmt.Fprintf(w, "        %s\n", tr(rest.Usage))
+		}
+	}
+}
+
 // WriteHelp renders the schema grouped by section: every argument with
 // its short form, usage and environment name against the current
 // (merged) values. Plain text — the framework renders its own help
 // through its translation seam; this is the engine's untranslated
 // canonical form.
 func (s *Schema) WriteHelp(w io.Writer) {
+	writePositionals(w, s.posFields, s.posRest, func(u string) string { return u })
 	for _, section := range s.HelpSections() {
 		fmt.Fprintf(w, "%s:\n", section.ID)
 		for _, f := range section.Fields {

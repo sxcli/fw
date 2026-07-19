@@ -70,9 +70,10 @@ func (g *greeterService) Greet() string     { return "hi" }
 func (g *greeterService) Configured() error { return nil }
 
 type probeConfig struct {
-	Version uint32 `json:"version"`
-	Exit    int    `json:"exit" conf:"exit"`
-	Note    string `json:"note" conf:"note,n" usage:"a note to print"`
+	Version uint32   `json:"version"`
+	Exit    int      `json:"exit" conf:"exit"`
+	Note    string   `json:"note" conf:"note,n" usage:"a note to print"`
+	Args    []string `json:"args" pos:"rest" usage:"echoed invocation tail"`
 }
 
 type probeApplet struct {
@@ -84,7 +85,7 @@ func (p *probeApplet) Configured() error { return nil }
 
 func (p *probeApplet) Run() int {
 	greeted := p.G != nil && p.G.Greet() == "hi"
-	fmt.Printf("note=%s greeted=%v positionals=%v\n", p.cfg.Note, greeted, fw.Positionals())
+	fmt.Printf("note=%s greeted=%v positionals=%v\n", p.cfg.Note, greeted, p.cfg.Args)
 	slog.Info("probe ran", "note", p.cfg.Note)
 	return p.cfg.Exit
 }

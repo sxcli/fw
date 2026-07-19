@@ -193,6 +193,9 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	if len(r.steps) > 0 && r.cfgType == nil {
 		c.Fail("service %q: Migrate requires a config struct — a bare registration has no schema to evolve", r.id)
 	}
+	if !isApplet && engine.HasPositionals(r.cfgType) {
+		c.Fail("service %q: positionals are invocation data — only applet configs may declare pos fields", r.id)
+	}
 	if r.cfgType != nil {
 		// tag and field-type validation, type-level: the registration
 		// list promises "malformed tags" at registration, not at the

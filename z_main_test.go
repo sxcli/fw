@@ -58,8 +58,9 @@ func (d *depService) Stop() error {
 }
 
 type mainAppletCfg struct {
-	Version  uint32 `json:"version"`
-	Greeting string `json:"greeting" conf:"greeting,g" usage:"the greeting"`
+	Version  uint32   `json:"version"`
+	Greeting string   `json:"greeting" conf:"greeting,g" usage:"the greeting"`
+	Rest     []string `json:"rest" pos:"rest" usage:"trailing invocation data"`
 }
 
 type mainApplet struct {
@@ -157,7 +158,7 @@ func newWorld(t *testing.T, argv []string, files map[string]string, env map[stri
 		},
 		openPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
 	}
-	t.Cleanup(func() { positionals = nil; activeTranslator = nil })
+	t.Cleanup(func() { activeTranslator = nil })
 	return w
 }
 
@@ -230,8 +231,10 @@ func TestSingleAppletModeCollectsPositionals(t *testing.T) {
 	if a.cfg.Greeting != "hi" {
 		t.Errorf("arg not applied: %q", a.cfg.Greeting)
 	}
-	if strings.Join(Positionals(), ",") != "one,two" {
-		t.Errorf("positionals wrong: %v", Positionals())
+	// Ledger note: Positionals() died with the declared-positional
+	// pass — the applet reads its own pos:"rest" field now
+	if strings.Join(a.cfg.Rest, ",") != "one,two" {
+		t.Errorf("positionals wrong: %v", a.cfg.Rest)
 	}
 }
 

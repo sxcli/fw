@@ -14,7 +14,11 @@
 
 package engine
 
-import "sxcli.dev/fw/internal/fail"
+import (
+	"reflect"
+
+	"sxcli.dev/fw/internal/fail"
+)
 
 // PeekCore is the first pipeline pass: it leniently fills the
 // composite core from environment and arguments only — no file can be
@@ -53,7 +57,63 @@ func (f *Files) ApplyCore(c *fail.Collector, appletID string, src Sources, core 
 func (s *Schema) Apply(c *fail.Collector, files *Files, src Sources) Loaded {
 	s.applyFiles(c, files)
 	s.applyEnv(c, src.LookupEnv)
-	return Loaded{Positionals: s.parseArgs(c, src.Args, false)}
+	return Loaded{Positionals: s.assignPositionals(c, s.parseArgs(c, src.Args, false))}
+}
+
+// assignPositionals binds the trailing bare tokens to the active
+// config's declarations. With nothing declared the raw tail passes
+// through; any declaration makes the schema own the tail entirely —
+// missing required positionals and unclaimed surplus are violations.
+func (s *Schema) assignPositionals(c *fail.Collector, tokens []string) []string {
+	if len(s.posFields) == 0 && s.posRest == nil {
+		return tokens
+	}
+	for i, f := range s.posFields {
+		name := f.JSONPath[len(f.JSONPath)-1]
+		if i < len(tokens) {
+			target := f.root.Elem().FieldByIndex(f.Path)
+			if err := setFromString(target, tokens[i]); err != nil {
+				c.Fail("positional <%s>: %v", name, err)
+				f.suspect = true
+			} else {
+				f.suspect = !checkDomain(c, "positional <"+name+">", f, target)
+			}
+		} else if !f.posOpt {
+			c.Fail("missing required positional <%s>", name)
+		}
+	}
+	var rest []string
+	if len(tokens) > len(s.posFields) {
+		rest = tokens[len(s.posFields):]
+	}
+	if s.posRest != nil {
+		if len(rest) > 0 {
+			f := s.posRest
+			name := f.JSONPath[len(f.JSONPath)-1]
+			target := f.root.Elem().FieldByIndex(f.Path)
+			target.Set(reflect.MakeSlice(target.Type(), 0, len(rest)))
+			f.suspect = false
+			for _, tok := range rest {
+				if err := appendFromString(target, tok); err != nil {
+					c.Fail("positional <%s>: %v", name, err)
+					f.suspect = true
+				} else if len(f.Allowed) > 0 && !domainHas(f, target.Index(target.Len()-1)) {
+					c.Fail("positional <%s>: value %v is not among the allowed values %v", name, target.Index(target.Len()-1).Interface(), f.Allowed)
+					f.suspect = true
+				}
+			}
+		}
+	} else if len(rest) > 0 {
+		c.Fail("unexpected positional %q — declare it with a pos tag or collect the tail with pos:\"rest\"", rest[0])
+	}
+	return nil
+}
+
+// PositionalFields exposes the active config's declared positionals:
+// the indexed fields in order, and the trailing collector (nil when
+// absent) — what help renderers and tooling enumerate.
+func (s *Schema) PositionalFields() ([]*Field, *Field) {
+	return s.posFields, s.posRest
 }
 
 // applyEnv writes every present environment variable into its field.

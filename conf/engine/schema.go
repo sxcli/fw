@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +50,22 @@ func ValidateConfigType(id string, cfgPtr reflect.Type) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// HasPositionals reports whether a config struct TYPE declares any
+// pos-tagged field — the commit-time probe behind "positionals are
+// applet-only".
+func HasPositionals(cfgPtr reflect.Type) bool {
+	if cfgPtr == nil {
+		return false
+	}
+	fields, _ := extract("probe", cfgPtr.Elem(), nil, nil, "", true)
+	for _, f := range fields {
+		if f.hasPos {
+			return true
+		}
+	}
+	return false
 }
 
 // coreMeta is the engine's own field metadata — the same declarative
@@ -104,6 +122,24 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 		}
 	}
 	s.checkTopLevel(c)
+	for _, svc := range s.services {
+		for _, f := range svc.fields {
+			if f.hasPos {
+				if svc.id == CoreID {
+					c.Fail("core contributions cannot declare positionals (field %s)", f.Name)
+				} else if svc.id == "" || svc.id == appletID {
+					// the ACTIVE config's declarations bind; any other
+					// section's are another invocation's and stay dormant
+					if f.posRest {
+						s.posRest = f
+					} else {
+						s.posFields = append(s.posFields, f)
+					}
+				}
+			}
+		}
+	}
+	sort.Slice(s.posFields, func(i, j int) bool { return s.posFields[i].pos < s.posFields[j].pos })
 	env := map[string]*Field{}
 	for _, svc := range s.services {
 		for _, f := range svc.fields {
@@ -282,6 +318,9 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 						errs = append(errs, fmt.Errorf("service %q config field %s: invalid env tag %q", serviceID, name, env))
 					}
 				}
+				if tag, hasPos := sf.Tag.Lookup("pos"); hasPos {
+					errs = append(errs, parsePos(f, serviceID, name, tag, sf, topLevel)...)
+				}
 				if !topLevel && f.Long != "" {
 					errs = append(errs, fmt.Errorf("service %q config field %s: conf tags below the top level are not supported — mirror the value into a top-level field yourself", serviceID, name))
 				}
@@ -314,6 +353,9 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 				}
 			}
 		}
+	}
+	if topLevel {
+		errs = append(errs, checkPositionals(serviceID, fields)...)
 	}
 	return fields, errs
 }
@@ -392,6 +434,93 @@ func scalarOK(t reflect.Type) bool {
 		ok = true
 	}
 	return ok
+}
+
+// parsePos parses one pos tag — "N[,optional]" or "rest" — and
+// enforces the field-level rules: positionals are invocation data,
+// argument-only by category, top level only, never both a flag and a
+// position.
+func parsePos(f *Field, serviceID, name, tag string, sf reflect.StructField, topLevel bool) []error {
+	var errs []error
+	bad := func(format string, args ...any) {
+		errs = append(errs, fmt.Errorf("service %q config field %s: "+format, append([]any{serviceID, name}, args...)...))
+	}
+	idx, opt, hasOpt := strings.Cut(tag, ",")
+	switch {
+	case !topLevel:
+		bad("pos tags below the top level are not supported")
+	case f.Long != "":
+		bad("a field is a flag or a positional, never both")
+	case f.EnvName != "" || f.NoEnv:
+		bad("positionals are argument-only by category — the env tag is an error")
+	case f.Transient:
+		bad("positionals are transient by category — the dump tag is an error")
+	case sf.Type.Kind() == reflect.Struct:
+		bad("a struct field cannot be a positional")
+	case idx == "rest":
+		if hasOpt {
+			bad("rest is always optional")
+		} else if sf.Type.Kind() != reflect.Slice {
+			bad("pos:\"rest\" requires a slice field")
+		} else {
+			f.hasPos, f.posRest = true, true
+		}
+	default:
+		n, err := strconv.Atoi(idx)
+		if err != nil || n < 0 {
+			bad("invalid pos tag %q", tag)
+		} else if sf.Type.Kind() == reflect.Slice {
+			bad("an indexed positional is a scalar; collect many with pos:\"rest\"")
+		} else if hasOpt && opt != "optional" {
+			bad("invalid pos tag %q", tag)
+		} else {
+			f.hasPos, f.pos, f.posOpt = true, n, hasOpt
+		}
+	}
+	if f.hasPos {
+		// argument-only by category
+		f.Transient = true
+		f.NoEnv = true
+	}
+	return errs
+}
+
+// checkPositionals enforces the per-struct shape: contiguous indices
+// from 0, no duplicates, one rest at most, optionals after all
+// required ones (assignment is ambiguous otherwise).
+func checkPositionals(serviceID string, fields []*Field) []error {
+	var errs []error
+	indexed := map[int]*Field{}
+	rest := 0
+	max := -1
+	for _, f := range fields {
+		if f.hasPos && f.posRest {
+			rest++
+			if rest > 1 {
+				errs = append(errs, fmt.Errorf("service %q: at most one pos:\"rest\" field", serviceID))
+			}
+		} else if f.hasPos {
+			if _, dup := indexed[f.pos]; dup {
+				errs = append(errs, fmt.Errorf("service %q: positional index %d is declared twice", serviceID, f.pos))
+			}
+			indexed[f.pos] = f
+			if f.pos > max {
+				max = f.pos
+			}
+		}
+	}
+	optSeen := false
+	for i := 0; i <= max; i++ {
+		f, present := indexed[i]
+		if !present {
+			errs = append(errs, fmt.Errorf("service %q: positional indices must be contiguous from 0 — %d is missing", serviceID, i))
+		} else if f.posOpt {
+			optSeen = true
+		} else if optSeen {
+			errs = append(errs, fmt.Errorf("service %q: required positional %d follows an optional one — assignment would be ambiguous", serviceID, i))
+		}
+	}
+	return errs
 }
 
 // isValidLong reports whether long is a valid long argument name:

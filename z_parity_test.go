@@ -165,3 +165,56 @@ func TestUpgradeConfigCoversTheWholeCatalog(t *testing.T) {
 		t.Errorf("upgrade must never run the applet: %v", w.log)
 	}
 }
+
+func TestUndeclaredTailIsViolation(t *testing.T) {
+	// mainAppletCfg declares rest, so build a world around an applet
+	// that declares nothing
+	w := newWorld(t, []string{"bin", "second", "stray"}, nil, nil)
+	w.applet(0)
+	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("second").registerInto(w.cat, w.c)
+	if code := w.run(); code != 2 {
+		t.Fatalf("an undeclared tail must be a violation: exit %d", code)
+	}
+	if !strings.Contains(w.stderr.String(), `unexpected positional "stray"`) {
+		t.Errorf("the surplus token must be named:\n%s", w.stderr.String())
+	}
+}
+
+func TestPositionalsAreAppletOnly(t *testing.T) {
+	type posyCfg struct {
+		Version uint32 `json:"version"`
+		Thing   string `json:"thing" pos:"0"`
+	}
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	NewRegistration("svc", func() *extraService { return &extraService{} },
+		func(x *extraService) *extraCfg { return &x.cfg }).
+		Alias("svc").registerInto(w.cat, w.c) // sanity: plain service commits
+	before := w.c.Len()
+	type posService struct{ cfg posyCfg }
+	NewRegistration("posy", func() *posService { return &posService{cfg: posyCfg{Version: 1}} },
+		func(x *posService) *posyCfg { return &x.cfg }).
+		Alias("posy").registerInto(w.cat, w.c)
+	if w.c.Len() == before {
+		t.Fatal("pos fields on a non-applet service must be a commit violation")
+	}
+	joined := ""
+	for _, err := range w.c.All() {
+		joined += err.Error()
+	}
+	if !strings.Contains(joined, "applet") {
+		t.Errorf("the violation must say why: %v", joined)
+	}
+}
+
+func TestHelpRendersPositionalContract(t *testing.T) {
+	w := newWorld(t, []string{"bin", "--help"}, nil, nil)
+	w.applet(0) // mainAppletCfg declares pos:"rest"
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(w.stdout.String(), "<rest...>") {
+		t.Errorf("help must render the positional contract:\n%s", w.stdout.String())
+	}
+}

@@ -1106,6 +1106,38 @@ Run-scoped, argument-only, suppressible in both doors
 (`FeatureValidateConfig`; `FeatureUpgradeConfig` suppresses
 `from-version` along, since it is inert alone).
 
+### Declared positionals (decided AND implemented 2026-07-19)
+
+Positionals are INVOCATION data with exactly one owner, and the type
+system says so: `pos:"N[,optional]"` / `pos:"rest"` tags on config
+fields, legal ONLY on applet configs in fw (commit violation
+otherwise) and on the root struct standalone — which is the same
+statement, since the root IS the applet. Only the ACTIVE config's
+declarations bind (the dispatched applet's section, the root); a
+second applet's declarations in the closure stay dormant. This
+dissolves the multiple-pos:"1" collision by construction.
+
+The tail joins the contract: indexed positionals are required by
+default (`,optional` opts out; optionals follow all required ones —
+assignment is ambiguous otherwise), indices contiguous from 0, one
+`rest` slice at most, always optional (cat's read-stdin-when-empty
+falls out). Missing required = violation naming `<field>`; surplus
+without rest = violation naming the token. Domains and metadata hints
+apply (a HintFile pos field is the completion module's future
+breakfast); help renders a positionals block; a positional is
+argument-only BY CATEGORY (implies transient + no-env; explicit
+env/dump tags beside pos are errors, files mentioning the key are
+refused as run-scoped).
+
+Two deaths: `fw.Positionals()` is DELETED — an applet reads its own
+fields, an undeclared non-empty tail in fw is a violation ("declare
+it or lose it, loudly"). The front door's `Result` leftovers got
+their semantics: declare nothing → the raw tail passes through (the
+poor guy's convenience); declare anything → the schema owns the tail
+entirely and Result carries no leftovers. The completion adapters are
+the first dogfood: COMP_WORDS rides a declared `pos:"rest"` field
+now.
+
 ### Sources & precedence (least → most important)
 
 ```
@@ -1549,7 +1581,7 @@ the checks tests cannot express.
 | Terminal UI provider | concept named, comes after v1 |
 | i18n catalog module (gettext `.po`/`.mo` loading, locale chain, `Plural-Forms` evaluator, embedded-FS handoff) | the core seam (Translator, TrN, seeding, Configured-first) is DONE — see §7; the catalog implementation is the separate `sxcli.dev/i18n` module, next in line |
 | Demo applet | undecided; will not mirror busybox applets |
-| Positional parsing/routing | positionals collected, routing open |
+| Positional parsing/routing | RESOLVED 2026-07-19: declared positionals (see §6) — `fw.Positionals()` deleted, the tail is schema-owned |
 | `inject` optional-with-IDs interactions beyond v1 needs | extend grammar as needed |
 | Custom value parsers (e.g. `type UnixTime` with a user-provided parser service, discovered like format providers) | deliberately not in v1 — the converter is a single switch; a parser registry slots in front of it when someone actually needs one |
 | Embedded configs in the binary (e.g. a `go:embed`-ed default config compiled into the consumer's binary, lowest-priority file source before the on-disk locations) | future version; slots into the existing merge order as a pre-location source and needs no new precedence rules |

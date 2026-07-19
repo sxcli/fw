@@ -56,7 +56,7 @@ func TestSystemAppletSelectableInSingleAppletMode(t *testing.T) {
 // leading -- escape and stays applet data.
 func TestSystemIdCollisionEscapedByDashDash(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--", "second"}, nil, nil)
-	w.applet(0)
+	a := w.applet(0)
 	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").System().registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
@@ -65,8 +65,8 @@ func TestSystemIdCollisionEscapedByDashDash(t *testing.T) {
 	if strings.Join(w.log, ",") != "applet.configured,applet.run" {
 		t.Errorf("escaped positional still dispatched: %v", w.log)
 	}
-	if strings.Join(Positionals(), ",") != "second" {
-		t.Errorf("positionals wrong: %v", Positionals())
+	if strings.Join(a.cfg.Rest, ",") != "second" {
+		t.Errorf("positionals wrong: %v", a.cfg.Rest)
 	}
 }
 

@@ -36,16 +36,6 @@ func Main() {
 	Builder().AcceptAll().Main()
 }
 
-// positionals holds the trailing bare arguments of the invocation.
-var positionals []string
-
-// Positionals returns the trailing bare arguments of the invocation.
-// The current version collects them without routing; a routing
-// mechanism is a future design point.
-func Positionals() []string {
-	return positionals
-}
-
 var handlerType = reflect.TypeOf((*slog.Handler)(nil)).Elem()
 var providerType = reflect.TypeOf((*ConfigFormatProvider)(nil)).Elem()
 var translatorType = reflect.TypeOf((*Translator)(nil)).Elem()
@@ -379,7 +369,14 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 		}
 		loaded := p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 {
-			positionals = loaded.Positionals
+			// declared positionals were assigned by Apply; an
+			// undeclared non-empty tail in the framework is a
+			// violation — declare it or lose it, loudly
+			if len(loaded.Positionals) > 0 {
+				rt.c.Fail("unexpected positional %q — the applet declares no pos fields", loaded.Positionals[0])
+			}
+		}
+		if rt.c.Len() == 0 {
 			pre := rt.prepareTranslator(p.res)
 			if p.help {
 				code = rt.help(p.sch)
@@ -768,6 +765,23 @@ func (rt *runtime) coreRoot(c *fail.Collector, d *registry.Descriptor, providerI
 // help renders the dispatched applet's full argument schema, grouped by
 // service id, and exits 0.
 func (rt *runtime) help(sch *engine.Schema) int {
+	indexed, rest := sch.PositionalFields()
+	if len(indexed) > 0 || rest != nil {
+		fmt.Fprintln(rt.stdout, "positionals:")
+		for _, f := range indexed {
+			line := "  <" + f.JSONPath[len(f.JSONPath)-1] + ">"
+			fmt.Fprintln(rt.stdout, line)
+			if f.Usage != "" {
+				fmt.Fprintf(rt.stdout, "        %s\n", Tr(f.Usage))
+			}
+		}
+		if rest != nil {
+			fmt.Fprintf(rt.stdout, "  <%s...>\n", rest.JSONPath[len(rest.JSONPath)-1])
+			if rest.Usage != "" {
+				fmt.Fprintf(rt.stdout, "        %s\n", Tr(rest.Usage))
+			}
+		}
+	}
 	for _, section := range sch.HelpSections() {
 		fmt.Fprintf(rt.stdout, "%s:\n", section.ID)
 		for _, f := range section.Fields {
