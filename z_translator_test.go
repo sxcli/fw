@@ -23,7 +23,7 @@ import (
 
 type trCfg struct {
 	Version uint32 `json:"version"`
-	Locale  string `json:"locale" arg:"locale" usage:"locale override"`
+	Locale  string `json:"locale" conf:"locale" usage:"locale override"`
 }
 
 type fakeTranslator struct {

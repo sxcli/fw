@@ -224,6 +224,13 @@ func fieldValue(f reflect.Value) any {
 func (s *Schema) MarshalIndent() ([]byte, error) {
 	root := map[string]any{}
 	for _, svc := range s.services {
+		if svc.id == "" {
+			// the root binding emits at the top level
+			buildSection(root, svc.fields, func(f *Field) reflect.Value {
+				return f.root.Elem().FieldByIndex(f.Path)
+			})
+			continue
+		}
 		// same-name entries (the composite core) merge into one
 		// section; their key spaces are disjoint by construction
 		section, merged := root[svc.id].(map[string]any)

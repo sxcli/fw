@@ -29,8 +29,8 @@ import (
 
 type probeConfig struct {
 	Version uint32 `json:"version"`
-	Note    string `json:"note" arg:"note,n" usage:"a note to print"`
-	Exit    int    `json:"exit" arg:"exit" usage:"exit code to return"`
+	Note    string `json:"note" conf:"note,n" usage:"a note to print"`
+	Exit    int    `json:"exit" conf:"exit" usage:"exit code to return"`
 }
 
 type serviceProbe struct {

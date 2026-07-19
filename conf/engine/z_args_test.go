@@ -24,12 +24,12 @@ import (
 
 type argsConfig struct {
 	Version uint32        `json:"version"`
-	Name    string        `json:"name" arg:"name,n"`
-	Verbose bool          `json:"verbose" arg:"verbose,v"`
-	Debug   bool          `json:"debug" arg:"debug,x"`
-	Count   int           `json:"count" arg:"count,q"`
-	Wait    time.Duration `json:"wait" arg:"wait"`
-	Tags    []string      `json:"tags" arg:"tag,t"`
+	Name    string        `json:"name" conf:"name,n"`
+	Verbose bool          `json:"verbose" conf:"verbose,v"`
+	Debug   bool          `json:"debug" conf:"debug,x"`
+	Count   int           `json:"count" conf:"count,q"`
+	Wait    time.Duration `json:"wait" conf:"wait"`
+	Tags    []string      `json:"tags" conf:"tag,t"`
 }
 
 func parseInto(t *testing.T, cfg *argsConfig, lenient bool, args ...string) ([]string, []error) {

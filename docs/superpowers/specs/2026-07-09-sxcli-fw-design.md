@@ -768,42 +768,71 @@ are the defaults; the core fills the same struct in place before
 
 ```go
 type FileSinkConfig struct {
-    Path    string        `json:"path"    arg:"log-path"     usage:"log file location"`
-    Level   string        `json:"level"   arg:"log-level,l"  env:"LOG_LEVEL" usage:"minimum level"`
-    MaxAge  time.Duration `json:"maxAge"  arg:"log-max-age"  usage:"rotation age"`
-    Backups int           `json:"backups"`                   // no arg tag → file-only
+    Version uint32        `json:"version"`                    // the mandate: json annotation ONLY
+    Path    string        `json:"path"    conf:"log-path"     usage:"log file location"`
+    Level   string        `json:"level"   conf:"log-level,l"  env:"LOG_LEVEL" usage:"minimum level"`
+    MaxAge  time.Duration `json:"maxAge"  conf:"log-max-age"  usage:"rotation age"`
+    Backups int           `json:"backups"`                    // untagged: file + derived env
 }
 ```
 
 - `json:"…"` — **required** on every exported field; the core is JSON-native.
   File keys nest under the service ID: `{"filesink": {"path": "…"}}`.
   The core's own config lives under the reserved ID `core`.
-- `arg:"long[,short]"` — explicit opt-in per field; no tag → no CLI
-  argument. Duplicate long names across the closure = startup error;
-  short names are first-come-first-served.
-- `env:"NAME"` — an explicit opt-in of its own: a field with only an
-  `env` tag is env+file settable (useful for values deployable via
-  environment without cluttering the CLI, e.g. tokens). When `arg` is
-  present and `env` absent, the name derives as `APPLETID_` + long name
-  uppercased with dashes → underscores (applet `cat`, arg
-  `log-max-age` → `CAT_LOG_MAX_AGE`). `env:"-"` suppresses the env var
-  entirely, derivation included — combined with `arg` it makes a field
-  argument-only (how the core's `help`/`write-config` are locked down).
-  A field with neither tag is file-only.
+- `conf:"long[,short]"` — the ONE operator name: grants `--long`/`-s`
+  AND feeds env derivation. Top level only ("mirror the value into a
+  top-level field yourself"). Duplicate long names across the closure
+  = startup error; short names are first-come-first-served.
+- `env:"NAME"` — verbatim GLOBAL (no alias prefix — its job is
+  matching names you don't own); legal at any depth. `env:"-"` = no
+  env at all. Absent → derived.
+- **Derived env names stitch with `__`** at every structural boundary
+  — alias to field, section qualifier, path segment to segment — and
+  fold with `_` inside a name (camel humps, single hyphens/
+  underscores). A conf-tagged field claims a short global name: applet
+  `cat` + conf `log-max-age` → `CAT__LOG_MAX_AGE` (longs are unique
+  across the closure). An untagged field is addressed by its file
+  path, QUALIFIED by its section — `CAT__FILESINK__BACKUPS`,
+  `CAT__FILESINK__ROTATION__SIZE` — so foreign packages' unnamed
+  fields can never collide, and `Builder.Alias` is the repair lever
+  (the composition owns these names too). The invocation's OWN
+  section — the root binding standalone, the section named after the
+  active applet in fw — skips the qualifier: `CAT__BACKUPS`. Every
+  field derives (file-only died as a concept); a name-internal fold
+  can never spell a structural stitch, because **consecutive
+  separators (`[-_]{2,}`) are banned** in aliases, section names,
+  conf names and json names — the run that would forge a path
+  boundary. Genuine collisions (a json `max_age` beside a camel
+  `maxAge`, or a skip-qualified name meeting a foreign long) stay
+  possible and are loud duplicate-name Build errors.
+- The `Version` field permits ONLY the json annotation: `conf:`,
+  `env:` (either form), `dump:` and `usage:` on it are errors; the
+  engine suppresses its derived env name itself (the env source is by
+  definition current-dialect).
+- A leftover `arg:` tag is a loud violation naming the cutover, never
+  a silently ignored unknown.
 - `usage:"…"` — help text; rendered through `Tr()`; doubles as a gettext
   extraction source when translation support lands.
 
 Supported field types (v1): `string`, `bool`, all int/uint widths, floats,
-`time.Duration`, and slices of these. Nested structs are allowed for
-file/JSON structure but their fields are file-only (no `arg`/`env` tags) in
-v1. Anything else (maps, custom types) is a registration error.
+`time.Duration`, and slices of these. Nested structs shape the file and
+derive env names; they carry no arguments. Anything else (maps, custom
+types) is a registration error.
 
 ### The conf module & the unified tag grammar (direction, 2026-07-18)
 
 The configuration system's endgame is **`sxcli.dev/conf`** — the
 engine above, standalone, aimed at replacing cobra/viper for
 single-command tools (dispatch is fw's territory; the busybox model IS
-the multi-command story). The pitch against viper: no store, no
+the multi-command story). The front door is ONE struct bound at the
+FILE'S ROOT — a standalone config file is flat, `{"version": 1,
+"listen": ":8080"}`, the way the rest of the world writes them; nobody
+needs more than one config struct in a standalone tool, so the front
+door has no section support at all (sections are the framework's
+multi-service shape). Decided 2026-07-19, replacing the earlier
+sectioned front door — the mandatory `{"mytool": {…}}` wrapper was
+ceremony in the only case the door exists for, and the doubled env
+prefix it produced was the symptom that exposed it. The pitch against viper: no store, no
 watching, no package-global mutable config object — the struct is the
 schema, filled once, immutable for the run, strict about unknowns.
 The ladder: (1) DONE — `NewSchema` takes neutral `Section{Name, Ptr,
@@ -849,7 +878,8 @@ Decided:
 - **Derived-name collisions are Build errors** naming both fields —
   underscore joins make distinct paths collidable — with the vet
   nudge; sxclivet reports the same collision at compile time (§8).
-- **One operator name.** `arg:` dies; **`conf:"long[,short]"`** names
+- **One operator name.** `arg:` died (cutover landed 2026-07-19);
+  **`conf:"long[,short]"`** names
   the field's whole operator surface: it grants `--long`/`-s` AND
   feeds env derivation — no more env names silently downstream of a
   flag rename. `env:` owns the env axis in all its states: absent →
@@ -864,8 +894,8 @@ Decided:
 The matrix (every row a real use case, no dead cells):
 
 ```go
-Listen  string `json:"listen"  conf:"listen,l"`               // file + --listen/-l + ALIAS_LISTEN
-Backups int    `json:"backups"`                               // file + ALIAS_BACKUPS (derived, no flag)
+Listen  string `json:"listen"  conf:"listen,l"`               // file + --listen/-l + ALIAS__LISTEN
+Backups int    `json:"backups"`                               // file + ALIAS__BACKUPS (derived, no flag)
 Token   string `json:"token"   env:"MYAPP_TOKEN" dump:"-"`    // env ONLY — secrets touch neither argv nor files
 Proxy   string `json:"proxy"   conf:"proxy" env:"HTTP_PROXY"` // --proxy + verbatim global env
 Help    bool   `json:"help"    conf:"help" env:"-" dump:"-"`  // arg-only, run-scoped
@@ -880,15 +910,13 @@ files (backed up, committed, world-readable more often than not); the
 framework refuses to normalize either. `json:` stays required even
 here — refusal needs the key name to refuse by.
 
-Open (recorded, undecided): the composite-core shape (the core
-section as ONE namespace fed by two flat structs — conf's knobs +
-fw's controls — proposed, unblessed); the camel-split rule for
-json-derived env segments (`maxAge` → `MAX_AGE`); whether `conf:` at
-depth is a violation like `arg:` today (proposed: yes — args are the
-flat, scarce surface; files and env address paths); whether a
-dedicated secret marker should replace the `dump:"-"` reuse; the
-`arg:`→`conf:` tag cutover timing (before the release train departs,
-so the breaking release stays ONE).
+Decided since: the composite core (implemented — one namespace, two
+flat structs); the derivation grammar (`__` structural stitch, `_`
+in-name fold, separator-run ban — see The config struct above);
+`conf:` at depth unsupported with no escape hatch; the cutover itself
+(landed 2026-07-19, inside the breaking release train). Still open:
+whether a dedicated secret marker should replace the `dump:"-"`
+reuse.
 
 ### Config schema versioning & migration (decided 2026-07-18)
 

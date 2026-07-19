@@ -37,10 +37,10 @@ import (
 // error — guessing one would be worse.
 type Config struct {
 	Version uint32 `json:"version"`
-	Path    string `json:"path" arg:"logfile-path" usage:"log file path (required when the sink is enabled)"`
-	Level   string `json:"level" arg:"logfile-level" usage:"minimum level logged to the file (debug, info, warn, error)"`
-	Format  string `json:"format" arg:"logfile-format" usage:"file log format: text or json"`
-	Mode    string `json:"mode" arg:"logfile-mode" usage:"octal permissions for a newly created log file"`
+	Path    string `json:"path" conf:"logfile-path" usage:"log file path (required when the sink is enabled)"`
+	Level   string `json:"level" conf:"logfile-level" usage:"minimum level logged to the file (debug, info, warn, error)"`
+	Format  string `json:"format" conf:"logfile-format" usage:"file log format: text or json"`
+	Mode    string `json:"mode" conf:"logfile-mode" usage:"octal permissions for a newly created log file"`
 }
 
 // File is the sink service. Per the sink contract it is fully

@@ -59,7 +59,7 @@ func (d *depService) Stop() error {
 
 type mainAppletCfg struct {
 	Version  uint32 `json:"version"`
-	Greeting string `json:"greeting" arg:"greeting,g" usage:"the greeting"`
+	Greeting string `json:"greeting" conf:"greeting,g" usage:"the greeting"`
 }
 
 type mainApplet struct {
@@ -237,7 +237,7 @@ func TestSingleAppletModeCollectsPositionals(t *testing.T) {
 
 func TestPrecedenceFileEnvArg(t *testing.T) {
 	files := map[string]string{"/etc/app/config.json": `{"app": {"greeting": "file"}}`}
-	env := map[string]string{"APP_GREETING": "env"}
+	env := map[string]string{"APP__GREETING": "env"}
 	w := newWorld(t, []string{"bin"}, files, env)
 	a := w.applet(0)
 	if code := w.run(); code != 0 {

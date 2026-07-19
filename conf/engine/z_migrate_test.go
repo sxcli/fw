@@ -35,8 +35,8 @@ type srvV2 struct {
 
 type srvV3 struct {
 	Version uint32 `json:"version"`
-	Host    string `json:"host" arg:"host"`
-	Port    string `json:"port" arg:"port"`
+	Host    string `json:"host" conf:"host"`
+	Port    string `json:"port" conf:"port"`
 }
 
 func srvSteps() []Step {
@@ -98,7 +98,7 @@ func TestMigratedValuesLoseToLaterSources(t *testing.T) {
 	cfg := &srvV3{Version: 3}
 	disk := map[string]string{"/etc/srv/config.json": `{"srv": {"version": 1, "addr": "example.com:8080"}}`}
 	c, _ := migrateWorld(t, cfg, disk, []string{"--port", "9090"},
-		map[string]string{"SRV_HOST": "envhost"}, srvSteps())
+		map[string]string{"SRV__HOST": "envhost"}, srvSteps())
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
 	}

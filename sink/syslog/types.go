@@ -48,12 +48,12 @@ const ID = "sxcli.dev/fw/sink/syslog"
 // Config is the syslog sink configuration, section "syslog".
 type Config struct {
 	Version  uint32 `json:"version"`
-	Level    string `json:"level" arg:"syslog-level" usage:"minimum level logged to syslog (debug, info, warn, error)"`
-	Format   string `json:"format" arg:"syslog-format" usage:"syslog message format: text or json"`
-	Tag      string `json:"tag" arg:"syslog-tag" usage:"syslog tag; defaults to the process name"`
-	Facility string `json:"facility" arg:"syslog-facility" usage:"syslog facility (daemon, user, auth, local0..local7, ...)"`
-	Network  string `json:"network" arg:"syslog-network" usage:"remote syslog network (udp, tcp); empty means the local socket"`
-	Address  string `json:"address" arg:"syslog-address" usage:"remote syslog address as host:port; set together with network"`
+	Level    string `json:"level" conf:"syslog-level" usage:"minimum level logged to syslog (debug, info, warn, error)"`
+	Format   string `json:"format" conf:"syslog-format" usage:"syslog message format: text or json"`
+	Tag      string `json:"tag" conf:"syslog-tag" usage:"syslog tag; defaults to the process name"`
+	Facility string `json:"facility" conf:"syslog-facility" usage:"syslog facility (daemon, user, auth, local0..local7, ...)"`
+	Network  string `json:"network" conf:"syslog-network" usage:"remote syslog network (udp, tcp); empty means the local socket"`
+	Address  string `json:"address" conf:"syslog-address" usage:"remote syslog address as host:port; set together with network"`
 }
 
 // Syslog is the sink service. Severity travels per message, so Handle

@@ -60,8 +60,8 @@ func (p *argsProbe) Run() int {
 // argument introspection.
 type extraCfg struct {
 	Version uint32   `json:"version"`
-	Flag    string   `json:"flag" arg:"extra-flag" usage:"only visible when extra is enabled"`
-	Tags    []string `json:"tags" arg:"extra-tag" usage:"repeatable, domain-checkable"`
+	Flag    string   `json:"flag" conf:"extra-flag" usage:"only visible when extra is enabled"`
+	Tags    []string `json:"tags" conf:"extra-tag" usage:"repeatable, domain-checkable"`
 }
 
 type extraService struct {

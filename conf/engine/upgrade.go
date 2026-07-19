@@ -48,6 +48,23 @@ func (s *Schema) UpgradeFile(c *fail.Collector, path string, from map[string]uin
 		return
 	}
 	section := files.sections[0]
+	var ids []string
+	for name := range s.chains {
+		ids = append(ids, name)
+	}
+	if _, rooted := s.chains[""]; rooted {
+		// the root binding: fold the document's unclaimed keys into a
+		// synthetic root entry and keep the claimed ones beside it
+		if raw, present := rootObject(section, ids); present {
+			filtered := map[string]json.RawMessage{"": raw}
+			for name := range section {
+				if _, owned := s.chains[name]; owned && name != "" {
+					filtered[name] = section[name]
+				}
+			}
+			section = filtered
+		}
+	}
 	for name := range from {
 		if _, owned := s.chains[name]; !owned {
 			c.Fail("upgrade-config: --from-version names %q, which this binary's schema does not own", name)
@@ -55,15 +72,27 @@ func (s *Schema) UpgradeFile(c *fail.Collector, path string, from map[string]uin
 			c.Fail("upgrade-config: --from-version names %q, which the file does not contain", name)
 		}
 	}
-	bareTarget := s.bareTarget(c, section, from, bare)
+	bareTarget, hasBareTarget := s.bareTarget(c, section, from, bare)
 	if c.Len() > 0 {
 		return
 	}
 	out := map[string]any{}
 	for name, raw := range section {
 		if ch, owned := s.chains[name]; owned {
-			if upgraded := s.upgradeSection(c, ch, name, path, raw, from, bareTarget, bare); upgraded != nil {
-				out[name] = upgraded
+			display := name
+			if name == "" {
+				display = s.appletID
+			}
+			isBare := hasBareTarget && name == bareTarget
+			if upgraded := s.upgradeSection(c, ch, name, display, path, raw, from, isBare, bare); upgraded != nil {
+				if name == "" {
+					// the root binding: its keys ARE the document
+					for k, v := range upgraded {
+						out[k] = v
+					}
+				} else {
+					out[name] = upgraded
+				}
 			}
 		} else {
 			// foreign sections pass through verbatim
@@ -77,7 +106,9 @@ func (s *Schema) UpgradeFile(c *fail.Collector, path string, from map[string]uin
 
 // bareTarget resolves the bare --from-version assertion: legal only
 // when exactly one owned, versionless, unscoped section is present.
-func (s *Schema) bareTarget(c *fail.Collector, section map[string]json.RawMessage, from map[string]uint32, bare *uint32) string {
+// The second return distinguishes "no bare assertion" from the root
+// binding, whose name is empty.
+func (s *Schema) bareTarget(c *fail.Collector, section map[string]json.RawMessage, from map[string]uint32, bare *uint32) (string, bool) {
 	var versionless []string
 	for name, raw := range section {
 		if _, owned := s.chains[name]; owned {
@@ -91,61 +122,60 @@ func (s *Schema) bareTarget(c *fail.Collector, section map[string]json.RawMessag
 			}
 		}
 	}
-	out := ""
 	if bare != nil {
 		if len(versionless) == 1 {
-			out = versionless[0]
+			return versionless[0], true
 		} else if len(versionless) == 0 {
 			c.Fail("upgrade-config: a bare --from-version has no versionless section to apply to")
 		} else {
 			c.Fail("upgrade-config: a bare --from-version is ambiguous — versionless sections: %v; use section=N", versionless)
 		}
 	}
-	return out
+	return "", false
 }
 
 // upgradeSection transforms one owned section to its current version,
 // returning the emitted object (nil on violation).
-func (s *Schema) upgradeSection(c *fail.Collector, ch *chain, name, path string, raw json.RawMessage, from map[string]uint32, bareTarget string, bare *uint32) map[string]any {
+func (s *Schema) upgradeSection(c *fail.Collector, ch *chain, name, display, path string, raw json.RawMessage, from map[string]uint32, isBare bool, bare *uint32) map[string]any {
 	var peek struct {
 		Version *uint32 `json:"version"`
 	}
 	if err := json.Unmarshal(raw, &peek); err != nil {
-		c.Fail("upgrade-config %s: expected a json object: %v", name, err)
+		c.Fail("upgrade-config %s: expected a json object: %v", display, err)
 		return nil
 	}
 	version := peek.Version
 	if asserted, has := from[name]; has {
 		if version != nil {
-			c.Fail("upgrade-config %s: the file says version %d; a contradicting --from-version %s=%d is an error, not a tiebreak", name, *version, name, asserted)
+			c.Fail("upgrade-config %s: the file says version %d; a contradicting --from-version %s=%d is an error, not a tiebreak", display, *version, display, asserted)
 			return nil
 		}
 		version = &asserted
-		s.warnMaterialized(ch, name, asserted, raw)
-	} else if version == nil && name == bareTarget {
+		s.warnMaterialized(ch, display, asserted, raw)
+	} else if version == nil && isBare {
 		version = bare
-		s.warnMaterialized(ch, name, *bare, raw)
+		s.warnMaterialized(ch, display, *bare, raw)
 	}
 	if version == nil {
-		c.Fail("upgrade-config %s: the section carries no version key — assert one with --from-version %s=N", name, name)
+		c.Fail("upgrade-config %s: the section carries no version key — assert one with --from-version %s=N", display, display)
 		return nil
 	}
 	switch {
 	case *version == ch.version:
-		return s.emitCurrent(c, ch, name, raw)
+		return s.emitCurrent(c, ch, display, raw)
 	case *version > ch.version:
-		c.Fail("upgrade-config %s: version %d was written by a newer schema than this binary's %d", name, *version, ch.version)
+		c.Fail("upgrade-config %s: version %d was written by a newer schema than this binary's %d", display, *version, ch.version)
 	case len(ch.steps) == 0:
-		c.Fail("upgrade-config %s: version %d does not match the binary's %d and the section registers no migration", name, *version, ch.version)
+		c.Fail("upgrade-config %s: version %d does not match the binary's %d and the section registers no migration", display, *version, ch.version)
 	case *version < ch.steps[0].from:
-		c.Fail("upgrade-config %s: version %d is no longer supported (oldest supported: %d)", name, *version, ch.steps[0].from)
+		c.Fail("upgrade-config %s: version %d is no longer supported (oldest supported: %d)", display, *version, ch.steps[0].from)
 	default:
 		idx := int(*version - ch.steps[0].from)
 		in := reflect.New(ch.steps[idx].in)
 		dec := json.NewDecoder(bytes.NewReader(raw))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(in.Interface()); err != nil {
-			c.Fail("upgrade-config %s (%s): version %d document: %v", name, path, *version, err)
+			c.Fail("upgrade-config %s (%s): version %d document: %v", display, path, *version, err)
 			return nil
 		}
 		v := in.Elem().Interface()

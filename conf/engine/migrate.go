@@ -72,6 +72,14 @@ func (s *Schema) validateVersioning(c *fail.Collector, sec Section, fields []*Fi
 		c.Fail("section %q: the config struct must declare Version uint32 `json:\"version\"` — the file breadcrumb every future migration reads", sec.Name)
 		return
 	}
+	// the version field permits ONLY the json annotation: no argument,
+	// no env door (the env source is by definition current-dialect),
+	// no dump exclusion (it would break the breadcrumb), no usage
+	if vf.Long != "" || vf.Short != "" || vf.EnvName != "" || vf.NoEnv || vf.Transient || vf.Usage != "" {
+		c.Fail("section %q: the version field allows only the json annotation — conf, env, dump and usage tags are errors", sec.Name)
+		return
+	}
+	vf.NoEnv = true // the engine owns the exemption: no derived env name
 	def := uint32(vf.root.Elem().FieldByIndex(vf.Path).Uint())
 	ok := true
 	if def == 0 {

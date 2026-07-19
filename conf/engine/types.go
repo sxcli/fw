@@ -84,9 +84,9 @@ const DefaultMaxSize = 1 << 20
 // passes every gate). Anything else under "core" — the framework's
 // service controls, say — arrives as a further Contribution.
 type Core struct {
-	Config      string `json:"config" arg:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
-	WriteConfig bool   `json:"writeConfig" arg:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
-	Help        bool   `json:"help" arg:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
+	Config      string `json:"config" conf:"config,c" dump:"-" usage:"path of the configuration file, replaces the location search"`
+	WriteConfig bool   `json:"writeConfig" conf:"write-config" dump:"-" env:"-" usage:"write the merged configuration to the --config target (or stdout) and exit"`
+	Help        bool   `json:"help" conf:"help,h" dump:"-" env:"-" usage:"print the applet's argument schema and exit"`
 }
 
 // Contribution is one flat struct claiming keys under the composite

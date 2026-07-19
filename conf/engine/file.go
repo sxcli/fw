@@ -208,15 +208,47 @@ func (s *Schema) applyFiles(c *fail.Collector, files *Files) {
 	}
 	for i, section := range files.sections {
 		for _, id := range ids {
-			if raw, present := section[id]; present {
+			raw, present := section[id]
+			if id == "" {
+				// the root binding owns the document itself, minus the
+				// keys named sections claim
+				raw, present = rootObject(section, ids)
+			}
+			if present {
+				where := id
+				if id == "" {
+					where = s.appletID
+				}
 				if ch, versioned := s.chains[id]; versioned {
-					s.applyVersioned(c, ch, raw, files.paths[i], id)
+					s.applyVersioned(c, ch, raw, files.paths[i], where)
 				} else {
-					applyObject(c, byID[id], 0, raw, id)
+					applyObject(c, byID[id], 0, raw, where)
 				}
 			}
 		}
 	}
+}
+
+// rootObject re-assembles the file document without the keys owned by
+// named sections: what remains is the root section's object.
+func rootObject(doc map[string]json.RawMessage, ids []string) (json.RawMessage, bool) {
+	named := map[string]bool{}
+	for _, id := range ids {
+		if id != "" {
+			named[id] = true
+		}
+	}
+	out := map[string]json.RawMessage{}
+	for key, raw := range doc {
+		if !named[key] {
+			out[key] = raw
+		}
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	js, err := json.Marshal(out)
+	return js, err == nil
 }
 
 // applyObject applies one json object to the fields living at the given

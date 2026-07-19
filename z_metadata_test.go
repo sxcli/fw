@@ -152,11 +152,11 @@ func TestDomainEnforcedOnArguments(t *testing.T) {
 }
 
 func TestDomainEnforcedOnEnvironment(t *testing.T) {
-	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP_EXTRA_FLAG": "turbo"})
+	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP__EXTRA_FLAG": "turbo"})
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
 	}
-	if !strings.Contains(w.stderr.String(), "$APP_EXTRA_FLAG") {
+	if !strings.Contains(w.stderr.String(), "$APP__EXTRA_FLAG") {
 		t.Errorf("violation must name the env source:\n%s", w.stderr.String())
 	}
 }
@@ -220,11 +220,11 @@ func TestSliceDomainEnforcedFromFiles(t *testing.T) {
 }
 
 func TestSliceDomainEnforcedFromEnvironment(t *testing.T) {
-	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP_EXTRA_TAG": "a,z"})
+	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP__EXTRA_TAG": "a,z"})
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
 	}
-	if !strings.Contains(w.stderr.String(), "$APP_EXTRA_TAG") {
+	if !strings.Contains(w.stderr.String(), "$APP__EXTRA_TAG") {
 		t.Errorf("violation must name the env source:\n%s", w.stderr.String())
 	}
 }
@@ -288,7 +288,7 @@ func TestDescribeEdgeCases(t *testing.T) {
 // intService proves non-string domains end to end.
 type intCfg struct {
 	Version uint32 `json:"version"`
-	Retries int    `json:"retries" arg:"retries-x" usage:"attempts"`
+	Retries int    `json:"retries" conf:"retries-x" usage:"attempts"`
 }
 
 type intService struct {

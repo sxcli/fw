@@ -24,7 +24,7 @@ import (
 
 type catCfg struct {
 	Version uint32 `json:"version"`
-	Level   string `json:"level" arg:"cat-level" usage:"verbosity"`
+	Level   string `json:"level" conf:"cat-level" usage:"verbosity"`
 }
 
 type catService struct {
@@ -213,7 +213,7 @@ func TestBareAndAppletCommit(t *testing.T) {
 
 type badTagCfg struct {
 	Version uint32 `json:"version"`
-	X       string `arg:"x"` // no json tag: a registration-time violation
+	X       string `conf:"x"` // no json tag: a registration-time violation
 }
 
 type badTagSvc struct{ cfg badTagCfg }

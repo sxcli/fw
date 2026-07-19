@@ -103,6 +103,7 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 			s.validateVersioning(c, sec, fields)
 		}
 	}
+	s.checkTopLevel(c)
 	env := map[string]*Field{}
 	for _, svc := range s.services {
 		for _, f := range svc.fields {
@@ -119,9 +120,9 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 						f.Short = "" // first come, first served
 					}
 				}
-				if f.EnvName == "" && !f.NoEnv {
-					f.EnvName = strings.ToUpper(strings.ReplaceAll(appletID, "-", "_")) + "_" + strings.ToUpper(strings.ReplaceAll(f.Long, "-", "_"))
-				}
+			}
+			if f.EnvName == "" && !f.NoEnv && len(f.JSONPath) > 0 {
+				f.EnvName = deriveEnv(appletID, svc.id, f)
 			}
 			if f.EnvName != "" {
 				if prev, dup := env[f.EnvName]; !dup {
@@ -136,6 +137,9 @@ func NewSchema(c *fail.Collector, appletID string, core []Contribution, sections
 }
 
 func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, drop map[string]bool, meta *Meta) []*Field {
+	if id != "" && hasSepRun(id) {
+		c.Fail("section %q: consecutive separators would forge a path boundary in derived environment names", id)
+	}
 	fields, errs := extract(id, cfgPtr.Type().Elem(), nil, nil, "", true)
 	for _, err := range errs {
 		c.Add(err)
@@ -171,6 +175,27 @@ func (s *Schema) add(c *fail.Collector, id string, cfgPtr reflect.Value, drop ma
 	return fields
 }
 
+// checkTopLevel rejects a top-level file key claimed twice: a root
+// section's field beside a named section of the same name would be
+// one json key with two owners.
+func (s *Schema) checkTopLevel(c *fail.Collector) {
+	names := map[string]bool{}
+	for _, svc := range s.services {
+		if svc.id != "" {
+			names[svc.id] = true
+		}
+	}
+	for _, svc := range s.services {
+		if svc.id == "" {
+			for _, f := range svc.fields {
+				if len(f.JSONPath) > 0 && names[f.JSONPath[0]] {
+					c.Fail("top-level key %q is claimed by both the root config and a section", f.JSONPath[0])
+				}
+			}
+		}
+	}
+}
+
 // checkCoreKeys rejects a json path claimed by two core contributions:
 // the contributors share one file namespace, and ties are never broken
 // silently.
@@ -189,7 +214,7 @@ func (s *Schema) checkCoreKeys(c *fail.Collector) {
 }
 
 // extract walks one config struct type and returns its settable fields.
-// Nested structs are file-only: arg and env tags below the top level are
+// Nested structs carry no arguments: conf tags below the top level are
 // errors, as are embedded fields, unsupported field types and missing or
 // duplicate json names.
 func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, namePrefix string, topLevel bool) ([]*Field, []error) {
@@ -216,6 +241,9 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 				jsonName, hasJSON := sf.Tag.Lookup("json")
 				jsonName, _, _ = strings.Cut(jsonName, ",")
 				if hasJSON && jsonName != "" && jsonName != "-" {
+					if hasSepRun(jsonName) {
+						errs = append(errs, fmt.Errorf("service %q config field %s: json name %q contains consecutive separators — they would forge a path boundary in derived environment names", serviceID, name, jsonName))
+					}
 					if !jsonNames[jsonName] {
 						jsonNames[jsonName] = true
 						f.JSONPath = append(append([]string{}, jsonPath...), jsonName)
@@ -225,8 +253,11 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 				} else {
 					errs = append(errs, fmt.Errorf("service %q config field %s: a json tag with a name is required", serviceID, name))
 				}
-				if arg, hasArg := sf.Tag.Lookup("arg"); hasArg {
-					long, short, hasShort := strings.Cut(arg, ",")
+				if _, hasArg := sf.Tag.Lookup("arg"); hasArg {
+					errs = append(errs, fmt.Errorf("service %q config field %s: the arg tag died in the composition release — rename it to conf", serviceID, name))
+				}
+				if tag, hasConf := sf.Tag.Lookup("conf"); hasConf {
+					long, short, hasShort := strings.Cut(tag, ",")
 					if isValidLong(long) && (!hasShort || isValidShort(short)) {
 						if !longs[long] && (!hasShort || !shorts[short]) {
 							longs[long] = true
@@ -236,10 +267,10 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 								f.Short = short
 							}
 						} else {
-							errs = append(errs, fmt.Errorf("service %q config field %s: duplicate argument name in %q", serviceID, name, arg))
+							errs = append(errs, fmt.Errorf("service %q config field %s: duplicate argument name in %q", serviceID, name, tag))
 						}
 					} else {
-						errs = append(errs, fmt.Errorf("service %q config field %s: invalid arg tag %q", serviceID, name, arg))
+						errs = append(errs, fmt.Errorf("service %q config field %s: invalid conf tag %q", serviceID, name, tag))
 					}
 				}
 				if env, hasEnv := sf.Tag.Lookup("env"); hasEnv {
@@ -251,8 +282,8 @@ func extract(serviceID string, t reflect.Type, path []int, jsonPath []string, na
 						errs = append(errs, fmt.Errorf("service %q config field %s: invalid env tag %q", serviceID, name, env))
 					}
 				}
-				if !topLevel && (f.Long != "" || f.EnvName != "") {
-					errs = append(errs, fmt.Errorf("service %q config field %s: nested struct fields are file-only, arg/env tags are not allowed", serviceID, name))
+				if !topLevel && f.Long != "" {
+					errs = append(errs, fmt.Errorf("service %q config field %s: conf tags below the top level are not supported — mirror the value into a top-level field yourself", serviceID, name))
 				}
 				// A field without a valid json name is unusable — the
 				// violation is already recorded; keeping it would leave
@@ -324,7 +355,11 @@ func ProbeType(cfgPtr reflect.Type) map[string]ProbedField {
 func (s *Schema) HelpSections() []HelpSection {
 	var out []HelpSection
 	for _, svc := range s.services {
-		out = append(out, HelpSection{ID: svc.id, Fields: svc.fields})
+		id := svc.id
+		if id == "" {
+			id = s.appletID // the root binding answers to the invocation's name
+		}
+		out = append(out, HelpSection{ID: id, Fields: svc.fields})
 	}
 	return out
 }
@@ -357,11 +392,74 @@ func scalarOK(t reflect.Type) bool {
 // lowercase, at least two characters, letters/digits/dashes, starting
 // with a letter and not ending with a dash.
 func isValidLong(long string) bool {
-	valid := len(long) >= 2 && long[0] >= 'a' && long[0] <= 'z' && long[len(long)-1] != '-'
+	valid := len(long) >= 2 && long[0] >= 'a' && long[0] <= 'z' && long[len(long)-1] != '-' && !hasSepRun(long)
 	for _, c := range long {
 		valid = valid && ('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '-')
 	}
 	return valid
+}
+
+// hasSepRun reports two consecutive separator characters — the
+// sequence that would forge a path boundary (__) in a derived
+// environment name. Banned in aliases, conf names and json names.
+func hasSepRun(s string) bool {
+	prev := false
+	for _, c := range s {
+		sep := c == '-' || c == '_'
+		if sep && prev {
+			return true
+		}
+		prev = sep
+	}
+	return false
+}
+
+// segmentize renders one name as an environment segment: uppercase,
+// with a fold (_) at camel boundaries and for single separators.
+// Structural boundaries — alias to field, path segment to segment —
+// are stitched with __ by the caller; a single name can never spell
+// one (hasSepRun bans the runs that could).
+func segmentize(name string) string {
+	var b strings.Builder
+	prevLower := false
+	for _, c := range name {
+		if c == '-' || c == '_' {
+			b.WriteByte('_')
+			prevLower = false
+		} else if 'A' <= c && c <= 'Z' {
+			if prevLower {
+				b.WriteByte('_')
+			}
+			b.WriteRune(c)
+			prevLower = false
+		} else {
+			b.WriteString(strings.ToUpper(string(c)))
+			prevLower = 'a' <= c && c <= 'z'
+		}
+	}
+	return b.String()
+}
+
+// deriveEnv builds a field's derived environment name: the alias,
+// then the field's file address, stitched with __. A conf-tagged
+// field claims a short global name (alias __ long — longs are unique
+// across the closure); an untagged field is addressed by its path,
+// QUALIFIED by its section — except the invocation's own section
+// (the root binding, or the section named after the active applet),
+// whose fields need no qualifier. The cross-form collisions this
+// allows are genuine name claims, caught by the duplicate-name check.
+func deriveEnv(alias, section string, f *Field) string {
+	if f.Long != "" {
+		return segmentize(alias) + "__" + segmentize(f.Long)
+	}
+	segs := make([]string, 0, len(f.JSONPath)+1)
+	if section != "" && section != alias {
+		segs = append(segs, segmentize(section))
+	}
+	for _, name := range f.JSONPath {
+		segs = append(segs, segmentize(name))
+	}
+	return segmentize(alias) + "__" + strings.Join(segs, "__")
 }
 
 // isValidShort reports whether short is a valid single-character short

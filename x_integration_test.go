@@ -71,8 +71,8 @@ func (g *greeterService) Configured() error { return nil }
 
 type probeConfig struct {
 	Version uint32 `json:"version"`
-	Exit    int    `json:"exit" arg:"exit"`
-	Note    string `json:"note" arg:"note,n" usage:"a note to print"`
+	Exit    int    `json:"exit" conf:"exit"`
+	Note    string `json:"note" conf:"note,n" usage:"a note to print"`
 }
 
 type probeApplet struct {
@@ -91,7 +91,7 @@ func (p *probeApplet) Run() int {
 
 type echoCfg struct {
 	Version uint32 `json:"version"`
-	Quiet   bool   `json:"quiet" arg:"quiet,q"`
+	Quiet   bool   `json:"quiet" conf:"quiet,q"`
 }
 
 type echoApplet struct{ cfg echoCfg }
@@ -233,11 +233,11 @@ func TestConfigFilePrecedence(t *testing.T) {
 	if !strings.Contains(r.stdout, "note=fromfile") {
 		t.Errorf("file value not applied:\n%s%s", r.stdout, r.stderr)
 	}
-	r = box(t, "single", map[string]string{"PROBE_NOTE": "fromenv"}, "", "--config", cfg)
+	r = box(t, "single", map[string]string{"PROBE__NOTE": "fromenv"}, "", "--config", cfg)
 	if !strings.Contains(r.stdout, "note=fromenv") {
 		t.Errorf("env must beat file:\n%s%s", r.stdout, r.stderr)
 	}
-	r = box(t, "single", map[string]string{"PROBE_NOTE": "fromenv"}, "", "--config", cfg, "--note", "fromarg")
+	r = box(t, "single", map[string]string{"PROBE__NOTE": "fromenv"}, "", "--config", cfg, "--note", "fromarg")
 	if !strings.Contains(r.stdout, "note=fromarg") {
 		t.Errorf("arg must beat env:\n%s%s", r.stdout, r.stderr)
 	}

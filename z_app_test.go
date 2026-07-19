@@ -31,7 +31,7 @@ import (
 
 type appCfg struct {
 	Version  uint32 `json:"version"`
-	Greeting string `json:"greeting" arg:"greeting,g" usage:"the greeting"`
+	Greeting string `json:"greeting" conf:"greeting,g" usage:"the greeting"`
 }
 
 type appSrv struct {
@@ -117,7 +117,7 @@ func TestAppAliasSurfaces(t *testing.T) {
 	}
 	// env: prefix from the ALIAS
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil,
-		map[string]string{"SRV_GREETING": "fromenv"}, registerSrv("srv"))
+		map[string]string{"SRV__GREETING": "fromenv"}, registerSrv("srv"))
 	if code != 0 || strings.Join(w.log, ",") != "srv.run:fromenv" {
 		t.Errorf("env surface wrong: code=%d log=%v", code, w.log)
 	}
@@ -131,7 +131,7 @@ func TestAppAliasSurfaces(t *testing.T) {
 
 func TestHyphenAliasReachesEnv(t *testing.T) {
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil,
-		map[string]string{"CHERRY_PICK_GREETING": "picked"}, registerSrv("cherry-pick"))
+		map[string]string{"CHERRY_PICK__GREETING": "picked"}, registerSrv("cherry-pick"))
 	if code != 0 || strings.Join(w.log, ",") != "srv.run:picked" {
 		t.Errorf("hyphen alias env mapping wrong: code=%d log=%v stderr:\n%s", code, w.log, w.stderr.String())
 	}

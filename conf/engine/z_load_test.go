@@ -78,10 +78,10 @@ func env(vars map[string]string) func(string) (string, bool) {
 
 type loadSink struct {
 	Version  uint32        `json:"version"`
-	Path     string        `json:"path" arg:"log-path"`
-	MaxAge   time.Duration `json:"maxAge" arg:"log-max-age"`
+	Path     string        `json:"path" conf:"log-path"`
+	MaxAge   time.Duration `json:"maxAge" conf:"log-max-age"`
 	Backups  int           `json:"backups"`
-	Tags     []string      `json:"tags" arg:"tag,t"`
+	Tags     []string      `json:"tags" conf:"tag,t"`
 	Rotation struct {
 		Size int64 `json:"size"`
 	} `json:"rotation"`
@@ -97,7 +97,7 @@ func TestPrecedenceEndToEnd(t *testing.T) {
 	}
 	src := Sources{
 		Args:      []string{"--log-max-age", "2h", "trail"},
-		LookupEnv: env(map[string]string{"CAT_LOG_PATH": "env.log", "CAT_LOG_MAX_AGE": "1h"}),
+		LookupEnv: env(map[string]string{"CAT__LOG_PATH": "env.log", "CAT__LOG_MAX_AGE": "1h"}),
 		Locations: []Location{{Base: "/bin/cat-config"}, {Base: "/etc/cat/config"}, {Base: "/home/u/cat/config"}},
 		Stat:      fakeStat(disk),
 		Open:      fakeFS(disk),
@@ -247,7 +247,7 @@ func TestDuplicateExtensionClaimFails(t *testing.T) {
 func TestEmptyEnvValueMeansEmptySlice(t *testing.T) {
 	cfg := &loadSink{Version: 1, Tags: []string{"default"}}
 	src := Sources{
-		LookupEnv: env(map[string]string{"CAT_TAG": ""}),
+		LookupEnv: env(map[string]string{"CAT__TAG": ""}),
 	}
 	s := newTestSchema(t, &Core{}, map[string]any{"filesink": cfg})
 	c := &fail.Collector{}
@@ -440,7 +440,7 @@ func TestApplyCoreSeesFileValues(t *testing.T) {
 	disk := map[string]string{"/etc/cat/config.json": `{"core": {"disable": ["never"], "override": ["sqlite=mysql"]}}`}
 	src := Sources{
 		Args:      []string{"--enable", "mysql"},
-		LookupEnv: env(map[string]string{"CAT_DISABLE": "sqlite,boltdb"}),
+		LookupEnv: env(map[string]string{"CAT__DISABLE": "sqlite,boltdb"}),
 		Locations: []Location{{Base: "/etc/cat/config"}},
 		Stat:      fakeStat(disk),
 		Open:      fakeFS(disk),
@@ -471,7 +471,7 @@ func TestPeekCore(t *testing.T) {
 	var core Core
 	PeekCore(c, "cat", Sources{
 		Args:      []string{"--unknown-service-flag", "junk", "--config=x.yml", "--write-config", "--help"},
-		LookupEnv: env(map[string]string{"CAT_CONFIG": "env.yml"}),
+		LookupEnv: env(map[string]string{"CAT__CONFIG": "env.yml"}),
 	}, []Contribution{CoreContrib(&core)})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
@@ -486,9 +486,9 @@ func TestArgumentOnlyCoreFieldsIgnoreEnvironment(t *testing.T) {
 	var core Core
 	PeekCore(c, "cat", Sources{
 		LookupEnv: env(map[string]string{
-			"CAT_HELP":         "true",
-			"CAT_WRITE_CONFIG": "true",
-			"CAT_CONFIG":       "env.yml",
+			"CAT__HELP":         "true",
+			"CAT__WRITE_CONFIG": "true",
+			"CAT__CONFIG":       "env.yml",
 		}),
 	}, []Contribution{CoreContrib(&core)})
 	if c.Len() != 0 {

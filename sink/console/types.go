@@ -30,9 +30,9 @@ import (
 // Config is the console sink configuration, section "console".
 type Config struct {
 	Version uint32 `json:"version"`
-	Level   string `json:"level" arg:"console-level" usage:"minimum level logged to the console (debug, info, warn, error)"`
-	Format  string `json:"format" arg:"console-format" usage:"console log format: text or json"`
-	Output  string `json:"output" arg:"console-output" usage:"console log destination: stderr or stdout"`
+	Level   string `json:"level" conf:"console-level" usage:"minimum level logged to the console (debug, info, warn, error)"`
+	Format  string `json:"format" conf:"console-format" usage:"console log format: text or json"`
+	Output  string `json:"output" conf:"console-output" usage:"console log destination: stderr or stdout"`
 }
 
 // Console is the sink service. Until Configured builds the inner

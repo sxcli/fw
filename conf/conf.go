@@ -13,11 +13,15 @@
 // limitations under the License.
 
 // Package conf is the loading front door of the sxcli configuration
-// engine: one annotated struct becomes a complete operator surface —
+// engine: ONE annotated struct becomes a complete operator surface —
 // config files (binary companion, system, user), environment variables
 // and command-line arguments merged with strict validation, --help,
-// --write-config and --upgrade-config served. The machinery lives in
-// conf/engine; this package is its obvious sequencing.
+// --write-config and --upgrade-config served. The struct binds at the
+// ROOT of the file: a config file is flat, {"version": 1, "listen":
+// ":8080"}, the way the rest of the world writes them — sections are
+// the framework's multi-service shape, not the front door's. The
+// machinery lives in conf/engine; this package is its obvious
+// sequencing.
 //
 //	cfg := Config{Listen: ":8080"}
 //	l, served := conf.New("mytool", &cfg)
@@ -101,8 +105,8 @@ const (
 // flag that parses but silently does nothing is worse than an unknown
 // argument.
 type upgradeKnobs struct {
-	UpgradeConfig bool     `json:"upgradeConfig" arg:"upgrade-config" dump:"-" env:"-" usage:"migrate the --config file's sections to their current schema versions and exit"`
-	FromVersion   []string `json:"fromVersion" arg:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
+	UpgradeConfig bool     `json:"upgradeConfig" conf:"upgrade-config" dump:"-" env:"-" usage:"migrate the --config file's sections to their current schema versions and exit"`
+	FromVersion   []string `json:"fromVersion" conf:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
 }
 
 // tierFeatures are the location-search features: suppressed tiers are
@@ -118,8 +122,8 @@ var tierFeatures = map[Feature]bool{
 // through all three phases.
 type Loader struct {
 	name     string
-	sections []engine.Section
-	migrated map[string][]engine.Step
+	cfg      any
+	steps    []engine.Step
 	features []Feature
 	maxSize  int64
 	provs    []Provider
@@ -137,23 +141,15 @@ type Loader struct {
 // NewLoader starts a loading run for name — the identity behind the
 // env prefix, the config search locations and the core section; it is
 // deliberately not derived from argv[0], so renaming a binary never
-// orphans its configuration.
-func NewLoader(name string) *Loader {
-	return &Loader{name: name, stdout: os.Stdout, stderr: os.Stderr}
+// orphans its configuration. cfg is THE config struct, bound at the
+// file's root — nobody needs more than one in a standalone tool.
+func NewLoader(name string, cfg any) *Loader {
+	return &Loader{name: name, cfg: cfg, stdout: os.Stdout, stderr: os.Stderr}
 }
 
-// New is the single-struct front door: cfg becomes the section named
-// after the binary itself. Exactly NewLoader(name).Section(name,
-// cfg).Load().
+// New is the one-liner front door: exactly NewLoader(name, cfg).Load().
 func New(name string, cfg any) (*Loader, bool) {
-	return NewLoader(name).Section(name, cfg).Load()
-}
-
-// Section adds one config struct under its section name: the file key,
-// and the env-prefix namespace of its fields.
-func (l *Loader) Section(name string, cfg any) *Loader {
-	l.sections = append(l.sections, engine.Section{Name: name, Ptr: cfg})
-	return l
+	return NewLoader(name, cfg).Load()
 }
 
 // Suppress removes pieces of the surface. A suppressed argument
@@ -167,17 +163,14 @@ func (l *Loader) Suppress(features ...Feature) *Loader {
 	return l
 }
 
-// Migrate attaches a section's migration chain, oldest step first —
+// Migrate attaches the config's migration chain, oldest step first —
 // how a schema evolves without stranding the files already deployed.
 // The chain is validated at Load: contiguous versions, each step's
-// output feeding the next step's input, terminating at the section's
-// current type, whose factory default Version must equal the terminal
+// output feeding the next step's input, terminating at the current
+// config type, whose factory default Version must equal the terminal
 // version.
-func (l *Loader) Migrate(section string, steps ...engine.Step) *Loader {
-	if l.migrated == nil {
-		l.migrated = map[string][]engine.Step{}
-	}
-	l.migrated[section] = append(l.migrated[section], steps...)
+func (l *Loader) Migrate(steps ...engine.Step) *Loader {
+	l.steps = append(l.steps, steps...)
 	return l
 }
 
@@ -241,16 +234,6 @@ func (l *Loader) Load() (*Loader, bool) {
 	c := &fail.Collector{}
 	src := l.sources()
 	l.loaded = true
-	named := map[string]bool{}
-	for i := range l.sections {
-		named[l.sections[i].Name] = true
-		l.sections[i].Steps = l.migrated[l.sections[i].Name]
-	}
-	for section := range l.migrated {
-		if !named[section] {
-			c.Fail("Migrate names unknown section %q", section)
-		}
-	}
 	var peek engine.Core
 	var peekUp upgradeKnobs
 	engine.PeekCore(c, l.name, src, []engine.Contribution{engine.CoreContrib(&peek), {Ptr: &peekUp}})
@@ -262,7 +245,7 @@ func (l *Loader) Load() (*Loader, bool) {
 		if c.Len() == 0 {
 			var core engine.Core
 			var up upgradeKnobs
-			sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.sections, src.SuppressCore)
+			sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.rootSection(), src.SuppressCore)
 			if c.Len() == 0 {
 				saved := l.snapshot()
 				loaded := sch.Apply(c, files, src)
@@ -329,7 +312,7 @@ func (l *Loader) upgrade(c *fail.Collector, src engine.Sources, peek engine.Core
 	}
 	var core engine.Core
 	var up upgradeKnobs
-	sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.sections, src.SuppressCore)
+	sch := engine.NewSchema(c, l.name, []engine.Contribution{engine.CoreContrib(&core), {Ptr: &up}}, l.rootSection(), src.SuppressCore)
 	if c.Len() == 0 {
 		sch.UpgradeFile(c, peek.Config, from, bare, src)
 	}
@@ -339,6 +322,11 @@ func (l *Loader) upgrade(c *fail.Collector, src engine.Sources, peek engine.Core
 	}
 	l.served = true
 	return l, true
+}
+
+// rootSection binds the sole config struct at the file's root.
+func (l *Loader) rootSection() []engine.Section {
+	return []engine.Section{{Name: "", Ptr: l.cfg, Steps: l.steps}}
 }
 
 // sources assembles the run's Sources: the production wiring unless
@@ -401,21 +389,15 @@ func (l *Loader) explicitPath(src engine.Sources, peek engine.Core) string {
 	return out
 }
 
-// snapshot copies every section struct's current value — the defaults —
-// so a served or failed run can hand them back untouched.
-func (l *Loader) snapshot() []reflect.Value {
-	out := make([]reflect.Value, len(l.sections))
-	for i, sec := range l.sections {
-		v := reflect.ValueOf(sec.Ptr).Elem()
-		saved := reflect.New(v.Type()).Elem()
-		saved.Set(v)
-		out[i] = saved
-	}
-	return out
+// snapshot copies the config struct's current value — the defaults —
+// so a served or failed run can hand it back untouched.
+func (l *Loader) snapshot() reflect.Value {
+	v := reflect.ValueOf(l.cfg).Elem()
+	saved := reflect.New(v.Type()).Elem()
+	saved.Set(v)
+	return saved
 }
 
-func (l *Loader) restore(saved []reflect.Value) {
-	for i, sec := range l.sections {
-		reflect.ValueOf(sec.Ptr).Elem().Set(saved[i])
-	}
+func (l *Loader) restore(saved reflect.Value) {
+	reflect.ValueOf(l.cfg).Elem().Set(saved)
 }

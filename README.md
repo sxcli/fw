@@ -27,9 +27,10 @@ import (
 )
 
 type Config struct {
-	Listen  string        `json:"listen" arg:"listen,l" usage:"address to serve on"`
-	Timeout time.Duration `json:"timeout" arg:"timeout" usage:"request timeout"`
-	Debug   bool          `json:"debug" arg:"debug" env:"-" usage:"verbose diagnostics"`
+	Version uint32        `json:"version"` // the schema's version, for config migrations
+	Listen  string        `json:"listen" conf:"listen,l" usage:"address to serve on"`
+	Timeout time.Duration `json:"timeout" conf:"timeout" usage:"request timeout"`
+	Debug   bool          `json:"debug" conf:"debug" env:"-" usage:"verbose diagnostics"`
 }
 
 type Serve struct{ cfg Config }
@@ -42,7 +43,7 @@ func (s *Serve) Run() int {
 
 func main() {
 	fw.Solo(fw.NewRegistration("example.com/mytool/serve",
-		func() *Serve { return &Serve{cfg: Config{Listen: ":8080", Timeout: 30 * time.Second}} },
+		func() *Serve { return &Serve{cfg: Config{Version: 1, Listen: ":8080", Timeout: 30 * time.Second}} },
 		func(s *Serve) *Config { return &s.cfg }).
 		Alias("serve"))
 }
@@ -57,7 +58,7 @@ field:
 
 ```console
 $ mytool --listen :9090 --timeout 5s
-$ SERVE_LISTEN=:9090 mytool
+$ SERVE__LISTEN=:9090 mytool
 $ echo '{"serve": {"listen": ":9090"}}' > /etc/serve/config.json && mytool
 ```
 
@@ -74,8 +75,8 @@ Field tags declare the whole surface:
 | Tag | Meaning |
 | --- | --- |
 | `json:"name"` | the config-file key (required on every exported field) |
-| `arg:"long[,short]"` | opt-in CLI argument: `--long value`, `--long=value`, `-s value` |
-| `env:"NAME"` | explicit env var; omitted → derived (applet alias + long name, uppercased); `env:"-"` → argument-only |
+| `conf:"long[,short]"` | the operator name: grants `--long value`, `--long=value`, `-s value` AND feeds the env name |
+| `env:"NAME"` | explicit env var, verbatim; omitted → derived (`ALIAS__` + name, `__` at path boundaries); `env:"-"` → no env |
 | `usage:"..."` | help text, translation-ready |
 | `dump:"-"` | run-scoped: excluded from generated config files and refused from them |
 

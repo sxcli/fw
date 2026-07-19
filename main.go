@@ -238,9 +238,9 @@ type invocationPlan struct {
 // section: the service controls, riding the same operator surfaces as
 // the engine's own knobs.
 type coreControls struct {
-	Disable  []string `json:"disable" arg:"disable" usage:"service ids to remove from the closure"`
-	Enable   []string `json:"enable" arg:"enable" usage:"service ids to force into the closure"`
-	Override []string `json:"override" arg:"override" usage:"dependency remapping in from=to form"`
+	Disable  []string `json:"disable" conf:"disable" usage:"service ids to remove from the closure"`
+	Enable   []string `json:"enable" conf:"enable" usage:"service ids to force into the closure"`
+	Override []string `json:"override" conf:"override" usage:"dependency remapping in from=to form"`
 }
 
 // controlsMeta carries the controls' hints for introspection and
