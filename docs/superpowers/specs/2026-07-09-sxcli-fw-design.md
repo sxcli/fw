@@ -48,11 +48,6 @@ sxcli-fw/
 ├── *.go                  — package fw: the entire public API
 ├── platform_unix.go      — args acquisition, no-op service hooks
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
-├── conf/                 — the loading front door: Builder/New → Build
-│                           (serves --help/--write-config) → Load (public —
-│                           the future sxcli.dev/conf, § below)
-│   └── engine/           — the machinery: schema, file discovery, source
-│                           merging, arg/env parsing, production wiring
 ├── internal/
 │   ├── registry/         — service descriptors, registration validation
 │   ├── graph/            — closure resolution, topological order
@@ -837,7 +832,8 @@ watching, no package-global mutable config object — the struct is the
 schema, filled once, immutable for the run, strict about unknowns.
 The ladder: (1) DONE — `NewSchema` takes neutral `Section{Name, Ptr,
 Meta}` members, the registry import is gone; (2) DONE — the machinery
-lives in `conf/engine` (production wiring — locations, hardening
+lives in `engine` (EXTRACTED 2026-07-19: the pair is its own module,
+`sxcli.dev/conf` + `/engine` + `/fail`, own repo, fw a consumer) (production wiring — locations, hardening
 openers, `ProductionSources` — moved down from fw root) and `conf` is
 the front door: ONE type through all phases — `NewLoader(name)` chain
 → `Load() (*Loader, served bool)` terminal (returns the receiver) →
@@ -1622,5 +1618,5 @@ the checks tests cannot express.
 | Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
 | Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
-| `sxcli.dev/conf` extraction (the config engine as a standalone module) | STAGED: `sxcli.dev/fw/conf` (front door: Builder/New/Build/Load, no Collector in its signature) over `sxcli.dev/fw/conf/engine` (machinery + production wiring), both public since 2026-07-18; the module split at the v1 horizon is an import-path rename of the pair; open before shipping: positional semantics (--help parity RESOLVED 2026-07-19: both doors best-effort) |
+| `sxcli.dev/conf` extraction (the config engine as a standalone module) | DONE 2026-07-19, ahead of the v1 plan — the surface closed and the train was the forcing function (shipping v0.3.0 on `sxcli.dev/fw/conf` would have scheduled a second break for standalone adopters). Own repo, module `sxcli.dev/conf`: package `conf` at root (the front door), `engine/` beside it, and `fail/` — the Collector left fw's internal (shared signatures demanded one public home; `sxcli.dev/utils` was considered and rejected: one repo per PRODUCT, not per package). fw requires the module (replace until publishing); the train gains a front car: conf v0.1.0 tags first |
 | Config schema versioning & migration chain | DESIGNED 2026-07-18 (§6): mandated `Version uint32` + typed per-section `conf.Step` chain, version-implies-complete, migrate-then-merge; supersedes the earlier "renamed from" metadata idea; lands with the conf pipeline promotion |

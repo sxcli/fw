@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/fail"
 )
 
 func newReg() (*Registry, *fail.Collector) {

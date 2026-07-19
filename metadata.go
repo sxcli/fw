@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"sxcli.dev/fw/conf/engine"
+	"sxcli.dev/conf/engine"
 )
 
 // Metadata is the optional, declarative description of a service — the

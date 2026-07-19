@@ -17,7 +17,7 @@ package graph
 import (
 	"testing"
 
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/fail"
 )
 
 type base struct {

@@ -18,7 +18,7 @@ import (
 	"reflect"
 	"sort"
 
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/registry"
 )
 

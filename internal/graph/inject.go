@@ -17,7 +17,7 @@ package graph
 import (
 	"reflect"
 
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/fail"
 )
 
 // Inject writes every resolved binding into its owner's inject field.

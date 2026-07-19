@@ -19,7 +19,7 @@ import (
 	"reflect"
 	"strings"
 
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/fail"
 )
 
 // New creates an empty registry recording violations into c.

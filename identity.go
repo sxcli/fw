@@ -15,7 +15,7 @@
 package fw
 
 import (
-	"sxcli.dev/fw/conf/engine"
+	"sxcli.dev/conf/engine"
 	"sxcli.dev/fw/internal/registry"
 )
 

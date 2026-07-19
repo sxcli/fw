@@ -20,8 +20,8 @@ import (
 	"os"
 	"sort"
 
-	"sxcli.dev/fw/conf/engine"
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/engine"
+	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/registry"
 )
 

@@ -22,7 +22,7 @@ package registry
 import (
 	"reflect"
 
-	"sxcli.dev/fw/internal/fail"
+	"sxcli.dev/conf/fail"
 )
 
 // DepField describes one `inject`-annotated field of a registered

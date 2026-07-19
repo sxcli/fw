@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"sxcli.dev/fw/conf/engine"
+	"sxcli.dev/conf/engine"
 )
 
 func TestHelpBestEffortOverBrokenConfig(t *testing.T) {
