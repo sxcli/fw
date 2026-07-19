@@ -1483,6 +1483,38 @@ chains are source-visible in `main`, and the generic `Register[T]`
 hands the analyzer the concrete type through `go/types` without
 constructing anything.
 
+**THE PARITY MANDATE.** The vet tool MUST do the same checks and
+produce the same errors and warnings as fw and conf. This is the
+section's governing contract, not an aspiration: the tool's whole
+reason to exist is that a developer fixes violations before even
+trying to compile the code, so a check that exists at runtime but not
+in the analyzer is a parity break — a bug in vet, not a documentation
+nuance. Concretely:
+
+- **Every runtime violation is a vet obligation.** The authoritative
+  inventory is mechanical, not remembered: every `Fail`/error message
+  fw's registration commit and Build and conf's engine and front door
+  can emit is a ledger row, and every row is either *mirrored* (the
+  analyzer flags it, same severity, message aligned) or *cannot
+  verify* (genuinely instance-level — computed defaults, dynamic ids —
+  and the analyzer says so explicitly). Silent absence is the one
+  forbidden state.
+- **Both front doors, equally.** fw registration chains AND standalone
+  `conf.NewLoader` chains are analyzer entry points. A check reachable
+  through one door and not the other is a parity break (the
+  Loader-chain `.Migrate` walk is the recorded instance of this
+  failure mode: the analyzer grew from fw's chains and was never
+  re-swept when the conf front door landed).
+- **New runtime checks are not done until parity is settled.** Adding
+  a validation to fw or conf includes, in the same change or an
+  explicitly recorded ledger entry, either the mirroring vet check or
+  a cannot-verify classification. The conformance corpus is the
+  instrument that *measures* this — a fixture per ledger row that the
+  runtime tests and the analyzer tests must judge identically —
+  and the nudge convention is its enforcement twin: every runtime
+  message claiming "the sxcli-vet tool catches this before it runs"
+  must point at a check that exists.
+
 Checks:
 
 - **exported-id** — every `Register` id is (or matches) an exported
