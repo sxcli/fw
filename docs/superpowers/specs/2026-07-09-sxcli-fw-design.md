@@ -1545,6 +1545,21 @@ nudges soften until it exists; and the tag-grammar check targets the
 post-cutover grammar (`conf:`/`short:`/unified `env:`), so the
 `arg:`→`conf:` cutover lands before that analyzer is written.
 
+MVP SHIPPED 2026-07-19 (`sxcli.dev/vet`, binary `sxclivet`, own repo,
+signed from birth): the **sxreg** analyzer (identity + exported-id +
+terminal/alias + the FULL tag mirror incl. Version mandate, pos
+shape, sep-runs, dead arg: + migration-chain mirror via go/types
+generic instantiation + Accept/Order composition via package facts —
+producer and consumer are one analyzer, the x/tools idiom) and
+**sxserved** (the discarded-served check). Verified against the real
+tree: production sinks/yaml/adapters come back CLEAN; the only flags
+are test fixtures' deliberately fake ids — the analyzer telling the
+truth. NOT yet in the MVP: the graph-viability/ambiguity mirror
+(needs Provides + inject-tag facts), unaccepted-services, and the
+derived-name collision check — the AMBIGUITY nudge in runtime
+messages therefore still references an unbuilt check: build it next
+or soften that one nudge before the train departs.
+
 Stated limits: non-constant ids and dynamically built option slices
 produce a "cannot verify" diagnostic, never silence. Drift between the
 analyzer's matching semantics and the graph's real ones is the design
