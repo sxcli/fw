@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sxcli.dev/rules/grammar"
 
 	"sxcli.dev/conf/fail"
 )
@@ -173,29 +174,8 @@ func parseInjectTag(tag string) ([]string, bool, error) {
 	return ids, optional, err
 }
 
-// isValidID reports whether id is a legal service id: path-shaped,
-// lowercase segments of letters, digits, '.', '-' and '_', each
-// segment non-empty and starting with a letter or digit — the SAME
-// grammar the root package's registration commit enforces
-// (validServiceID); an inject tag must be able to reference every
-// legally registered service.
-func isValidID(id string) bool {
-	valid := id != "" && id != "_"
-	start := true
-	for _, c := range id {
-		if c == '/' {
-			if start {
-				return false // empty segment
-			}
-			start = true
-			continue
-		}
-		if start {
-			valid = valid && ('a' <= c && c <= 'z' || '0' <= c && c <= '9')
-			start = false
-		} else {
-			valid = valid && ('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '.' || c == '-' || c == '_')
-		}
-	}
-	return valid && !start
-}
+// isValidID reports whether id is a legal service id — the shared
+// rule, one home: sxcli.dev/rules/grammar. An inject tag must be
+// able to reference every legally registered service, so the grammar
+// here IS the registration grammar, by construction.
+func isValidID(id string) bool { return grammar.ValidServiceID(id) }

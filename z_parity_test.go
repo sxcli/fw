@@ -104,7 +104,7 @@ func TestMigrateOnTheRegistrationChain(t *testing.T) {
 	files := map[string]string{"/etc/app/config.json": `{"app": {"version": 1, "welcome": "old world"}}`}
 	w := newWorld(t, []string{"bin"}, files, nil)
 	a := &mainApplet{log: &w.log, cfg: mainAppletCfg{Version: 2}}
-	NewRegistration("app", func() *mainApplet { return a },
+	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
 		Migrate(Step(1, func(old parityCfgV1) mainAppletCfg {
@@ -121,7 +121,7 @@ func TestMigrateOnTheRegistrationChain(t *testing.T) {
 func TestMigrateOnBareRegistrationIsViolation(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("bare", func() *plainService { return &plainService{} }).
+	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").
 		Migrate(Step(1, func(old parityCfgV1) parityCfgV1 { return old })).
 		registerInto(w.cat, w.c)
@@ -140,7 +140,7 @@ func TestUpgradeConfigCoversTheWholeCatalog(t *testing.T) {
 	}
 	w := newWorld(t, []string{"bin", "--upgrade-config", "--config", path}, nil, nil)
 	a := &mainApplet{log: &w.log, cfg: mainAppletCfg{Version: 2}}
-	NewRegistration("app", func() *mainApplet { return a },
+	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
 		Migrate(Step(1, func(old parityCfgV1) mainAppletCfg {
@@ -171,7 +171,7 @@ func TestUndeclaredTailIsViolation(t *testing.T) {
 	// that declares nothing
 	w := newWorld(t, []string{"bin", "second", "stray"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("an undeclared tail must be a violation: exit %d", code)
@@ -188,12 +188,12 @@ func TestPositionalsAreAppletOnly(t *testing.T) {
 	}
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewRegistration("svc", func() *extraService { return &extraService{} },
+	NewRegistration("test/svc", func() *extraService { return &extraService{} },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("svc").registerInto(w.cat, w.c) // sanity: plain service commits
 	before := w.c.Len()
 	type posService struct{ cfg posyCfg }
-	NewRegistration("posy", func() *posService { return &posService{cfg: posyCfg{Version: 1}} },
+	NewRegistration("test/posy", func() *posService { return &posService{cfg: posyCfg{Version: 1}} },
 		func(x *posService) *posyCfg { return &x.cfg }).
 		Alias("posy").registerInto(w.cat, w.c)
 	if w.c.Len() == before {
@@ -241,10 +241,10 @@ func TestUpgradeConfigToleratesCrossClosureDuplicates(t *testing.T) {
 	w.applet(0)
 	ta := &twinService{cfg: twinCfg{Version: 1}}
 	tb := &twinBrother{cfg: twinCfg{Version: 1}}
-	NewRegistration("twina", func() *twinService { return ta },
+	NewRegistration("test/twina", func() *twinService { return ta },
 		func(x *twinService) *twinCfg { return &x.cfg }).
 		Alias("twina").registerInto(w.cat, w.c)
-	NewRegistration("twinb", func() *twinBrother { return tb },
+	NewRegistration("test/twinb", func() *twinBrother { return tb },
 		func(x *twinBrother) *twinCfg { return &x.cfg }).
 		Alias("twinb").registerInto(w.cat, w.c)
 	w.rt.stat = engine.StatRegular

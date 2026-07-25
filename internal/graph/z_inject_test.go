@@ -44,10 +44,10 @@ func TestInjectWiresInterfaceAndConcreteFields(t *testing.T) {
 	theApp := &app{}
 	wb := &workerB{}
 	sa := &storeA{}
-	reg(r, "app", theApp)
-	reg(r, "workerb", wb, workerType)
-	reg(r, "storea", sa, storageType)
-	mustInject(t, mustResolve(t, r, "app", Controls{}))
+	reg(r, "t/app", theApp)
+	reg(r, "t/workerb", wb, workerType)
+	reg(r, "t/storea", sa, storageType)
+	mustInject(t, mustResolve(t, r, "t/app", Controls{}))
 	if theApp.W != worker(wb) {
 		t.Errorf("interface field not wired: %v", theApp.W)
 	}
@@ -56,9 +56,9 @@ func TestInjectWiresInterfaceAndConcreteFields(t *testing.T) {
 	}
 	store := &appStore{}
 	r2 := newRegistry()
-	reg(r2, "appstore", store)
-	reg(r2, "storea", sa, storageType)
-	mustInject(t, mustResolve(t, r2, "appstore", Controls{}))
+	reg(r2, "t/appstore", store)
+	reg(r2, "t/storea", sa, storageType)
+	mustInject(t, mustResolve(t, r2, "t/appstore", Controls{}))
 	if store.S != sa {
 		t.Errorf("concrete field not wired: %v", store.S)
 	}
@@ -70,11 +70,11 @@ func TestInjectFillsSliceInOrder(t *testing.T) {
 	wa := &workerA{}
 	wb := &workerB{}
 	sa := &storeA{}
-	reg(r, "appall", theApp)
-	reg(r, "workera", wa, workerType)
-	reg(r, "workerb", wb, workerType)
-	reg(r, "storea", sa, storageType)
-	mustInject(t, mustResolve(t, r, "appall", Controls{}))
+	reg(r, "t/appall", theApp)
+	reg(r, "t/workera", wa, workerType)
+	reg(r, "t/workerb", wb, workerType)
+	reg(r, "t/storea", sa, storageType)
+	mustInject(t, mustResolve(t, r, "t/appall", Controls{}))
 	if len(theApp.Ws) != 2 || theApp.Ws[0] != worker(wa) || theApp.Ws[1] != worker(wb) {
 		t.Errorf("slice not wired in registration order: %v", theApp.Ws)
 	}
@@ -83,8 +83,8 @@ func TestInjectFillsSliceInOrder(t *testing.T) {
 func TestInjectLeavesUnmatchedOptionalUntouched(t *testing.T) {
 	r := newRegistry()
 	theApp := &appOptional{}
-	reg(r, "appopt", theApp)
-	mustInject(t, mustResolve(t, r, "appopt", Controls{}))
+	reg(r, "t/appopt", theApp)
+	mustInject(t, mustResolve(t, r, "t/appopt", Controls{}))
 	if theApp.W != nil {
 		t.Errorf("unmatched optional field must stay nil: %v", theApp.W)
 	}
@@ -94,9 +94,9 @@ func TestInjectWiresCycleBothWays(t *testing.T) {
 	r := newRegistry()
 	p1 := &ping{}
 	p2 := &pong{}
-	reg(r, "ping", p1, workerType)
-	reg(r, "pong", p2, storageType)
-	mustInject(t, mustResolve(t, r, "ping", Controls{}))
+	reg(r, "t/ping", p1, workerType)
+	reg(r, "t/pong", p2, storageType)
+	mustInject(t, mustResolve(t, r, "t/ping", Controls{}))
 	if p1.Peer != storage(p2) || p2.Peer != worker(p1) {
 		t.Errorf("cycle members not mutually wired: %v, %v", p1.Peer, p2.Peer)
 	}
@@ -104,9 +104,9 @@ func TestInjectWiresCycleBothWays(t *testing.T) {
 
 func TestInjectReportsNilEmbeddedPointer(t *testing.T) {
 	r := newRegistry()
-	reg(r, "derived", &derived{}) // base is nil
-	reg(r, "workera", &workerA{}, workerType)
-	res := mustResolve(t, r, "derived", Controls{})
+	reg(r, "t/derived", &derived{}) // base is nil
+	reg(r, "t/workera", &workerA{}, workerType)
+	res := mustResolve(t, r, "t/derived", Controls{})
 	c := &fail.Collector{}
 	res.Inject(c)
 	if c.Len() != 1 {

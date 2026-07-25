@@ -60,7 +60,7 @@ func translatorWorld(t *testing.T, argv []string, fail bool, table map[string]st
 	w := newWorld(t, argv, nil, nil)
 	w.applet(0)
 	f := &fakeTranslator{log: &w.log, fail: fail, table: table, cfg: trCfg{Version: 1}}
-	NewRegistration("i18n", func() *fakeTranslator { return f },
+	NewRegistration("test/i18n", func() *fakeTranslator { return f },
 		func(x *fakeTranslator) *trCfg { return &x.cfg }).
 		Alias("i18n").Provides(Iface[Translator]()).registerInto(w.cat, w.c)
 	return w, f
@@ -108,7 +108,7 @@ func TestTwoTranslatorsAreAViolation(t *testing.T) {
 	w, _ := translatorWorld(t, []string{"bin"}, false, nil)
 	second := &secondTranslator{}
 	second.log = &w.log
-	NewBareRegistration("other", func() *secondTranslator { return second }).
+	NewBareRegistration("test/other", func() *secondTranslator { return second }).
 		Alias("other").Provides(Iface[Translator]()).registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
@@ -193,16 +193,16 @@ func TestTranslatorDepFailureIsFatalExactlyOnce(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
 	failing := &failingCfgService{}
-	NewBareRegistration("faildep", func() *failingCfgService { return failing }).
+	NewBareRegistration("test/faildep", func() *failingCfgService { return failing }).
 		Alias("faildep").registerInto(w.cat, w.c)
 	tr := &depTranslator{}
 	tr.log = &w.log
-	NewBareRegistration("i18n", func() *depTranslator { return tr }).
+	NewBareRegistration("test/i18n", func() *depTranslator { return tr }).
 		Alias("i18n").Provides(Iface[Translator]()).registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("a failing subtree dependency must be fatal: exit %d", code)
 	}
-	if !strings.Contains(w.stderr.String(), `service "faildep": dep broke`) {
+	if !strings.Contains(w.stderr.String(), `service "test/faildep": dep broke`) {
 		t.Errorf("recorded error not surfaced:\n%s", w.stderr.String())
 	}
 	if failing.calls != 1 {

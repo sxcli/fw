@@ -122,7 +122,7 @@ func TestCommitViolations(t *testing.T) {
 		}, "declared twice"},
 		{"bad id shape", func() *Registration[catService] {
 			return chain("Example.com//x", &built)
-		}, "path-shaped"},
+		}, "package-shaped"},
 		{"reserved id", func() *Registration[catService] {
 			return chain(CoreID, &built)
 		}, "reserved for the framework core"},

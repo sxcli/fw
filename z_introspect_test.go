@@ -83,10 +83,10 @@ func argsWorld(t *testing.T, files map[string]string, do func(i *Introspector)) 
 	w := newWorld(t, []string{"bin", "meta"}, files, nil)
 	w.applet(0) // "app", with its optional dep field
 	probe := &argsProbe{do: do}
-	NewBareRegistration("meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "default"}}
-	NewRegistration("extra", func() *extraService { return extra },
+	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").registerInto(w.cat, w.c)
 	return w
@@ -153,13 +153,13 @@ func TestArgumentsIsSideEffectFree(t *testing.T) {
 	w := newWorld(t, []string{"bin", "meta"}, files, nil)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "default"}}
-	NewRegistration("extra", func() *extraService { return extra },
+	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").registerInto(w.cat, w.c)
 	probe := &argsProbe{do: func(i *Introspector) {
 		i.Arguments("app", []string{"-c", "/inline/cfg.json", "--write-config"})
 	}}
-	NewBareRegistration("meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -192,10 +192,10 @@ func TestArgumentsRejectsNonApplets(t *testing.T) {
 func TestIntrospectorReportsComposition(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	a := &introApplet{}
-	NewBareRegistration("meta", func() *introApplet { return a }).
+	NewBareRegistration("test/meta", func() *introApplet { return a }).
 		Alias("meta").registerInto(w.cat, w.c)
 	w.dep(false) // cold: nothing references it
-	NewBareRegistration("fakefmt", func() *fakeProvider { return &fakeProvider{} }).
+	NewBareRegistration("test/fakefmt", func() *fakeProvider { return &fakeProvider{} }).
 		Alias("fakefmt").Provides(Iface[ConfigFormatProvider]()).registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -221,12 +221,12 @@ func TestEjectionStillHappensWithoutIntrospector(t *testing.T) {
 	w.applet(0)
 	// genuinely unreferenced: nothing injects ConfigFormatProvider and
 	// no config file matches its extensions
-	NewBareRegistration("fakefmt", func() *fakeProvider { return &fakeProvider{} }).
+	NewBareRegistration("test/fakefmt", func() *fakeProvider { return &fakeProvider{} }).
 		Alias("fakefmt").Provides(Iface[ConfigFormatProvider]()).registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
-	if _, stillThere := w.rt.reg.ByID("fakefmt"); stillThere {
+	if _, stillThere := w.rt.reg.ByID("test/fakefmt"); stillThere {
 		t.Error("without the introspector in the closure, cold services must still be ejected")
 	}
 }
@@ -234,7 +234,7 @@ func TestEjectionStillHappensWithoutIntrospector(t *testing.T) {
 func TestIntrospectionIDIsReserved(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("introspection", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/introspection", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("introspection").registerInto(w.cat, w.c)
 	if w.c.Len() == 0 {
 		t.Fatal("foreign type under the introspection id must be a violation")
@@ -249,7 +249,7 @@ func TestIntrospectorSquattingFailsLoudly(t *testing.T) {
 	w.applet(0)
 	// a squatter registers the core's concrete type under another id;
 	// the core's own registration then collides on the concrete type
-	NewBareRegistration("myintro", func() *Introspector { return &Introspector{} }).
+	NewBareRegistration("test/myintro", func() *Introspector { return &Introspector{} }).
 		Alias("myintro").registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Errorf("exit = %d, want 2; squatting must fail startup", code)

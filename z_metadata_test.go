@@ -26,7 +26,7 @@ func annotatedWorld(t *testing.T, md *Metadata) (*world, *extraService) {
 	w := newWorld(t, []string{"bin", "meta"}, nil, nil)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}}
-	NewRegistration("extra", func() *extraService { return extra },
+	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").Metadata(md).registerInto(w.cat, w.c)
 	return w, extra
@@ -46,7 +46,7 @@ func TestMetadataFlowsIntoIntrospection(t *testing.T) {
 		desc = i.Describe("extra")
 		infos, _ = i.Arguments("app", []string{"--enable", "extra"})
 	}}
-	NewBareRegistration("meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -98,7 +98,7 @@ func TestMetadataViolations(t *testing.T) {
 func TestMetadataFieldsWithoutConfigIsViolation(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("bare", func() *plainService { return &plainService{} }).
+	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").
 		Metadata(&Metadata{Fields: map[string]any{"X": FieldMetadata[string]{}}}).
 		registerInto(w.cat, w.c)
@@ -110,7 +110,7 @@ func TestMetadataFieldsWithoutConfigIsViolation(t *testing.T) {
 func TestDescriptionAloneWithoutConfigIsFine(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("bare", func() *plainService { return &plainService{} }).
+	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").
 		Metadata(&Metadata{Description: "a config-less but well-described service"}).
 		registerInto(w.cat, w.c)
@@ -124,7 +124,7 @@ func enforcementWorld(t *testing.T, argv []string, files, env map[string]string)
 	w := newWorld(t, argv, files, env)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}}
-	NewRegistration("extra", func() *extraService { return extra },
+	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").
 		Metadata(&Metadata{Fields: map[string]any{
@@ -193,7 +193,7 @@ func TestSliceDomainEnforced(t *testing.T) {
 func TestDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewRegistration("extra", func() *extraService {
+	NewRegistration("test/extra", func() *extraService {
 		return &extraService{cfg: extraCfg{Version: 1, Flag: "turbo"}} // default not in the domain
 	}, func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").
@@ -233,7 +233,7 @@ func TestSliceDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
 	extra := &extraService{cfg: extraCfg{Version: 1, Flag: "fast", Tags: []string{"a", "zz"}}}
-	NewRegistration("extra", func() *extraService { return extra },
+	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").
 		Metadata(&Metadata{Fields: map[string]any{
@@ -255,7 +255,7 @@ func TestNilAndAbsentMetadataAreHarmless(t *testing.T) {
 	// present (this panicked once, in the yaml provider's init)
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewRegistration("plainmeta", func() *extraService { return &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}} },
+	NewRegistration("test/plainmeta", func() *extraService { return &extraService{cfg: extraCfg{Version: 1, Flag: "fast"}} },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("plainmeta").Metadata(nil).registerInto(w.cat, w.c)
 	if w.c.Len() != 0 {
@@ -275,7 +275,7 @@ func TestDescribeEdgeCases(t *testing.T) {
 		unknown = i.Describe("nope")
 		unannotated = i.Describe("dep")
 	}}
-	NewBareRegistration("meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -300,7 +300,7 @@ func intWorld(t *testing.T, argv []string) (*world, *intService) {
 	w := newWorld(t, argv, nil, nil)
 	w.applet(0)
 	svc := &intService{cfg: intCfg{Version: 1, Retries: 1}}
-	NewRegistration("intsvc", func() *intService { return svc },
+	NewRegistration("test/intsvc", func() *intService { return svc },
 		func(x *intService) *intCfg { return &x.cfg }).
 		Alias("intsvc").
 		Metadata(&Metadata{Fields: map[string]any{
@@ -334,7 +334,7 @@ func TestArgInfoSliceTypeIsElementType(t *testing.T) {
 			}
 		}
 	}}
-	NewBareRegistration("meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -394,7 +394,7 @@ func TestHintViolations(t *testing.T) {
 func TestHintOnNonStringFieldIsViolation(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewRegistration("intsvc", func() *intService { return &intService{cfg: intCfg{Version: 1, Retries: 1}} },
+	NewRegistration("test/intsvc", func() *intService { return &intService{cfg: intCfg{Version: 1, Retries: 1}} },
 		func(x *intService) *intCfg { return &x.cfg }).
 		Alias("intsvc").
 		Metadata(&Metadata{Fields: map[string]any{
@@ -430,7 +430,7 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 			}
 		}
 	}}
-	NewBareRegistration("meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())

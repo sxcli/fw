@@ -16,6 +16,7 @@ package fw
 
 import (
 	"reflect"
+	"sxcli.dev/rules/grammar"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -155,7 +156,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		c.Fail("service %q: registered twice", r.id)
 	}
 	if !validServiceID(r.id) {
-		c.Fail("service id %q: must be path-shaped (lowercase segments of letters, digits, '.', '-', '_')", r.id)
+		c.Fail("service id %q: %s", r.id, grammar.ServiceIDRule)
 	} else if r.id == CoreID {
 		c.Fail("service id %q is reserved for the framework core", r.id)
 	}

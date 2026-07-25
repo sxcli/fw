@@ -52,7 +52,7 @@ func (s *svcA) Greet() string { return "a" }
 type svcB struct {
 	Single greeter   `inject:""`
 	All    []greeter `inject:""`
-	Named  greeter   `inject:"svca"`
+	Named  greeter   `inject:"test/svca"`
 	Opt    greeter   `inject:";optional"`
 	Ptr    *svcA     `inject:""`
 }
@@ -85,18 +85,18 @@ var greeterType = reflect.TypeOf((*greeter)(nil)).Elem()
 
 func TestCommitHappyPath(t *testing.T) {
 	r, c := newReg()
-	commit(r, "svca", &svcA{})
-	commit(r, "svcb", &svcB{})
+	commit(r, "test/svca", &svcA{})
+	commit(r, "test/svcb", &svcB{})
 	if c.Len() != 0 {
 		t.Fatalf("unexpected errors: %v", c.All())
 	}
 	if len(r.All()) != 2 {
 		t.Fatalf("expected 2 descriptors, got %d", len(r.All()))
 	}
-	if r.All()[0].ID != "svca" || r.All()[1].ID != "svcb" {
+	if r.All()[0].ID != "test/svca" || r.All()[1].ID != "test/svcb" {
 		t.Errorf("commit order not preserved: %q, %q", r.All()[0].ID, r.All()[1].ID)
 	}
-	d, ok := r.ByID("svcb")
+	d, ok := r.ByID("test/svcb")
 	if !ok {
 		t.Fatal("svcb not found by id")
 	}
@@ -106,7 +106,7 @@ func TestCommitHappyPath(t *testing.T) {
 	want := []DepField{
 		{Index: []int{0}, Name: "Single", Type: greeterType, IsSlice: false, IDs: nil, Optional: false},
 		{Index: []int{1}, Name: "All", Type: greeterType, IsSlice: true, IDs: nil, Optional: false},
-		{Index: []int{2}, Name: "Named", Type: greeterType, IsSlice: false, IDs: []string{"svca"}, Optional: false},
+		{Index: []int{2}, Name: "Named", Type: greeterType, IsSlice: false, IDs: []string{"test/svca"}, Optional: false},
 		{Index: []int{3}, Name: "Opt", Type: greeterType, IsSlice: false, IDs: nil, Optional: true},
 		{Index: []int{4}, Name: "Ptr", Type: reflect.TypeOf(&svcA{}), IsSlice: false, IDs: nil, Optional: false},
 	}
@@ -119,8 +119,8 @@ func TestCommitHappyPath(t *testing.T) {
 
 func TestCommitRejectsDuplicateID(t *testing.T) {
 	r, c := newReg()
-	commit(r, "svca", &svcA{})
-	commit(r, "svca", &svcPlain{})
+	commit(r, "test/svca", &svcA{})
+	commit(r, "test/svca", &svcPlain{})
 	if c.Len() == 0 {
 		t.Error("duplicate id must be recorded")
 	}
@@ -176,7 +176,7 @@ func TestCommitTagViolationsStillStore(t *testing.T) {
 // dependency list.
 func TestCommitIsIdempotentOverDeps(t *testing.T) {
 	r, _ := newReg()
-	d := commit(r, "svcb", &svcB{})
+	d := commit(r, "test/svcb", &svcB{})
 	r2, c2 := newReg()
 	cp := *d
 	r2.Commit(&cp)
@@ -197,15 +197,16 @@ func TestParseInjectTag(t *testing.T) {
 	}{
 		{"", nil, false, false},
 		{";optional", nil, true, false},
-		{"a", []string{"a"}, false, false},
-		{"a,b, c", []string{"a", "b", "c"}, false, false},
-		{"a;optional", []string{"a"}, true, false},
-		{"a,b;optional", []string{"a", "b"}, true, false},
+		{"t/a", []string{"t/a"}, false, false},
+		{"t/a,t/b, t/c", []string{"t/a", "t/b", "t/c"}, false, false},
+		{"t/a;optional", []string{"t/a"}, true, false},
+		{"t/a,t/b;optional", []string{"t/a", "t/b"}, true, false},
 		{";maybe", nil, false, true},
-		{"a;optional;x", nil, false, true},
-		{"A", nil, false, true},
-		{"a,", nil, false, true},
-		{",a", nil, false, true},
+		{"t/a;optional;x", nil, false, true},
+		{"a", nil, false, true}, // the floor: single-segment is not an id
+		{"A/b", nil, false, true},
+		{"t/a,", nil, false, true},
+		{",t/a", nil, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%q", tc.tag), func(t *testing.T) {
@@ -224,17 +225,17 @@ func TestParseInjectTag(t *testing.T) {
 
 func TestRetainEjectsCold(t *testing.T) {
 	r, _ := newReg()
-	commit(r, "svca", &svcA{})
-	commit(r, "svcb", &svcB{})
-	commit(r, "plain", &svcPlain{})
-	r.Retain(map[string]bool{"svca": true, "plain": true})
+	commit(r, "test/svca", &svcA{})
+	commit(r, "test/svcb", &svcB{})
+	commit(r, "test/plain", &svcPlain{})
+	r.Retain(map[string]bool{"test/svca": true, "test/plain": true})
 	if len(r.All()) != 2 {
 		t.Fatalf("expected 2 retained descriptors, got %d", len(r.All()))
 	}
-	if _, ok := r.ByID("svcb"); ok {
+	if _, ok := r.ByID("test/svcb"); ok {
 		t.Error("ejected service still resolvable by id")
 	}
-	if r.All()[0].ID != "svca" || r.All()[1].ID != "plain" {
+	if r.All()[0].ID != "test/svca" || r.All()[1].ID != "test/plain" {
 		t.Errorf("retain must preserve registration order: %q, %q", r.All()[0].ID, r.All()[1].ID)
 	}
 }
@@ -245,23 +246,24 @@ func TestDumpReadable(t *testing.T) {
 		Path  string
 		Level int
 	}{Path: "/var/log/app.log"}
-	da := commit(r, "svca", &svcA{})
+	da := commit(r, "test/svca", &svcA{})
 	da.Provides = []reflect.Type{greeterType}
-	db := commit(r, "svcb", &svcB{})
+	db := commit(r, "test/svcb", &svcB{})
 	db.ConfigPtr = cfg
-	commit(r, "plain", &svcPlain{})
-	commit(r, "svca", &svcBadFlag{}) // duplicate id → recorded error
+	commit(r, "test/plain", &svcPlain{})
+	commit(r, "test/svca", &svcBadFlag{}) // duplicate id → recorded error
 	var b strings.Builder
 	r.Dump(&b)
 	t.Logf("registry dump:\n%s", b.String())
 }
 
 func TestIsValidID(t *testing.T) {
-	// the ONE id grammar — validServiceID's: path-shaped, lowercase
-	// segments of letters, digits, '.', '-', '_', each segment
-	// starting with a letter or digit
-	valid := []string{"a", "svca", "svc_a", "s1", "1svc", "svc-a", "svc.a", "example.com/x/svc"}
-	invalid := []string{"", "A", "svcA", "_svc", "svc a", "-svc", "svc/", "/svc", "a//b"}
+	// the ONE id grammar — sxcli.dev/rules/grammar: package-shaped
+	// with the floor (at least two segments), lowercase segments of
+	// letters, digits, '.', '-', '_', each starting with a letter or
+	// digit
+	valid := []string{"a/b", "svc_a/x", "1svc/x", "svc-a/svc.b", "example.com/x/svc"}
+	invalid := []string{"", "a", "svca", "1svc", "A/b", "a/svcA", "_svc/x", "svc a/b", "-svc/x", "svc/", "/svc", "a//b"}
 	for _, id := range valid {
 		if !isValidID(id) {
 			t.Errorf("%q should be valid", id)

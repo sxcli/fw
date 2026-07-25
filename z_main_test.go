@@ -90,7 +90,7 @@ func (a *mainApplet) Run() int {
 // failerService needs dep and breaks on Start.
 type failerService struct {
 	log *[]string
-	D   depIface `inject:"dep"`
+	D   depIface `inject:"test/dep"`
 }
 
 func (f *failerService) Dep()              {}
@@ -190,7 +190,7 @@ func (w *world) run() int {
 // building exactly once, are entitled to.
 func (w *world) applet(code int) *mainApplet {
 	a := &mainApplet{log: &w.log, code: code, cfg: mainAppletCfg{Version: 1}}
-	NewRegistration("app", func() *mainApplet { return a },
+	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").registerInto(w.cat, w.c)
 	return a
@@ -198,7 +198,7 @@ func (w *world) applet(code int) *mainApplet {
 
 func (w *world) dep(failStart bool) *depService {
 	d := &depService{log: &w.log, failStart: failStart}
-	NewBareRegistration("dep", func() *depService { return d }).
+	NewBareRegistration("test/dep", func() *depService { return d }).
 		Alias("dep").Provides(Iface[depIface]()).registerInto(w.cat, w.c)
 	return d
 }
@@ -260,7 +260,7 @@ func TestPrecedenceFileEnvArg(t *testing.T) {
 func TestMultiAppletDispatch(t *testing.T) {
 	w := newWorld(t, []string{"bin", "second"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
@@ -273,7 +273,7 @@ func TestMultiAppletDispatch(t *testing.T) {
 func TestDispatchByBinaryName(t *testing.T) {
 	w := newWorld(t, []string{"/usr/bin/second"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
@@ -286,7 +286,7 @@ func TestDispatchByBinaryName(t *testing.T) {
 func TestDispatchFailuresPrintUsage(t *testing.T) {
 	w := newWorld(t, []string{"bin", "ghost"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -300,7 +300,7 @@ func TestDispatchFailuresPrintUsage(t *testing.T) {
 func TestRegistrationErrorsAbort(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("app", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/app", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("app").registerInto(w.cat, w.c) // duplicate id
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -350,12 +350,12 @@ func TestStartFailureStopsStarted(t *testing.T) {
 	w.applet(0)
 	w.dep(false)
 	failer := &failerService{log: &w.log}
-	NewBareRegistration("failer", func() *failerService { return failer }).
+	NewBareRegistration("test/failer", func() *failerService { return failer }).
 		Alias("failer").Provides(Iface[depIface]()).registerInto(w.cat, w.c)
 	// applet → failer (by id) → dep: dep starts first, failer's Start
 	// breaks, dep must be stopped
 	w.cat.All()[0].Deps[0].Optional = false
-	w.cat.All()[0].Deps[0].IDs = []string{"failer"}
+	w.cat.All()[0].Deps[0].IDs = []string{"test/failer"}
 	code := w.run()
 	if code != 2 {
 		t.Fatalf("exit code = %d, want 2; stderr:\n%s", code, w.stderr.String())
@@ -373,7 +373,7 @@ func TestDisableStripsOptionalDependency(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--disable", "dep"}, nil, nil)
 	a := w.applet(0)
 	w.dep(false)
-	w.cat.All()[0].Deps[0].IDs = []string{"dep"}
+	w.cat.All()[0].Deps[0].IDs = []string{"test/dep"}
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
 	}

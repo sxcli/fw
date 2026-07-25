@@ -24,7 +24,7 @@ import (
 func TestSystemAppletKeepsSingleAppletMode(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--greeting=hi"}, nil, nil)
 	a := w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").System().registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
@@ -42,7 +42,7 @@ func TestSystemAppletKeepsSingleAppletMode(t *testing.T) {
 func TestSystemAppletSelectableInSingleAppletMode(t *testing.T) {
 	w := newWorld(t, []string{"bin", "second"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").System().registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
@@ -57,7 +57,7 @@ func TestSystemAppletSelectableInSingleAppletMode(t *testing.T) {
 func TestSystemIdCollisionEscapedByDashDash(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--", "second"}, nil, nil)
 	a := w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").System().registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
@@ -74,7 +74,7 @@ func TestSystemIdCollisionEscapedByDashDash(t *testing.T) {
 func TestHiddenAppletExplicitSelectorWorks(t *testing.T) {
 	w := newWorld(t, []string{"bin", "second"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").Hidden().registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit code = %d; stderr:\n%s", code, w.stderr.String())
@@ -89,7 +89,7 @@ func TestHiddenAppletExplicitSelectorWorks(t *testing.T) {
 func TestHiddenAppletExcludedFromUsage(t *testing.T) {
 	w := newWorld(t, []string{"bin", "ghost"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").Hidden().registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -104,7 +104,7 @@ func TestHiddenAppletExcludedFromUsage(t *testing.T) {
 func TestHiddenAppletNotMatchedByBasename(t *testing.T) {
 	w := newWorld(t, []string{"/usr/bin/second"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").Hidden().registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2; log: %v", code, w.log)
@@ -119,7 +119,7 @@ func TestHiddenAppletNotMatchedByBasename(t *testing.T) {
 func TestVisibilityOnNonAppletFails(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("bare", func() *plainService { return &plainService{} }).
+	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").Hidden().registerInto(w.cat, w.c)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
@@ -134,7 +134,7 @@ func TestVisibilityOnNonAppletFails(t *testing.T) {
 func TestIntrospectorAppletsOmitHiddenAndSystem(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").System().registerInto(w.cat, w.c)
 	if err := w.build(); err != nil {
 		t.Fatalf("build failed: %v", err)
@@ -151,7 +151,7 @@ func TestIntrospectorAppletsOmitHiddenAndSystem(t *testing.T) {
 func TestSingleAppletReportsDispatchTruth(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
 		Alias("second").System().registerInto(w.cat, w.c)
 	if err := w.build(); err != nil {
 		t.Fatalf("build failed: %v", err)
@@ -162,7 +162,7 @@ func TestSingleAppletReportsDispatchTruth(t *testing.T) {
 	}
 	w2 := newWorld(t, []string{"bin"}, nil, nil)
 	w2.applet(0)
-	NewBareRegistration("second", func() *secondApplet { return &secondApplet{log: &w2.log} }).
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w2.log} }).
 		Alias("second").Hidden().registerInto(w2.cat, w2.c)
 	if err := w2.build(); err != nil {
 		t.Fatalf("build failed: %v", err)

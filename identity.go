@@ -39,32 +39,12 @@ const IntrospectionAlias = "introspection"
 // introspection entry. No service may claim it.
 const CoreAlias = engine.CoreID
 
-// validServiceID reports whether id is path-shaped: slash-separated,
-// non-empty segments of lowercase letters, digits, dots, hyphens and
-// underscores, each starting with a letter or digit. The convention
-// that an id BEGINS WITH the package's import path cannot be checked
-// at runtime — that guarantee is sxcli-vet's.
-func validServiceID(id string) bool {
-	ok := id != ""
-	start := 0
-	for i := 0; i <= len(id) && ok; i++ {
-		if i == len(id) || id[i] == '/' {
-			ok = i > start && isIDSegment(id[start:i])
-			start = i + 1
-		}
-	}
-	return ok
-}
-
-// isIDSegment validates one path segment of a service id.
-func isIDSegment(s string) bool {
-	ok := (s[0] >= 'a' && s[0] <= 'z') || (s[0] >= '0' && s[0] <= '9')
-	for i := 1; i < len(s) && ok; i++ {
-		ch := s[i]
-		ok = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_'
-	}
-	return ok
-}
+// validServiceID reports whether id is package-shaped — the shared
+// rule, one home: sxcli.dev/rules/grammar. The floor (at least one
+// '/') makes the id and alias grammars disjoint by construction. The
+// convention that an id BEGINS WITH the package's actual import path
+// cannot be checked at runtime — that guarantee is sxcli-vet's.
+func validServiceID(id string) bool { return grammar.ValidServiceID(id) }
 
 // primaryAlias returns the name shown in listings and used for the
 // env prefix and config section. Every catalog entry has one: the
