@@ -17,6 +17,7 @@ package fw
 import (
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/rules/grammar"
 )
 
 // CoreID is the framework core's identity — the machine-facing name
@@ -72,20 +73,8 @@ func primaryAlias(d *registry.Descriptor) string {
 	return d.Aliases[0]
 }
 
-// validAlias reports whether a is a legal operator-facing name:
-// lowercase letters, digits and hyphens, starting with a letter.
-// Hyphens are legal here — env-var derivation maps them to
-// underscores, so "cherry-pick" is finally a command name.
-func validAlias(a string) bool {
-	// consecutive hyphens would forge a __ path boundary in derived
-	// environment names, and a trailing hyphen folds ambiguously —
-	// both are engine violations later; catching them here keeps
-	// "malformed alias" a registration-time verdict
-	ok := a != "" && a[0] >= 'a' && a[0] <= 'z' && a[len(a)-1] != '-'
-	for i := 1; i < len(a) && ok; i++ {
-		ch := a[i]
-		ok = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-'
-		ok = ok && !(ch == '-' && a[i-1] == '-')
-	}
-	return ok
-}
+// validAlias reports whether a is a legal operator-facing name — the
+// shared rule, one home: sxcli.dev/rules/grammar. One grammar for
+// every alias origin: registration primary, secondary, Builder.Alias
+// rename.
+func validAlias(a string) bool { return grammar.ValidAlias(a) }
