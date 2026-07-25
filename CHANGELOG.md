@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Security: core arguments are argv-only.** No core argument is
+  readable from the environment anymore — `MYBIN__DISABLE`,
+  `__ENABLE`, `__OVERRIDE` and `__CONFIG` were ambient-authority
+  injection vectors (closure manipulation, config-source redirect)
+  and are now inert. Controls remain settable from config files. The
+  rule is enforced structurally: a core contribution field without
+  `env:"-"` is a registration-time violation.
 - **Service ids must be package-shaped**: at least two
   slash-separated segments (`example.com/tool/svc`). Single-segment
   ids are registration violations. This makes id and alias grammars

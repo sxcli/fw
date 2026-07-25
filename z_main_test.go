@@ -428,3 +428,19 @@ func TestStartupLogsReachFallbackStderr(t *testing.T) {
 		t.Errorf("applet log must reach the fallback stderr handler:\n%s", w.stderr.String())
 	}
 }
+
+func TestControlsIgnoreEnvironment(t *testing.T) {
+	// the closed injection vector: an ambient MYBIN__DISABLE must not
+	// remove a service from the closure — controls are argv/file-only
+	w := newWorld(t, []string{"bin"}, nil, map[string]string{"BIN__DISABLE": "test/dep"})
+	a := w.applet(0)
+	w.dep(false)
+	w.cat.All()[0].Deps[0].IDs = []string{"test/dep"}
+	w.cat.All()[0].Deps[0].Optional = true
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d; stderr:\n%s", code, w.stderr.String())
+	}
+	if a.D == nil {
+		t.Error("the environment must not reach --disable: dependency was stripped")
+	}
+}
