@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Service ids must be package-shaped**: at least two
+  slash-separated segments (`example.com/tool/svc`). Single-segment
+  ids are registration violations. This makes id and alias grammars
+  disjoint — the alias/id tie ("say which") can no longer occur.
+- The identity grammars, config tag matrix and migration-chain
+  shape rules moved to the shared `sxcli.dev/rules` module — the
+  runtime and `sxcli-vet` now consume one implementation.
+- `--upgrade-config` and config-struct validation messages
+  reworded; the `arg:` tag tombstone is gone (an `arg:` tag is now
+  simply unknown); embedded struct fields with a json tag are
+  supported.
+
 ## v0.3.0 — the composition release
 
 This release breaks everything, on purpose, once. The trigger was small

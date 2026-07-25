@@ -357,10 +357,16 @@ package may register many services.
 moment.** Registration validates types and declarations (never
 panics; violations are recorded and reported all at once):
 
-- malformed ID (path-shaped, lowercase; `sxcli.dev/fw` and the core's
-  Introspector id are reserved — import-path *equality* is `sxcli-vet`'s
-  check, the runtime cannot know import paths),
-- malformed alias (lowercase, digits, hyphens, starts with a letter),
+- malformed ID (package-shaped, lowercase, **at least one `/`** —
+  at least two slash-separated segments, enforced at the commit. An
+  id is package-shaped or it is not an id; single-segment names are
+  the aliases' domain, and the floor makes the two grammars disjoint
+  by construction: one string can never name both an alias and an
+  id. `sxcli.dev/fw` and the core's Introspector id are reserved —
+  import-path *equality* is `sxcli-vet`'s check, the runtime cannot
+  know import paths),
+- malformed alias (lowercase, digits, hyphens, starts with a letter,
+  no consecutive or trailing hyphens),
 - declared interface the concrete type does not implement,
 - applet implementing Starter/Stopper,
 - malformed tags / unsupported config field types,
