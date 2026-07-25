@@ -57,7 +57,10 @@ const (
 	// HintServiceID: the value names a service registered in this
 	// binary — completable from the Introspector. The core's own
 	// --disable and --enable declare it.
-	HintServiceID ValueHint = ValueHint(engine.HintServiceID)
+	// HintServiceID is fw's vocabulary, not the engine's: the first
+	// custom hint above the engine's universal set — the value names
+	// a service registered in this binary's catalog.
+	HintServiceID ValueHint = ValueHint(engine.HintCustom)
 )
 
 // FieldMetadata annotates one config struct field. T carries the
@@ -140,7 +143,7 @@ func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[stri
 				hint := ValueHint(rv.FieldByName("Hint").Int())
 				if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
 					errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", id, name, elemType, probe.Type))
-				} else if hint < HintNone || hint > HintServiceID {
+				} else if hint != HintNone && hint != HintFile && hint != HintDirectory && hint != HintServiceID {
 					errs = append(errs, fmt.Errorf("service %q metadata: %q declares an unknown hint %d", id, name, hint))
 				} else if hint != HintNone && allowedValues.Len() > 0 {
 					errs = append(errs, fmt.Errorf("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", id, name))

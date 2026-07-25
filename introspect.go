@@ -200,7 +200,7 @@ func argInfos(sch *engine.Schema) []ArgInfo {
 	for _, section := range sch.HelpSections() {
 		for _, f := range section.Fields {
 			out = append(out, ArgInfo{
-				Service: f.ServiceID,
+				Service: f.Owner,
 				Long:    f.Long,
 				Short:   f.Short,
 				Env:     f.EnvName,

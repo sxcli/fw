@@ -192,11 +192,15 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	}
 	if len(r.steps) > 0 && r.cfgType == nil {
 		c.Fail("service %q: Migrate requires a config struct — a bare registration has no schema to evolve", r.id)
-	} else if err := engine.ValidateSteps(r.id, r.steps, r.cfgType); err != nil {
+	} else {
 		// the chain's SHAPE is type-level work and the commit owns it
-		// (spec: "the commit validates the chain"); the factory-default
-		// version, an instance fact, stays schema-time
-		c.Add(err)
+		// (spec: "the commit validates the chain"); the engine hands
+		// back bare bodies and the prefix is OURS — fw says "service".
+		// The factory-default version, an instance fact, stays
+		// schema-time.
+		for _, body := range engine.ChainShape(r.steps, r.cfgType) {
+			c.Fail("service %q: %s", r.id, body)
+		}
 	}
 	if !isApplet && engine.HasPositionals(r.cfgType) {
 		c.Fail("service %q: positionals are invocation data — only applet configs may declare pos fields", r.id)

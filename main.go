@@ -250,8 +250,8 @@ type coreControls struct {
 // no honest hint fits; tooling that understands the pair form can
 // still act on the field by name.
 var controlsMeta = &engine.Meta{Fields: map[string]engine.FieldMeta{
-	"Disable": {Hint: engine.HintServiceID},
-	"Enable":  {Hint: engine.HintServiceID},
+	"Disable": {Hint: engine.ValueHint(HintServiceID)},
+	"Enable":  {Hint: engine.ValueHint(HintServiceID)},
 }}
 
 // upgradeKnobs is the framework's serving of the --upgrade-config
