@@ -17,6 +17,7 @@ package fw
 import (
 	"reflect"
 	"sxcli.dev/rules/grammar"
+	"sxcli.dev/rules/solver"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -174,12 +175,15 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		}
 		seen[a] = true
 	}
-	for _, it := range r.provides {
-		if it == nil || it.Kind() != reflect.Interface {
-			c.Fail("service %q: Provides takes interface tokens (fw.Iface[I]())", r.id)
-		} else if !concrete.Implements(it) {
-			c.Fail("service %q: %s does not implement declared interface %s", r.id, concrete, it)
-		}
+	// the flow and the words are the shared rules'; only the reflect
+	// operations are ours (functions at key places)
+	providesBodies := solver.CheckProvides(r.provides,
+		func(it reflect.Type) bool { return it != nil && it.Kind() == reflect.Interface },
+		func(it reflect.Type) bool { return concrete.Implements(it) },
+		func(it reflect.Type) string { return it.String() },
+		concrete.String())
+	for _, body := range providesBodies {
+		c.Fail("service %q: %s", r.id, body)
 	}
 	isApplet := concrete.Implements(appletType)
 	if isApplet && (concrete.Implements(starterType) || concrete.Implements(stopperType)) {
