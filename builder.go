@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sxcli.dev/rules/solver"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -167,7 +168,7 @@ func (b *AppBuilder) admitted(cat *registry.Registry, c *fail.Collector) map[str
 		if _, known := cat.ByID(id); known {
 			out[id] = true
 		} else {
-			c.Fail("accept: unknown service id %q", id)
+			c.Fail(solver.AcceptUnknownRule, id)
 		}
 	}
 	return out
@@ -179,9 +180,9 @@ func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[str
 	out := map[string]int{}
 	for i, id := range b.order {
 		if !accepted[id] {
-			c.Fail("order: %q is not accepted — Order ranks, it never admits", id)
+			c.Fail(solver.OrderNotAcceptedRule, id)
 		} else if _, dup := out[id]; dup {
-			c.Fail("order: %q ranked twice", id)
+			c.Fail(solver.OrderRankedTwiceRule, id)
 		} else {
 			out[id] = i
 		}
