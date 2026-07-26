@@ -41,10 +41,16 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 	}
 	verdict := solver.Solve(members, renderMember(root), solver.Controls(ctl))
 	for _, v := range verdict.Violations {
+		body := v.Body
+		if v.Ambiguous {
+			// the nudge is OUR vocabulary — the solver's body stays
+			// tool-neutral, and vet (being the tool) never says this
+			body += " (the sxcli-vet tool catches this before it runs)"
+		}
 		if v.Owner == "" {
-			c.Fail("%s", v.Body)
+			c.Fail("%s", body)
 		} else {
-			c.Fail("service %q field %s: %s", v.Owner, v.Dep, v.Body)
+			c.Fail("service %q field %s: %s", v.Owner, v.Dep, body)
 		}
 	}
 	var out Result
