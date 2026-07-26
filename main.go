@@ -20,6 +20,8 @@ import (
 	"reflect"
 	"strings"
 
+	"sxcli.dev/fw/system"
+
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/graph"
@@ -49,6 +51,16 @@ func run(rt *runtime) int {
 	defer slog.SetDefault(previous)
 	buffer := logging.NewBuffer()
 	slog.SetDefault(slog.New(buffer))
+
+	// the system service was cataloged by init like any member; only
+	// its runtime attachment is ours — same package, unexported
+	// field, no public seam
+	if d, ok := rt.reg.ByID(system.ID); ok {
+		if s, isOurs := d.Instance.(*systemService); isOurs {
+			s.rt = rt
+		}
+	}
+
 	// the core's own service: the read-only composition view, cold
 	// unless something injects it — a full citizen of the identity
 	// model: path identity, operator alias. Squatting the concrete
@@ -60,12 +72,14 @@ func run(rt *runtime) int {
 			rt.c.Fail("service %q: the Introspector's concrete type is reserved for the core", d.ID)
 		}
 	}
+
 	rt.reg.Commit(&registry.Descriptor{
 		ID:       IntrospectionID,
 		Aliases:  []string{IntrospectionAlias},
 		Instance: &Introspector{rt: rt},
 		Concrete: reflect.TypeOf(&Introspector{}),
 	})
+
 	// the core's translator dependency: exactly one service may
 	// provide it (spec §7); two catalog systems in one binary is a
 	// developer error, reported like every other violation
@@ -78,6 +92,7 @@ func run(rt *runtime) int {
 			}
 		}
 	}
+
 	// the operator-name index: every alias resolves to its service.
 	// Composed-alias collisions were Build violations — a clash here
 	// is a framework bug, reported not swallowed.
@@ -148,6 +163,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 			}
 		}
 	}
+
 	var picked *registry.Descriptor
 	var applet Applet
 	var args []string
@@ -155,6 +171,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 	if len(rt.argv) > 1 {
 		rest = rt.argv[1:]
 	}
+
 	ok := false
 	if len(applets) == 0 {
 		rt.usage(public, Tr("no applets are registered in this binary"))
@@ -195,6 +212,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 			rt.usage(public, Tr("{name} does not name an applet", "name", name))
 		}
 	}
+
 	return picked, applet, args, ok
 }
 

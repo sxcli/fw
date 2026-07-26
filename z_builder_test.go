@@ -18,7 +18,9 @@ import (
 	"strings"
 	"testing"
 
+	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/fw/system"
 )
 
 type bldA struct{ cfg catCfg }
@@ -187,4 +189,40 @@ func ids2(app *App) []string {
 		out = append(out, d.ID)
 	}
 	return out
+}
+
+func TestCoreFamilyIsFrameworkAdmitted(t *testing.T) {
+	// the pin: Accept governs USER services; the framework seats its
+	// own family. An explicit-Accept composition that never names
+	// system.ID still carries the system member — and a plain user
+	// service gets no such ride.
+	c := &fail.Collector{}
+	cat := registry.New(c)
+	NewBareRegistration(system.ID, func() *systemService { return &systemService{} }).
+		Alias("system").
+		Provides(Iface[system.System]()).
+		core().
+		registerInto(cat, c)
+	type sysUser struct {
+		Sys system.System `inject:""`
+	}
+	NewBareRegistration("test/app", func() *sysUser { return &sysUser{} }).
+		Alias("app").
+		registerInto(cat, c)
+	NewBareRegistration("test/cold", func() *sysUser { return &sysUser{} }).
+		Alias("cold").
+		registerInto(cat, c)
+	if c.Len() != 0 {
+		t.Fatalf("catalog: %v", c.All())
+	}
+	app, err := Builder().Accept("test/app").buildFrom(cat, nil)
+	if err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+	if _, ok := app.reg.ByID(system.ID); !ok {
+		t.Error("the core family must be admitted without being named")
+	}
+	if _, ok := app.reg.ByID("test/cold"); ok {
+		t.Error("a plain user service must not ride the core admission")
+	}
 }

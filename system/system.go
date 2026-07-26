@@ -86,22 +86,14 @@ type Introspector interface {
 	Arguments(appletID string, args []string) ([]ArgInfo, error)
 }
 
-// System is the framework's facade service: the core's facilities as
-// methods, one stable member instead of a system service per
-// facility. Inject it like any service; ask it for what you need.
-type System struct {
-	intro Introspector
-}
-
-// Introspector returns the composition's introspection facility.
-func (s *System) Introspector() Introspector {
-	return s.intro
-}
-
-// Wire attaches the running framework's facilities to the cataloged
-// shell. The framework calls this at startup — services never do;
-// the registration is ordinary, the wiring is the framework's
-// implementation detail.
-func (s *System) Wire(intro Introspector) {
-	s.intro = intro
+// System is the framework's facade service: the core's facilities
+// as methods, one stable member instead of a system service per
+// facility. It is an INTERFACE — the framework registers a private
+// implementation wired to the running composition, so there is no
+// public seam to replace the framework's guts, and consumers mock
+// it trivially. Inject it like any service; ask it for what you
+// need.
+type System interface {
+	// Introspector returns the composition's introspection facility.
+	Introspector() Introspector
 }

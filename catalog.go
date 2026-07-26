@@ -46,6 +46,7 @@ type Registration[T any] struct {
 	provides  []reflect.Type
 	metadata  *Metadata
 	steps     []engine.Step
+	isCore    bool
 	hidden    bool
 	system    bool
 	committed bool
@@ -89,6 +90,15 @@ func Iface[I any]() reflect.Type {
 // digits and hyphens; hyphens reach the environment as underscores.
 func (r *Registration[T]) Alias(names ...string) *Registration[T] {
 	r.aliases = append(r.aliases, names...)
+	return r
+}
+
+// core marks the framework's own family. Unexported ON PURPOSE: the
+// flag cannot be forged from outside the package (an id-prefix rule
+// could be squatted; a chain method could be called) — only fw's own
+// init can mint a core member.
+func (r *Registration[T]) core() *Registration[T] {
+	r.isCore = true
 	return r
 }
 
@@ -231,6 +241,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		factory, access := r.factory, r.access
 		reg.Commit(&registry.Descriptor{
 			ID:         r.id,
+			Core:       r.isCore,
 			Concrete:   concrete,
 			Provides:   append([]reflect.Type(nil), r.provides...),
 			Metadata:   meta,

@@ -40,6 +40,7 @@ type DepField struct {
 type Descriptor struct {
 	ID        string
 	Instance  any
+	Core      bool           // the framework's own family: admitted by the framework, not the composition
 	Concrete  reflect.Type   // the *Struct type of Instance
 	Provides  []reflect.Type // declared and verified interfaces
 	ConfigPtr any            // nil when the service has no configuration

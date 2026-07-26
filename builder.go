@@ -159,8 +159,10 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 // set).
 func (b *AppBuilder) admitted(cat *registry.Registry, c *fail.Collector) map[string]bool {
 	out := map[string]bool{}
-	if b.acceptAll {
-		for _, d := range cat.All() {
+	for _, d := range cat.All() {
+		// the framework's own family is admitted by the framework,
+		// not the composition: Accept governs user services only
+		if d.Core || b.acceptAll {
 			out[d.ID] = true
 		}
 	}
