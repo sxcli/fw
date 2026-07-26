@@ -17,7 +17,7 @@ package fw
 import (
 	"errors"
 	"fmt"
-	"reflect"
+	"sxcli.dev/fw/system"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -25,23 +25,9 @@ import (
 	"sxcli.dev/fw/internal/registry"
 )
 
-// ArgInfo describes one config struct field of an applet's closure —
-// the schema unit completions and documentation generators consume. A
-// field with an empty Long is not settable from the command line; one
-// with an empty Env is not settable from the environment; both empty
-// means file-only. For slices, Type is the element type.
-type ArgInfo struct {
-	Service string       // owning service ALIAS (the operator name), "core" included
-	Long    string       // long argument name, without dashes
-	Short   string       // single-character short form
-	Env     string       // environment variable name
-	Usage   string       // untranslated help text; render via Tr
-	Type    reflect.Type // field type; element type for slices
-	IsSlice bool         // repeatable argument, comma-separated env, json array
-	Allowed []any        // closed value domain from registration Metadata; values are of Type
-	Doc     string       // long-form description from registration Metadata
-	Hint    ValueHint    // advisory value denotation from registration Metadata; never enforced
-}
+// ArgInfo is the system vocabulary's argument description —
+// re-exported so fw-side consumers keep one import.
+type ArgInfo = system.ArgInfo
 
 // Introspector is the core's read-only view of the binary's
 // composition, for services that implement completions, documentation
@@ -234,3 +220,6 @@ func (i *Introspector) ConfigExtensions() []string {
 	}
 	return out
 }
+
+// the concrete Introspector IS the system vocabulary's interface.
+var _ system.Introspector = (*Introspector)(nil)

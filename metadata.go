@@ -17,6 +17,7 @@ package fw
 import (
 	"fmt"
 	"reflect"
+	"sxcli.dev/fw/system"
 
 	"sxcli.dev/conf/engine"
 )
@@ -40,27 +41,16 @@ type Metadata struct {
 	Fields map[string]any
 }
 
-// ValueHint is the advisory declaration of what a field's value
-// denotes, for tooling (completion, documentation). Unlike Allowed a
-// hint is never enforced — a hinted file may not exist yet (--config
-// names the file --write-config is about to create); it is data in the
-// same trust class as Doc. The core's own --config declares HintFile.
-type ValueHint int
+// ValueHint and the hint constants are the system vocabulary,
+// re-exported: one home (the engine defines the universal set, the
+// system package speaks for fw's own).
+type ValueHint = system.ValueHint
 
 const (
-	// HintNone declares nothing; the zero value.
-	HintNone ValueHint = ValueHint(engine.HintNone)
-	// HintFile: the value names a file, existing or to be created.
-	HintFile ValueHint = ValueHint(engine.HintFile)
-	// HintDirectory: the value names a directory.
-	HintDirectory ValueHint = ValueHint(engine.HintDirectory)
-	// HintServiceID: the value names a service registered in this
-	// binary — completable from the Introspector. The core's own
-	// --disable and --enable declare it.
-	// HintServiceID is fw's vocabulary, not the engine's: the first
-	// custom hint above the engine's universal set — the value names
-	// a service registered in this binary's catalog.
-	HintServiceID ValueHint = ValueHint(engine.HintCustom)
+	HintNone      = system.HintNone
+	HintFile      = system.HintFile
+	HintDirectory = system.HintDirectory
+	HintServiceID = system.HintServiceID
 )
 
 // FieldMetadata annotates one config struct field. T carries the
