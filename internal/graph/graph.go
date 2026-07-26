@@ -16,10 +16,10 @@ package graph
 
 import (
 	"reflect"
-	"sort"
 
 	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/rules/solver"
 )
 
 // Resolve computes the composition of one invocation: seed the closure
@@ -31,30 +31,84 @@ import (
 // never disable-checked, that is the caller's courtesy. Violations are
 // recorded into c; when c grew, the Result must not be used.
 func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descriptor, ctl Controls) Result {
-	r := &resolver{
-		reg:          reg,
-		c:            c,
-		root:         root,
-		disabled:     map[string]bool{},
-		override:     map[string]string{},
-		overrideUsed: map[string]bool{},
-		closure:      map[string]bool{},
+	// the graph package is the solver's reflect-side adapter: it
+	// renders descriptors into declared-fact members, lets
+	// sxcli.dev/rules/solver decide — the SAME decisions sxcli-vet
+	// judges with — and maps the verdict back onto descriptors.
+	members := make([]solver.Member, 0, len(reg.All()))
+	for _, d := range reg.All() {
+		members = append(members, renderMember(d))
 	}
-	before := c.Len()
-	r.validateControls(ctl)
-	if c.Len() == before {
-		r.expand(r.seeds(root, ctl.Enable))
-	}
-	if c.Len() == before {
-		r.order(r.bind())
-	}
-	for from := range r.override {
-		if !r.overrideUsed[from] {
-			r.result.UnusedOverrides = append(r.result.UnusedOverrides, from)
+	verdict := solver.Solve(members, renderMember(root), solver.Controls(ctl))
+	for _, v := range verdict.Violations {
+		if v.Owner == "" {
+			c.Fail("%s", v.Body)
+		} else {
+			c.Fail("service %q field %s: %s", v.Owner, v.Dep, v.Body)
 		}
 	}
-	sort.Strings(r.result.UnusedOverrides)
-	return r.result
+	var out Result
+	out.UnusedOverrides = verdict.UnusedOverrides
+	out.Cycles = verdict.Cycles
+	if len(verdict.Violations) == 0 {
+		byID := map[string]*registry.Descriptor{root.ID: root}
+		depsByID := map[string][]registry.DepField{root.ID: root.Deps}
+		for _, d := range reg.All() {
+			byID[d.ID] = d
+			depsByID[d.ID] = d.Deps
+		}
+		for _, bm := range verdict.Ordered {
+			m := Member{Desc: byID[bm.ID]}
+			for bi, b := range bm.Bindings {
+				binding := Binding{Dep: depsByID[bm.ID][bi]}
+				for _, target := range b.Targets {
+					binding.Targets = append(binding.Targets, byID[target])
+				}
+				m.Bindings = append(m.Bindings, binding)
+			}
+			out.Ordered = append(out.Ordered, m)
+		}
+	}
+	return out
+}
+
+// renderMember renders one descriptor into the solver's declared-fact
+// vocabulary: type identities become opaque strings, exactly the
+// rendering sxcli-vet's go/types side produces.
+func renderMember(d *registry.Descriptor) solver.Member {
+	m := solver.Member{
+		ID:       d.ID,
+		Concrete: typeID(d.Concrete),
+		Aliases:  d.Aliases,
+		Ranked:   d.Ranked,
+	}
+	for _, it := range d.Provides {
+		m.Provides = append(m.Provides, typeID(it))
+	}
+	for _, dep := range d.Deps {
+		m.Deps = append(m.Deps, solver.Dep{
+			Name:     dep.Name,
+			TypeID:   typeID(dep.Type),
+			IsIface:  dep.Type.Kind() == reflect.Interface,
+			IDs:      dep.IDs,
+			Optional: dep.Optional,
+			IsSlice:  dep.IsSlice,
+		})
+	}
+	return m
+}
+
+// typeID renders unambiguous type identity: String() can collide
+// across packages, pkgpath-qualified names cannot — one rendering
+// rule for every rules-module consumer.
+func typeID(t reflect.Type) string {
+	if t == nil {
+		return ""
+	}
+	if t.PkgPath() != "" {
+		return t.PkgPath() + "." + t.Name()
+	}
+	return t.String()
 }
 
 // Subtree returns the sub-result reachable from the member named id
@@ -91,314 +145,4 @@ func (res Result) Subtree(id string) (Result, bool) {
 		}
 	}
 	return out, ok
-}
-
-// fail records a resolution violation.
-func (r *resolver) fail(format string, args ...any) {
-	r.c.Fail(format, args...)
-}
-
-func (r *resolver) validateControls(ctl Controls) {
-	for _, id := range ctl.Disable {
-		if _, ok := r.reg.ByID(id); ok {
-			r.disabled[id] = true
-		} else {
-			r.fail("disable: unknown service id %q", id)
-		}
-	}
-	for _, id := range ctl.Enable {
-		if _, ok := r.reg.ByID(id); !ok {
-			r.fail("enable: unknown service id %q", id)
-		} else if r.disabled[id] {
-			r.fail("service %q is both enabled and disabled", id)
-		}
-	}
-	for from, to := range ctl.Override {
-		if _, ok := r.reg.ByID(to); ok {
-			r.override[from] = to
-		} else {
-			r.fail("override: unknown substitute id %q for %q", to, from)
-		}
-	}
-}
-
-// seeds returns the closure roots: the root descriptor and every
-// forced Enable. Disabled Enables are silently skipped — enabling in
-// one source and disabling in another is already a control violation,
-// anything else is legitimate user intent.
-func (r *resolver) seeds(root *registry.Descriptor, enable []string) []*registry.Descriptor {
-	out := []*registry.Descriptor{root}
-	for _, id := range enable {
-		if d, ok := r.reg.ByID(id); ok && !r.disabled[id] {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// expand grows the closure to a fixpoint over the inject fields.
-func (r *resolver) expand(queue []*registry.Descriptor) {
-	for len(queue) > 0 {
-		d := queue[0]
-		queue = queue[1:]
-		if !r.closure[d.ID] {
-			r.closure[d.ID] = true
-			for _, dep := range d.Deps {
-				queue = append(queue, r.expandDep(d, dep)...)
-			}
-		}
-	}
-}
-
-// expandDep resolves one dependency field to the descriptors it pulls
-// into the closure.
-func (r *resolver) expandDep(owner *registry.Descriptor, dep registry.DepField) []*registry.Descriptor {
-	var out []*registry.Descriptor
-	if len(dep.IDs) > 0 {
-		for _, raw := range dep.IDs {
-			id := r.mapped(raw)
-			if target, ok := r.reg.ByID(id); ok {
-				if r.disabled[id] {
-					if !dep.Optional {
-						r.fail("service %q field %s: required dependency %q is disabled", owner.ID, dep.Name, id)
-					}
-				} else if r.matches(target, dep) {
-					out = append(out, target)
-				} else {
-					r.fail("service %q field %s: service %q does not satisfy %s", owner.ID, dep.Name, id, dep.Type)
-				}
-			} else {
-				r.fail("service %q field %s: unknown service id %q", owner.ID, dep.Name, id)
-			}
-		}
-	} else {
-		out = r.candidates(dep)
-		if !dep.IsSlice && len(out) > 1 {
-			// ties are never broken silently: a multi-candidate
-			// single-valued field is legal only when ranking chose
-			if out[0].Ranked {
-				out = out[:1]
-			} else {
-				r.fail("service %q field %s: %s is ambiguous — %q and %q both match; rank one with Order or name an id in the inject tag (the sxcli-vet tool catches this before it runs)", owner.ID, dep.Name, dep.Type, out[0].ID, out[1].ID)
-				out = nil
-			}
-		} else if len(out) == 0 && !dep.Optional {
-			r.fail("service %q field %s: no registered service satisfies %s", owner.ID, dep.Name, dep.Type)
-		}
-	}
-	return out
-}
-
-// mapped applies the override remapping to one requested id, recording
-// which overrides actually fired.
-func (r *resolver) mapped(id string) string {
-	out := id
-	if to, ok := r.override[id]; ok {
-		r.overrideUsed[id] = true
-		out = to
-	}
-	return out
-}
-
-// candidates returns every non-disabled registered service matching the
-// dependency's type, in registration order.
-func (r *resolver) candidates(dep registry.DepField) []*registry.Descriptor {
-	var out []*registry.Descriptor
-	for _, d := range r.reg.All() {
-		if !r.disabled[d.ID] && r.matches(d, dep) {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
-// matches reports whether target satisfies the dependency's type:
-// a declared interface for interface fields, the exact concrete type for
-// pointer fields.
-func (r *resolver) matches(target *registry.Descriptor, dep registry.DepField) bool {
-	var ok bool
-	if dep.Type.Kind() == reflect.Interface {
-		for _, it := range target.Provides {
-			ok = ok || it == dep.Type
-		}
-	} else {
-		ok = target.Concrete == dep.Type
-	}
-	return ok
-}
-
-// bind resolves every closure member's fields against the final closure,
-// in registration order. It runs after expansion because slice fields
-// gather every closure member of their type, including services that
-// joined through other paths after the owner was expanded. A virtual
-// root is not in the registry and is bound explicitly, last — it
-// depends on everything and nothing depends on it.
-func (r *resolver) bind() []Member {
-	var members []Member
-	for _, d := range r.reg.All() {
-		if r.closure[d.ID] {
-			m := Member{Desc: d}
-			for _, dep := range d.Deps {
-				m.Bindings = append(m.Bindings, Binding{Dep: dep, Targets: r.bindDep(dep)})
-			}
-			members = append(members, m)
-		}
-	}
-	if _, registered := r.reg.ByID(r.root.ID); !registered {
-		m := Member{Desc: r.root}
-		for _, dep := range r.root.Deps {
-			m.Bindings = append(m.Bindings, Binding{Dep: dep, Targets: r.bindDep(dep)})
-		}
-		members = append(members, m)
-	}
-	return members
-}
-
-// bindDep computes the final injection targets of one dependency field.
-func (r *resolver) bindDep(dep registry.DepField) []*registry.Descriptor {
-	var out []*registry.Descriptor
-	if dep.IsSlice {
-		for _, d := range r.reg.All() {
-			if r.closure[d.ID] && r.matches(d, dep) {
-				out = append(out, d)
-			}
-		}
-	} else if len(dep.IDs) > 0 {
-		id := r.mapped(dep.IDs[0])
-		if target, ok := r.reg.ByID(id); ok && r.closure[id] {
-			out = append(out, target)
-		}
-	} else {
-		if cands := r.candidates(dep); len(cands) > 0 {
-			out = append(out, cands[0])
-		}
-	}
-	return out
-}
-
-// order emits members dependencies-first: strongly connected components
-// via Tarjan, the condensation in topological order with ties broken by
-// registration order, registration order within a component. Components
-// larger than one member — and self-loops — are reported as cycles.
-func (r *resolver) order(members []Member) {
-	n := len(members)
-	pos := make(map[string]int, n)
-	for i := range members {
-		pos[members[i].Desc.ID] = i
-	}
-	needs := make([][]int, n)
-	selfLoop := make([]bool, n)
-	for i := range members {
-		for _, b := range members[i].Bindings {
-			for _, target := range b.Targets {
-				if j, member := pos[target.ID]; member {
-					if j == i {
-						selfLoop[i] = true
-					} else {
-						needs[i] = append(needs[i], j)
-					}
-				} else {
-					r.fail("internal: binding target %q is not a closure member", target.ID)
-				}
-			}
-		}
-	}
-	comp, ncomp := tarjan(needs)
-	groups := make([][]int, ncomp)
-	for i := 0; i < n; i++ {
-		groups[comp[i]] = append(groups[comp[i]], i) // ascending → registration order
-	}
-	cneeds := make([][]int, ncomp)
-	seen := make([]map[int]bool, ncomp)
-	for c := 0; c < ncomp; c++ {
-		seen[c] = map[int]bool{}
-	}
-	for i := 0; i < n; i++ {
-		for _, j := range needs[i] {
-			if comp[j] != comp[i] && !seen[comp[i]][comp[j]] {
-				seen[comp[i]][comp[j]] = true
-				cneeds[comp[i]] = append(cneeds[comp[i]], comp[j])
-			}
-		}
-	}
-	for i := 0; i < n; i++ {
-		if c := comp[i]; groups[c][0] == i && (len(groups[c]) > 1 || selfLoop[i]) {
-			var ids []string
-			for _, j := range groups[c] {
-				ids = append(ids, members[j].Desc.ID)
-			}
-			r.result.Cycles = append(r.result.Cycles, ids)
-		}
-	}
-	done := make([]bool, ncomp)
-	for emitted := 0; emitted < ncomp; emitted++ {
-		best := -1
-		for c := 0; c < ncomp; c++ {
-			ready := !done[c]
-			for _, need := range cneeds[c] {
-				ready = ready && done[need]
-			}
-			if ready && (best < 0 || groups[c][0] < groups[best][0]) {
-				best = c
-			}
-		}
-		if best < 0 {
-			r.fail("internal: condensation is not a DAG")
-			emitted = ncomp
-		} else {
-			done[best] = true
-			for _, i := range groups[best] {
-				r.result.Ordered = append(r.result.Ordered, members[i])
-			}
-		}
-	}
-}
-
-// tarjan computes strongly connected components of adj; it returns the
-// component id of every node and the component count.
-func tarjan(adj [][]int) ([]int, int) {
-	n := len(adj)
-	comp := make([]int, n)
-	index := make([]int, n)
-	low := make([]int, n)
-	onStack := make([]bool, n)
-	for i := 0; i < n; i++ {
-		index[i] = -1
-	}
-	var stack []int
-	next, ncomp := 0, 0
-	var strong func(v int)
-	strong = func(v int) {
-		index[v] = next
-		low[v] = next
-		next++
-		stack = append(stack, v)
-		onStack[v] = true
-		for _, w := range adj[v] {
-			if index[w] < 0 {
-				strong(w)
-				if low[w] < low[v] {
-					low[v] = low[w]
-				}
-			} else if onStack[w] && index[w] < low[v] {
-				low[v] = index[w]
-			}
-		}
-		if low[v] == index[v] {
-			for done := false; !done; {
-				w := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				onStack[w] = false
-				comp[w] = ncomp
-				done = w == v
-			}
-			ncomp++
-		}
-	}
-	for v := 0; v < n; v++ {
-		if index[v] < 0 {
-			strong(v)
-		}
-	}
-	return comp, ncomp
 }
