@@ -20,7 +20,6 @@
 package registry
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -188,41 +187,6 @@ func TestCommitIsIdempotentOverDeps(t *testing.T) {
 	}
 }
 
-func TestParseInjectTag(t *testing.T) {
-	cases := []struct {
-		tag      string
-		ids      []string
-		optional bool
-		wantErr  bool
-	}{
-		{"", nil, false, false},
-		{";optional", nil, true, false},
-		{"t/a", []string{"t/a"}, false, false},
-		{"t/a,t/b, t/c", []string{"t/a", "t/b", "t/c"}, false, false},
-		{"t/a;optional", []string{"t/a"}, true, false},
-		{"t/a,t/b;optional", []string{"t/a", "t/b"}, true, false},
-		{";maybe", nil, false, true},
-		{"t/a;optional;x", nil, false, true},
-		{"a", nil, false, true}, // the floor: single-segment is not an id
-		{"A/b", nil, false, true},
-		{"t/a,", nil, false, true},
-		{",t/a", nil, false, true},
-	}
-	for _, tc := range cases {
-		t.Run(fmt.Sprintf("%q", tc.tag), func(t *testing.T) {
-			ids, optional, err := parseInjectTag(tc.tag)
-			if tc.wantErr != (err != nil) {
-				t.Fatalf("error mismatch: got %v, wantErr=%v", err, tc.wantErr)
-			}
-			if err == nil {
-				if !reflect.DeepEqual(ids, tc.ids) || optional != tc.optional {
-					t.Errorf("got ids=%v optional=%v, want ids=%v optional=%v", ids, optional, tc.ids, tc.optional)
-				}
-			}
-		})
-	}
-}
-
 func TestRetainEjectsCold(t *testing.T) {
 	r, _ := newReg()
 	commit(r, "test/svca", &svcA{})
@@ -255,23 +219,4 @@ func TestDumpReadable(t *testing.T) {
 	var b strings.Builder
 	r.Dump(&b)
 	t.Logf("registry dump:\n%s", b.String())
-}
-
-func TestIsValidID(t *testing.T) {
-	// the ONE id grammar — sxcli.dev/rules/grammar: package-shaped
-	// with the floor (at least two segments), lowercase segments of
-	// letters, digits, '.', '-', '_', each starting with a letter or
-	// digit
-	valid := []string{"a/b", "svc_a/x", "1svc/x", "svc-a/svc.b", "example.com/x/svc"}
-	invalid := []string{"", "a", "svca", "1svc", "A/b", "a/svcA", "_svc/x", "svc a/b", "-svc/x", "svc/", "/svc", "a//b"}
-	for _, id := range valid {
-		if !isValidID(id) {
-			t.Errorf("%q should be valid", id)
-		}
-	}
-	for _, id := range invalid {
-		if isValidID(id) {
-			t.Errorf("%q should be invalid", id)
-		}
-	}
 }

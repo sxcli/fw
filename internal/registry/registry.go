@@ -15,9 +15,7 @@
 package registry
 
 import (
-	"fmt"
 	"reflect"
-	"strings"
 	"sxcli.dev/rules/grammar"
 
 	"sxcli.dev/conf/fail"
@@ -116,7 +114,7 @@ func (r *Registry) collectDeps(d *Descriptor) {
 	for _, f := range reflect.VisibleFields(d.Concrete.Elem()) {
 		if tag, tagged := f.Tag.Lookup("inject"); tagged {
 			if f.IsExported() {
-				if ids, optional, err := parseInjectTag(tag); err == nil {
+				if ids, optional, err := grammar.ParseInjectTag(tag); err == nil {
 					dep := DepField{Index: f.Index, Name: f.Name, IDs: ids, Optional: optional}
 					if f.Type.Kind() == reflect.Slice {
 						if f.Type.Elem().Kind() == reflect.Interface {
@@ -145,37 +143,3 @@ func (r *Registry) collectDeps(d *Descriptor) {
 		}
 	}
 }
-
-// parseInjectTag parses the `inject` tag grammar
-// "<id>[,<id>...][;optional]".
-func parseInjectTag(tag string) ([]string, bool, error) {
-	var ids []string
-	var optional bool
-	var err error
-	idPart := tag
-	if i := strings.IndexByte(tag, ';'); i >= 0 {
-		idPart = tag[:i]
-		if flag := tag[i+1:]; flag == "optional" {
-			optional = true
-		} else {
-			err = fmt.Errorf("unknown inject flag %q", flag)
-		}
-	}
-	if err == nil && idPart != "" {
-		for _, raw := range strings.Split(idPart, ",") {
-			id := strings.TrimSpace(raw)
-			if isValidID(id) {
-				ids = append(ids, id)
-			} else if err == nil {
-				err = fmt.Errorf("invalid service id %q in inject tag", id)
-			}
-		}
-	}
-	return ids, optional, err
-}
-
-// isValidID reports whether id is a legal service id — the shared
-// rule, one home: sxcli.dev/rules/grammar. An inject tag must be
-// able to reference every legally registered service, so the grammar
-// here IS the registration grammar, by construction.
-func isValidID(id string) bool { return grammar.ValidServiceID(id) }
