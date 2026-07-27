@@ -44,7 +44,7 @@ func (s *systemService) Introspector() system.Introspector {
 // binary.
 func init() {
 	NewBareRegistration(system.ID, func() *systemService { return &systemService{} }).
-		Alias("system").
+		Alias(SystemAlias).
 		Provides(Iface[system.System]()).
 		core().
 		Register()

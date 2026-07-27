@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+	"sxcli.dev/fw/system"
 	"testing"
 
 	"sxcli.dev/conf/engine"
@@ -59,6 +60,14 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 	w := &world{c: &fail.Collector{}}
 	reg, catalogC := catalogWorld()
 	register(reg, catalogC, &w.log)
+	// every binary carries the system service; app worlds are binaries
+	if _, seeded := reg.ByID(system.ID); !seeded {
+		NewBareRegistration(system.ID, func() *systemService { return &systemService{} }).
+			Alias(SystemAlias).
+			Provides(Iface[system.System]()).
+			core().
+			registerInto(reg, catalogC)
+	}
 	app, err := b.buildFrom(reg, catalogC)
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
@@ -264,12 +273,12 @@ func TestOrderSequenceDecidesAmongRanked(t *testing.T) {
 // appProbe runs assertions against the injected Introspector from
 // inside the composed world, keeping the whole registry alive.
 type appProbe struct {
-	I  *Introspector `inject:""`
-	do func(i *Introspector)
+	Sys system.System `inject:""`
+	do  func(i system.Introspector)
 }
 
 func (p *appProbe) Configured() error { return nil }
-func (p *appProbe) Run() int          { p.do(p.I); return 0 }
+func (p *appProbe) Run() int          { p.do(p.Sys.Introspector()); return 0 }
 
 func TestIntrospectionSpeaksAliases(t *testing.T) {
 	var applets, services []string
@@ -277,7 +286,7 @@ func TestIntrospectionSpeaksAliases(t *testing.T) {
 	var argsByAlias, argsByID, argsUnknown error
 	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		NewBareRegistration("example.com/app/probe", func() *appProbe {
-			return &appProbe{do: func(i *Introspector) {
+			return &appProbe{do: func(i system.Introspector) {
 				applets = i.Applets()
 				services = i.Services()
 				single, _ = i.SingleApplet()
@@ -303,8 +312,8 @@ func TestIntrospectionSpeaksAliases(t *testing.T) {
 		t.Errorf("SingleApplet must speak the alias: %q", single)
 	}
 	joined := strings.Join(services, ",")
-	if services[0] != "core" || !strings.Contains(joined, "described") || !strings.Contains(joined, "introspection") || strings.Contains(joined, "example.com") {
-		t.Errorf("Services must be operator names, core first, introspection included: %v", services)
+	if services[0] != "core" || !strings.Contains(joined, "described") || !strings.Contains(joined, "system") || strings.Contains(joined, "example.com") {
+		t.Errorf("Services must be operator names, core first, the system service included: %v", services)
 	}
 	if descByAlias != "a well-described service" || descByID != descByAlias {
 		t.Errorf("Describe must accept both vocabularies: %q / %q", descByAlias, descByID)

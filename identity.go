@@ -26,13 +26,10 @@ import (
 // operator-facing name is CoreAlias.
 const CoreID = "sxcli.dev/fw"
 
-// IntrospectionID is the core Introspector's identity; its
-// operator-facing name is IntrospectionAlias.
-const IntrospectionID = CoreID + "/introspection"
-
-// IntrospectionAlias is the Introspector's operator name — what
-// --enable takes and listings show. Reserved, like CoreAlias.
-const IntrospectionAlias = "introspection"
+// SystemAlias is the system service's operator name. Reserved at
+// the commit so no user registration claims it before Build's
+// composed-alias check would notice.
+const SystemAlias = "system"
 
 // CoreAlias is the operator-facing name of the framework core — its
 // config section, the virtual root's name, and the synthesized

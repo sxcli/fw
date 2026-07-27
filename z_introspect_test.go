@@ -17,12 +17,15 @@ package fw
 import (
 	"io"
 	"strings"
+	"sxcli.dev/conf/fail"
+	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/fw/system"
 	"testing"
 )
 
 // introApplet records what the injected Introspector reports during Run.
 type introApplet struct {
-	I        *Introspector `inject:""`
+	Sys      system.System `inject:""`
 	applets  []string
 	services []string
 	exts     []string
@@ -30,9 +33,9 @@ type introApplet struct {
 
 func (a *introApplet) Configured() error { return nil }
 func (a *introApplet) Run() int {
-	a.applets = a.I.Applets()
-	a.services = a.I.Services()
-	a.exts = a.I.ConfigExtensions()
+	a.applets = a.Sys.Introspector().Applets()
+	a.services = a.Sys.Introspector().Services()
+	a.exts = a.Sys.Introspector().ConfigExtensions()
 	return 0
 }
 
@@ -46,13 +49,13 @@ func (p *fakeProvider) FromJSON(in io.Reader) (io.Reader, error) { return in, ni
 // argsProbe is an applet whose Run executes test-provided behavior
 // against the injected Introspector.
 type argsProbe struct {
-	I  *Introspector `inject:""`
-	do func(i *Introspector)
+	Sys system.System `inject:""`
+	do  func(i system.Introspector)
 }
 
 func (p *argsProbe) Configured() error { return nil }
 func (p *argsProbe) Run() int {
-	p.do(p.I)
+	p.do(p.Sys.Introspector())
 	return 0
 }
 
@@ -78,7 +81,7 @@ func longs(infos []ArgInfo) string {
 	return "," + strings.Join(out, ",") + ","
 }
 
-func argsWorld(t *testing.T, files map[string]string, do func(i *Introspector)) *world {
+func argsWorld(t *testing.T, files map[string]string, do func(i system.Introspector)) *world {
 	t.Helper()
 	w := newWorld(t, []string{"bin", "meta"}, files, nil)
 	w.applet(0) // "app", with its optional dep field
@@ -95,7 +98,7 @@ func argsWorld(t *testing.T, files map[string]string, do func(i *Introspector)) 
 func TestArgumentsReportsClosureSchema(t *testing.T) {
 	var infos []ArgInfo
 	var err error
-	w := argsWorld(t, nil, func(i *Introspector) {
+	w := argsWorld(t, nil, func(i system.Introspector) {
 		infos, err = i.Arguments("app", nil)
 	})
 	if code := w.run(); code != 0 {
@@ -116,7 +119,7 @@ func TestArgumentsReportsClosureSchema(t *testing.T) {
 func TestArgumentsHonorsInlineConfigAndControls(t *testing.T) {
 	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}}`}
 	var withC, withoutC []ArgInfo
-	w := argsWorld(t, files, func(i *Introspector) {
+	w := argsWorld(t, files, func(i system.Introspector) {
 		withC, _ = i.Arguments("app", []string{"-c", "/inline/cfg.json"})
 		withoutC, _ = i.Arguments("app", nil)
 	})
@@ -134,7 +137,7 @@ func TestArgumentsHonorsInlineConfigAndControls(t *testing.T) {
 func TestArgumentsBestEffortFallback(t *testing.T) {
 	var infos []ArgInfo
 	var err error
-	w := argsWorld(t, nil, func(i *Introspector) {
+	w := argsWorld(t, nil, func(i system.Introspector) {
 		infos, err = i.Arguments("app", []string{"--disable", "ghost"})
 	})
 	if code := w.run(); code != 0 {
@@ -156,7 +159,7 @@ func TestArgumentsIsSideEffectFree(t *testing.T) {
 	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").registerInto(w.cat, w.c)
-	probe := &argsProbe{do: func(i *Introspector) {
+	probe := &argsProbe{do: func(i system.Introspector) {
 		i.Arguments("app", []string{"-c", "/inline/cfg.json", "--write-config"})
 	}}
 	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
@@ -174,7 +177,7 @@ func TestArgumentsIsSideEffectFree(t *testing.T) {
 
 func TestArgumentsRejectsNonApplets(t *testing.T) {
 	var errService, errUnknown error
-	w := argsWorld(t, nil, func(i *Introspector) {
+	w := argsWorld(t, nil, func(i system.Introspector) {
 		_, errService = i.Arguments("extra", nil)
 		_, errUnknown = i.Arguments("nope", nil)
 	})
@@ -206,7 +209,7 @@ func TestIntrospectorReportsComposition(t *testing.T) {
 	// ejection was skipped: the cold dep and the provider are still
 	// enumerable, and the introspector lists itself
 	joined := strings.Join(a.services, ",")
-	for _, want := range []string{"meta", "dep", "fakefmt", "introspection"} {
+	for _, want := range []string{"meta", "dep", "fakefmt", "system"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("services must include %q (ejection skipped): %v", want, a.services)
 		}
@@ -231,33 +234,30 @@ func TestEjectionStillHappensWithoutIntrospector(t *testing.T) {
 	}
 }
 
-func TestIntrospectionIDIsReserved(t *testing.T) {
-	w := newWorld(t, []string{"bin"}, nil, nil)
-	w.applet(0)
-	NewBareRegistration("test/introspection", func() *secondApplet { return &secondApplet{log: &w.log} }).
-		Alias("introspection").registerInto(w.cat, w.c)
-	if w.c.Len() == 0 {
-		t.Fatal("foreign type under the introspection id must be a violation")
+func TestSystemIdentityIsGuarded(t *testing.T) {
+	// the system service owns its identity like any member — the
+	// ordinary checks guard it. In a real binary fw's init registers
+	// FIRST (imported packages init before their importer), so a
+	// user claiming system.ID is a duplicate-id violation:
+	c := &fail.Collector{}
+	cat := registry.New(c)
+	NewBareRegistration(system.ID, func() *systemService { return &systemService{} }).
+		Alias(SystemAlias).
+		Provides(Iface[system.System]()).
+		core().
+		registerInto(cat, c)
+	NewBareRegistration(system.ID, func() *secondApplet { return &secondApplet{} }).
+		Alias("intruder").registerInto(cat, c)
+	if c.Len() == 0 {
+		t.Fatal("claiming the system id must be a duplicate-id violation")
 	}
-	if code := w.run(); code != 2 {
-		t.Errorf("exit = %d, want 2", code)
-	}
-}
-
-func TestIntrospectorSquattingFailsLoudly(t *testing.T) {
-	w := newWorld(t, []string{"bin"}, nil, nil)
-	w.applet(0)
-	// a squatter registers the core's concrete type under another id;
-	// the core's own registration then collides on the concrete type
-	NewBareRegistration("test/myintro", func() *Introspector { return &Introspector{} }).
-		Alias("myintro").registerInto(w.cat, w.c)
-	if code := w.run(); code != 2 {
-		t.Errorf("exit = %d, want 2; squatting must fail startup", code)
-	}
-	// ledger note: the defense used to ride the old duplicate-type
-	// registration check; it is an explicit reservation now
-	if !strings.Contains(w.stderr.String(), "reserved for the core") {
-		t.Errorf("expected the reserved-type violation:\n%s", w.stderr.String())
+	// and the system ALIAS is reserved against user registrations:
+	c2 := &fail.Collector{}
+	cat2 := registry.New(c2)
+	NewBareRegistration("test/pretender", func() *secondApplet { return &secondApplet{} }).
+		Alias(SystemAlias).registerInto(cat2, c2)
+	if c2.Len() == 0 {
+		t.Fatal("the system alias must be reserved against user services")
 	}
 }
 
@@ -267,7 +267,7 @@ func TestArgumentsTreatsUpgradeConfigAsInert(t *testing.T) {
 	// get the registration-level answer, never a crash
 	var infos []ArgInfo
 	var err error
-	w := argsWorld(t, nil, func(i *Introspector) {
+	w := argsWorld(t, nil, func(i system.Introspector) {
 		infos, err = i.Arguments("app", []string{"--upgrade-config", "--config", "/nowhere.json"})
 	})
 	if code := w.run(); code != 0 {

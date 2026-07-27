@@ -22,6 +22,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"strings"
+	"sxcli.dev/fw/system"
 	"testing"
 
 	"sxcli.dev/conf/engine"
@@ -165,6 +166,16 @@ func newWorld(t *testing.T, argv []string, files map[string]string, env map[stri
 // build composes the catalog (AcceptAll — worlds are busybox-shaped)
 // without running; tests inspecting composed state use it directly.
 func (w *world) build() error {
+	// every binary carries the system service; worlds are binaries.
+	// Seeded HERE, last, so tests indexing the catalog keep their
+	// user services at the front.
+	if _, seeded := w.cat.ByID(system.ID); !seeded {
+		NewBareRegistration(system.ID, func() *systemService { return &systemService{} }).
+			Alias(SystemAlias).
+			Provides(Iface[system.System]()).
+			core().
+			registerInto(w.cat, w.c)
+	}
 	app, err := Builder().AcceptAll().buildFrom(w.cat, w.c)
 	if err == nil {
 		w.rt.reg = app.reg

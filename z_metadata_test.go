@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sxcli.dev/fw/system"
 	"testing"
 )
 
@@ -42,7 +43,7 @@ func TestMetadataFlowsIntoIntrospection(t *testing.T) {
 	var desc string
 	var infos []ArgInfo
 	w, _ := annotatedWorld(t, md)
-	probe := &argsProbe{do: func(i *Introspector) {
+	probe := &argsProbe{do: func(i system.Introspector) {
 		desc = i.Describe("extra")
 		infos, _ = i.Arguments("app", []string{"--enable", "extra"})
 	}}
@@ -271,7 +272,7 @@ func TestDescribeEdgeCases(t *testing.T) {
 	w := newWorld(t, []string{"bin", "meta"}, nil, nil)
 	w.applet(0)
 	w.dep(false) // registered, no metadata
-	probe := &argsProbe{do: func(i *Introspector) {
+	probe := &argsProbe{do: func(i system.Introspector) {
 		unknown = i.Describe("nope")
 		unannotated = i.Describe("dep")
 	}}
@@ -326,7 +327,7 @@ func TestIntDomainEnforcedEndToEnd(t *testing.T) {
 func TestArgInfoSliceTypeIsElementType(t *testing.T) {
 	var tagInfo *ArgInfo
 	w, _ := enforcementWorld(t, []string{"bin", "meta"}, nil, nil)
-	probe := &argsProbe{do: func(i *Introspector) {
+	probe := &argsProbe{do: func(i system.Introspector) {
 		infos, _ := i.Arguments("app", []string{"--enable", "extra"})
 		for idx := range infos {
 			if infos[idx].Long == "extra-tag" {
@@ -416,7 +417,7 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 	}}
 	var flagHint, configHint, disableHint ValueHint
 	w, _ := annotatedWorld(t, md)
-	probe := &argsProbe{do: func(i *Introspector) {
+	probe := &argsProbe{do: func(i system.Introspector) {
 		infos, _ := i.Arguments("app", []string{"--enable", "extra"})
 		for _, a := range infos {
 			if a.Long == "extra-flag" {
