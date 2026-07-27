@@ -1531,7 +1531,12 @@ Checks:
 - **identity** — the id constant **begins with the package's import
   path** (the uniqueness guarantee the runtime cannot check); every
   registration chain **ends in `.Register()` or is consumed by
-  `Solo`** (the forgotten-terminal hole, closed statically) and
+  `Solo`** (the forgotten-terminal hole, closed statically), and a
+  chain is **ONE expression**, base call to terminal — a partial
+  chain flowing through variables, returns or helper functions
+  cannot be honestly verified by any static analysis, so the
+  one-expression form is the contract (like import-path equality,
+  a guarantee that is sxcli-vet's: the runtime cannot check it), and
   reaches `.Alias(...)` before its terminal; literal aliases are valid
   (lowercase, digits, hyphens) and inject-by-id tags reference known
   ids.
