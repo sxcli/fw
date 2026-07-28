@@ -281,3 +281,30 @@ func TestArgumentsTreatsUpgradeConfigAsInert(t *testing.T) {
 		t.Errorf("the fallback must still answer registration-level: %v", all)
 	}
 }
+
+func TestArgumentsNeverReadsEnvironment(t *testing.T) {
+	// the doc's pin: the per-keystroke plan consults NO environment —
+	// not "nothing sensitive", literally never called
+	calls := 0
+	var got []ArgInfo
+	w := argsWorld(t, nil, func(i system.Introspector) {
+		got, _ = i.Arguments("app", nil)
+	})
+	inner := w.rt.lookupEnv
+	w.rt.lookupEnv = func(name string) (string, bool) {
+		calls++
+		if inner != nil {
+			return inner(name)
+		}
+		return "", false
+	}
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if len(got) == 0 {
+		t.Fatal("the schema must still answer")
+	}
+	if calls != 0 {
+		t.Errorf("the introspection plan read the environment %d times — it must never", calls)
+	}
+}

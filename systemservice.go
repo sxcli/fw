@@ -33,8 +33,14 @@ type systemService struct {
 var _ system.System = (*systemService)(nil)
 
 // Introspector returns the composition's introspection facility.
+// The view is environment-blind BY CONSTRUCTION — a completion query
+// runs per keystroke inside the operator's interactive shell, and
+// that environment is not introspection's input; every facility the
+// view exposes, present and future, inherits this.
 func (s *systemService) Introspector() system.Introspector {
-	return &Introspector{rt: s.rt}
+	envless := *s.rt
+	envless.lookupEnv = func(string) (string, bool) { return "", false }
+	return &Introspector{rt: &envless}
 }
 
 // the system service is cataloged like every service — by init,
