@@ -406,8 +406,8 @@ func TestWriteConfigToStdout(t *testing.T) {
 	if !strings.Contains(out, `"greeting": "dumped"`) {
 		t.Errorf("dump wrong:\n%s", out)
 	}
-	if strings.Contains(out, `"core"`) {
-		t.Errorf("empty core section must be omitted from the dump:\n%s", out)
+	if !strings.Contains(out, `"core"`) || !strings.Contains(out, `"disable"`) {
+		t.Errorf("the dump is complete — the core's file-settable controls included:\n%s", out)
 	}
 	if strings.Contains(strings.Join(w.log, ","), "applet.run") {
 		t.Errorf("write-config must not run the applet: %v", w.log)
