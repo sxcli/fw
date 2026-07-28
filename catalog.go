@@ -113,12 +113,23 @@ func (r *Registration[T]) Provides(types ...reflect.Type) *Registration[T] {
 
 // Step declares one link of a config migration chain: the typed
 // conversion from schema version `from` to the next. Old versions
-// live on as plain json-only types:
+// live on as plain json-only types. The converter receives what was
+// really set in old (read through has) and declares what it set in
+// out (through set); the engine allocates out and anchors both
+// presences:
 //
-//	fw.Step(1, func(old ConfigV1) ConfigV2 { … })
-func Step[From, To any](from uint32, fn func(From) To) engine.Step {
+//	fw.Step(1, func(old *ConfigV1, has *fw.Presence, out *ConfigV2, set *fw.Presence) {
+//		out.Var2 = old.Key
+//		set.Add(&out.Var2)
+//	})
+func Step[From, To any](from uint32, fn func(old *From, has *Presence, out *To, set *Presence)) engine.Step {
 	return engine.NewStep(from, fn)
 }
+
+// Presence is one config instance's set of present leaves — the
+// dimension migration converters read and declare; see the conf
+// engine.
+type Presence = engine.Presence
 
 // Migrate attaches the service's config migration chain, oldest step
 // first — how a schema evolves without stranding deployed files. The

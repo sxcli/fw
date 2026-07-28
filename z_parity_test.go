@@ -107,8 +107,9 @@ func TestMigrateOnTheRegistrationChain(t *testing.T) {
 	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
-		Migrate(Step(1, func(old parityCfgV1) mainAppletCfg {
-			return mainAppletCfg{Greeting: old.Greeting}
+		Migrate(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
+			out.Greeting = old.Greeting
+			set.Add(&out.Greeting)
 		})).registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d\n%s", code, w.stderr.String())
@@ -123,7 +124,7 @@ func TestMigrateOnBareRegistrationIsViolation(t *testing.T) {
 	w.applet(0)
 	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").
-		Migrate(Step(1, func(old parityCfgV1) parityCfgV1 { return old })).
+		Migrate(Step(1, func(old *parityCfgV1, has *Presence, out *parityCfgV1, set *Presence) {})).
 		registerInto(w.cat, w.c)
 	if w.c.Len() == 0 {
 		t.Fatal("Migrate without a config struct must be a commit violation")
@@ -143,8 +144,9 @@ func TestUpgradeConfigCoversTheWholeCatalog(t *testing.T) {
 	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
-		Migrate(Step(1, func(old parityCfgV1) mainAppletCfg {
-			return mainAppletCfg{Greeting: old.Greeting}
+		Migrate(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
+			out.Greeting = old.Greeting
+			set.Add(&out.Greeting)
 		})).registerInto(w.cat, w.c)
 	w.dep(false) // config-less: not part of the schema, so its section is foreign
 	// the transform reads through the runtime's seams: real fs for this test
