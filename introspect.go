@@ -35,9 +35,9 @@ type ArgInfo = system.ArgInfo
 // keeps its facts while its own closure stays as lean as any other.
 // A nil target is the binary view: applet listing, no closure.
 type Introspector struct {
-	cat     *catalog             // attach-time snapshot; data-plane only
-	target  *registry.Descriptor // nil: the binary view
-	ordered []graph.Member       // the target's resolved closure, composed order
+	cat    *catalog             // attach-time snapshot; data-plane only
+	target *registry.Descriptor // nil: the binary view
+	res    graph.Result         // the target's resolution; members derive via composedMembers
 }
 
 // Applets returns the primary alias of every registered public
@@ -108,7 +108,7 @@ func (i *Introspector) Services() []string {
 		return nil
 	}
 	out := []string{CoreAlias}
-	for _, m := range i.ordered {
+	for _, m := range i.cat.composedMembers(i.res) {
 		out = append(out, primaryAlias(m.Desc))
 	}
 	return out
@@ -140,7 +140,7 @@ func (i *Introspector) member(ref string) (*registry.Descriptor, bool) {
 		d, found = i.cat.reg.ByID(ref)
 	}
 	if found {
-		for _, m := range i.ordered {
+		for _, m := range i.cat.composedMembers(i.res) {
 			if m.Desc == d {
 				return d, true
 			}
@@ -163,7 +163,7 @@ func (i *Introspector) Arguments(_ []string) []ArgInfo {
 	var core engine.Core
 	var ctrl coreControls
 	var kn upgradeKnobs
-	sch := engine.NewSchema(c, primaryAlias(i.target), coreContribs(&core, &ctrl, &kn), sections(i.ordered), i.cat.suppressed)
+	sch := i.cat.schema(c, i.target, i.res, &core, &ctrl, &kn)
 	if c.Len() != 0 {
 		// the closure solved at view construction; a schema violation
 		// here is a startup-checked inconsistency — offer nothing
@@ -221,21 +221,5 @@ func (ca *catalog) introspector(applet string) *Introspector {
 		// startup-checked inconsistency; offer nothing
 		return nil
 	}
-	// members in COMPOSED order, exactly as plan() builds the real
-	// schema: the spec promises Order drives listings, and NewSchema's
-	// first-come-first-served short forms make section order SEMANTIC
-	// — a view in resolution order would hand shorts to the wrong
-	// owner. The virtual root is never stored in the catalog, so it
-	// cannot appear here; the view synthesizes the core itself.
-	keep := map[string]bool{}
-	for _, m := range res.Ordered {
-		keep[m.Desc.ID] = true
-	}
-	var members []graph.Member
-	for _, cd := range ca.reg.All() {
-		if keep[cd.ID] {
-			members = append(members, graph.Member{Desc: cd})
-		}
-	}
-	return &Introspector{cat: ca, target: d, ordered: members}
+	return &Introspector{cat: ca, target: d, res: res}
 }

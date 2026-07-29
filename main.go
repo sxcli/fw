@@ -332,20 +332,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		// sections in COMPOSED order (Order sequence, then id): the
-		// spec promises Order drives listings, help sections included;
-		// resolution order is dependency order, not listing order
-		keep := map[string]bool{}
-		for _, m := range p.res.Ordered {
-			keep[m.Desc.ID] = true
-		}
-		var members []graph.Member
-		for _, d := range rt.reg.All() {
-			if keep[d.ID] {
-				members = append(members, graph.Member{Desc: d})
-			}
-		}
-		p.sch = engine.NewSchema(c, alias, coreContribs(&p.core, &p.ctrl, &p.kn), sections(members), rt.suppressed)
+		p.sch = rt.schema(c, d, p.res, &p.core, &p.ctrl, &p.kn)
 	}
 	return p
 }
@@ -411,9 +398,9 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 
 // helpSchema delivers the best schema a violated plan allows: the
 // planned one when it exists (its values marked suspect where sources
-// erred), else the registration-level fallback the Introspector's
-// Arguments already uses — resolved with empty controls, no sources
-// applied, values showing factory defaults.
+// erred), else the registration-level fallback — resolved with empty
+// controls, no sources applied, values showing factory defaults,
+// built by THE schema builder like every other schema.
 func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine.Schema {
 	if p.sch != nil {
 		return p.sch
@@ -427,7 +414,7 @@ func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine
 	if fallback.Len() == 0 {
 		res = graph.Resolve(fallback, rt.reg, root, graph.Controls{})
 	}
-	return engine.NewSchema(fallback, primaryAlias(d), coreContribs(&core, &ctrl, &kn), sections(res.Ordered), rt.suppressed)
+	return rt.schema(fallback, d, res, &core, &ctrl, &kn)
 }
 
 // upgradeConfig serves --upgrade-config: the schema is built from the

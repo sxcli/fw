@@ -20,6 +20,7 @@ import (
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
+	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/registry"
 )
 
@@ -49,6 +50,40 @@ func (ca *catalog) index(c *fail.Collector) {
 			}
 		}
 	}
+}
+
+// composedMembers renders a resolution's closure in COMPOSED order
+// (Order sequence, then id): the spec promises Order drives listings,
+// help sections included — and NewSchema's first-come-first-served
+// short forms make section order SEMANTIC, so every schema builder
+// MUST come through here. Resolution order is dependency order, not
+// listing order; the divergence once handed shorts to the wrong owner
+// (review 2026-07-29, D1). The virtual root is never stored, so it
+// cannot appear.
+func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
+	keep := map[string]bool{}
+	for _, m := range res.Ordered {
+		keep[m.Desc.ID] = true
+	}
+	var members []graph.Member
+	for _, d := range ca.reg.All() {
+		if keep[d.ID] {
+			members = append(members, graph.Member{Desc: d})
+		}
+	}
+	return members
+}
+
+// schema builds the closure-true schema for one target's resolution —
+// THE builder: plan, the help fallback and every introspection view
+// come through here, so section order (and with it short-form
+// ownership) has one spelling. The operator surfaces speak the
+// target's primary alias, and the sections ride in composed order,
+// both by construction.
+func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.Result,
+	core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) *engine.Schema {
+	return engine.NewSchema(c, primaryAlias(d), coreContribs(core, ctrl, kn),
+		sections(ca.composedMembers(res)), ca.suppressed)
 }
 
 // snapshot returns an independent copy of the catalog's data — the
