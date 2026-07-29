@@ -47,7 +47,7 @@ func platformMain(app *App) int {
 		// (syscall.Errno); the handler holds the real code, so the
 		// error only matters when no code was produced at all
 		h := &scmHandler{app: app, argv: debugArgv}
-		runErr := debug.Run(binaryBasename(debugArgv[0]), h)
+		runErr := debug.Run(BinaryBasename(debugArgv[0]), h)
 		code = int(h.code)
 		if runErr != nil && code == 0 {
 			code = 2
@@ -97,8 +97,11 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 	return h.specific, h.code
 }
 
-// binaryBasename extracts the applet-selector name from argv[0],
-// dropping the .exe suffix.
-func binaryBasename(argv0 string) string {
+// BinaryBasename extracts the applet-selector name from argv[0],
+// dropping the .exe suffix — the ONE spelling of the dispatch rule,
+// exported for consumers that must agree with it (a completion script
+// registered under any other name would answer for a selector
+// dispatch refuses).
+func BinaryBasename(argv0 string) string {
 	return strings.TrimSuffix(filepath.Base(argv0), ".exe")
 }

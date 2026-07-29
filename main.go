@@ -173,7 +173,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 	} else {
 		name := ""
 		if len(rt.argv) > 0 {
-			name = binaryBasename(rt.argv[0])
+			name = BinaryBasename(rt.argv[0])
 		}
 		if d, found := rt.byAlias[name]; found && !d.Hidden {
 			if a, isApplet := d.Instance.(Applet); isApplet {

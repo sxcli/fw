@@ -27,7 +27,10 @@ func platformMain(app *App) int {
 	return run(productionRuntime(app, os.Args, nil))
 }
 
-// binaryBasename extracts the applet-selector name from argv[0].
-func binaryBasename(argv0 string) string {
+// BinaryBasename extracts the applet-selector name from argv[0] — the
+// ONE spelling of the dispatch rule, exported for consumers that must
+// agree with it (a completion script registered under any other name
+// would answer for a selector dispatch refuses).
+func BinaryBasename(argv0 string) string {
 	return filepath.Base(argv0)
 }
