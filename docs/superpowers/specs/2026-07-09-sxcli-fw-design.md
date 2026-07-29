@@ -199,6 +199,14 @@ served six masters and is retired:
   cannot know import paths; the guarantee is the tool's). Inject tags
   reference IDs — verbose, copy-pasteable, and correctly so: naming a
   specific service is a deliberate, concrete act.
+
+  An ID is permanent. Once a service has been released under an ID,
+  that ID MUST NOT change — not on refactor, not on module rename,
+  not on ownership transfer. Everything binds to it, code and
+  deployments alike. Renaming an ID is not a rename; it is the
+  removal of one service and the appearance of another, and every
+  consumer breaks silently. A service that must change identity is a
+  new service with a new ID.
 - **Alias — short, human-facing, REQUIRED.** The CLI selector, the
   config-file section, the env-prefix source, the
   `--disable`/`--enable` vocabulary, the completion candidates.
@@ -362,7 +370,7 @@ panics; violations are recorded and reported all at once):
   id is package-shaped or it is not an id; single-segment names are
   the aliases' domain, and the floor makes the two grammars disjoint
   by construction: one string can never name both an alias and an
-  id. `sxcli.dev/fw` and the core's Introspector id are reserved —
+  id. `sxcli.dev/fw` and the system service's id are reserved —
   import-path *equality* is `sxcli-vet`'s check, the runtime cannot
   know import paths),
 - malformed alias (lowercase, digits, hyphens, starts with a letter,
@@ -465,48 +473,52 @@ before `Configured` ever runs.
 
 ### Introspection
 
-The core registers exactly one **`Introspector`** service itself, under
-the reserved id `introspection` (reserved like `core`: the id is
-rejected for any other concrete type, and registering the core's type
-under another id collides with the core's own registration — squatting
-always fails startup loudly). It is the read-only composition view for
-services implementing completions, documentation generators and similar
-meta features *outside* the core; there is exactly one because it
-reports composition truth, and truth does not federate. Services may
-not provide their own introspectors — future extensibility goes the
-other way: optional self-description interfaces whose data the single
-core Introspector aggregates (see Open Items).
+Introspection is served by the **system service** — the framework's
+own cataloged member, declared in `sxcli.dev/fw/system` (id
+`sxcli.dev/fw/system`, alias `system`, both reserved). The package
+declares the `System` interface; fw registers a private
+implementation, so no public seam can replace the framework's guts.
+Services inject `system.System` like any dependency.
 
-Consumers inject it by concrete type (`*fw.Introspector`), cold like
-any service. **A closure containing the Introspector is never
-ejected** — enumerating the binary requires the registry alive; only
-invocations that injected it pay that.
+The facade hands out target-scoped views:
+`Introspector(applet string) Introspector`. The parameter is a
+dispatch name, never an id. `""` returns the binary view: the applet
+listing and binary-level facts, no dependency graph — and not the
+core's arguments, every target view already carries them. An unknown
+name, a non-applet, or a target that cannot resolve returns nil: a
+completion caller can do nothing with prose, nil means "offer
+nothing".
 
-Surface: `Applets()` (public applets only — `Hidden` and `System`
-applets are omitted: a completion must not offer what a human should
-not type), `SingleApplet()` (the applet that would run with no
-selector word — dispatch-mode truth from the dispatch rules
-themselves; consumers must not re-derive it from `Applets`, which is
-public-only while a Hidden non-System applet still counts for the
-mode), `Services()` (every registered service — plus `core`,
-synthesized: the core is a virtual root, not a registry entry, but it
-is truthfully part of every binary), `ConfigExtensions()`,
-`Describe(serviceID)` (the registration Metadata's long-form
-description; `Describe("core")` answers a fixed description), and
-`Arguments(appletID, args) ([]ArgInfo, error)` — the closure-true
-argument schema the applet would have if invoked with `args`. It runs
-the real planning pipeline (the shared `plan()` also used by
-execution, so introspection truth cannot drift): lenient core peek
-honoring an in-line `--config`, file loading, controls from every
-source, closure resolution, schema
-construction — with **zero side effects**: nothing is written, ejected
-or mutated; `--write-config`/`--help` inside `args` are inert data
-(beyond the write-config missing-target source selection). Callers
-pass the words *before* the completion cursor — a half-typed token
-passed as data would be planned as configuration. The result is
-best-effort: on planning violations, `Arguments` retries with no files
-and no controls (the registration-level schema) and returns it
-alongside the joined error.
+Every view answers from a catalog snapshot taken at startup, before
+any ejection. No config files, no location search, no environment:
+same binary, same target, same answer, always. Ejection is uniform —
+a closure containing the system service ejects like any other; the
+snapshot feeds the views, not the live registry.
+
+A target view serves only the target's resolved graph:
+
+- `Services()` — the graph members' aliases, `core` leading
+  (synthesized: the core is a virtual root, not a registry entry,
+  but truthfully part of every graph). The binary view answers nil.
+- `Describe(ref)` — the registration Metadata description of a graph
+  member, alias or id; `""` for anything outside the graph.
+  `Describe("core")` answers a fixed description.
+- `Arguments(args)` — the target's schema, built by the same schema
+  builder the real run uses, so introspection truth cannot drift.
+  Registration-level truth only: no files, no controls. `args` is
+  reserved for the explicit control vocabulary and is inert today.
+
+Binary-level facts, the same on every view: `Applets()` (public
+applets only — Hidden and System applets are omitted: a completion
+must not offer what a human should not type), `SingleApplet()`
+(dispatch-mode truth from the dispatch rules; not derivable from
+`Applets`, which is public-only while a Hidden non-System applet
+still counts for the mode), `ConfigExtensions()`.
+
+Services may not provide their own introspectors — future
+extensibility goes the other way: optional self-description
+interfaces whose data the system service aggregates (see Open
+Items).
 
 ### Dependency declaration
 
@@ -706,9 +718,9 @@ lifecycle: the composed struct has no methods. Seeds are gone as a
 concept; what used to be seed lists (AlwaysOn — removed, provider
 seeds, the translator seed) are now visible dependency edges.
 
-Why a *virtual* root rather than a registry entry: the Introspector's
-`Arguments` re-plans freely — different applets, different provider
-sets, a different core struct each pass — and `reflect.StructOf`
+Why a *virtual* root rather than a registry entry: the system
+service builds a fresh root per view, the schema builder one per
+plan — and `reflect.StructOf`
 returns identical types for identical field sets, colliding with both
 the duplicate-id and duplicate-concrete-type rules. The graph
 therefore takes the root descriptor as a parameter; the registry never
