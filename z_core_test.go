@@ -17,6 +17,8 @@ package fw
 import (
 	"strings"
 	"testing"
+
+	"sxcli.dev/conf/fail"
 )
 
 // Disabling the dispatched applet keeps its human message even though
@@ -40,7 +42,13 @@ func TestIntrospectionSynthesizesCore(t *testing.T) {
 	if err := w.build(); err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
-	i := &Introspector{rt: w.rt}
+	c := &fail.Collector{}
+	ca := &catalog{reg: w.rt.reg}
+	ca.index(c)
+	i := ca.introspector("app")
+	if i == nil || c.Len() != 0 {
+		t.Fatalf("the applet view must construct: %v", c.All())
+	}
 	services := i.Services()
 	if len(services) == 0 || services[0] != "core" {
 		t.Errorf("Services must lead with the synthesized core: %v", services)

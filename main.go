@@ -52,15 +52,6 @@ func run(rt *runtime) int {
 	buffer := logging.NewBuffer()
 	slog.SetDefault(slog.New(buffer))
 
-	// the system service was cataloged by init like any member; only
-	// its runtime attachment is ours — same package, unexported
-	// field, no public seam
-	if d, ok := rt.reg.ByID(system.ID); ok {
-		if s, isOurs := d.Instance.(*systemService); isOurs {
-			s.rt = rt
-		}
-	}
-
 	// the core's translator dependency: exactly one service may
 	// provide it (spec §7); two catalog systems in one binary is a
 	// developer error, reported like every other violation
@@ -75,18 +66,18 @@ func run(rt *runtime) int {
 	}
 
 	// the operator-name index: every alias resolves to its service.
-	// Composed-alias collisions were Build violations — a clash here
-	// is a framework bug, reported not swallowed.
-	rt.byAlias = map[string]*registry.Descriptor{}
-	for _, d := range rt.reg.All() {
-		for _, a := range d.Aliases {
-			if prev, taken := rt.byAlias[a]; taken && prev != d {
-				rt.c.Fail("operator name %q resolves to both %q and %q", a, prev.ID, d.ID)
-			} else {
-				rt.byAlias[a] = d
-			}
+	rt.index(rt.c)
+	// the system service was cataloged by init like any member; only
+	// its attachment is ours — same package, unexported field, no
+	// public seam. The catalog SNAPSHOT is taken here, before any
+	// ejection: every later introspection view answers from it, so
+	// ejection stays uniform and cannot blind the system service.
+	if d, ok := rt.reg.ByID(system.ID); ok {
+		if s, isOurs := d.Instance.(*systemService); isOurs {
+			s.cat = rt.catalog.snapshot()
 		}
 	}
+
 	if rt.c.Len() > 0 {
 		rt.report(buffer)
 	} else if d, applet, args, ok := rt.dispatch(); ok {
@@ -304,7 +295,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		OpenPinned:   rt.openPinned,
 		Providers:    rt.providers(),
 		SuppressCore: rt.suppressed,
-		MaxSize:      rt.maxConfig,
+		MaxSize:      rt.maxConfigBytes,
 	}
 	before := c.Len()
 	var peek engine.Core
@@ -378,11 +369,10 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 		for _, m := range p.res.Ordered {
 			keep[m.Desc.ID] = true
 		}
-		// an introspecting closure keeps the whole registry:
-		// enumerating the binary is the point
-		if !keep[system.ID] {
-			rt.reg.Retain(keep)
-		}
+		// ejection is uniform: the system service answers from its
+		// attach-time snapshot, so no closure needs the registry kept
+		// alive on its behalf
+		rt.reg.Retain(keep)
 		loaded := p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 {
 			// declared positionals were assigned by Apply; an
@@ -764,7 +754,7 @@ func (rt *runtime) providerSeeds(files *engine.Files) []string {
 // registry builds the descriptor through its normal machinery but
 // never stores it — see the spec for why the root cannot be a
 // registry entry.
-func (rt *runtime) coreRoot(c *fail.Collector, d *registry.Descriptor, providerIDs []string) *registry.Descriptor {
+func (ca *catalog) coreRoot(c *fail.Collector, d *registry.Descriptor, providerIDs []string) *registry.Descriptor {
 	var root *registry.Descriptor
 	{
 		fields := []reflect.StructField{
@@ -778,7 +768,7 @@ func (rt *runtime) coreRoot(c *fail.Collector, d *registry.Descriptor, providerI
 				Tag:  reflect.StructTag(`inject:"` + id + `;optional"`),
 			})
 		}
-		root = rt.reg.Virtual(CoreAlias, reflect.New(reflect.StructOf(fields)).Interface(), c)
+		root = ca.reg.Virtual(CoreAlias, reflect.New(reflect.StructOf(fields)).Interface(), c)
 	}
 	return root
 }

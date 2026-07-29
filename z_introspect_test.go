@@ -23,7 +23,8 @@ import (
 	"testing"
 )
 
-// introApplet records what the injected Introspector reports during Run.
+// introApplet records what the injected System facade reports during
+// Run — after ejection, from the attach-time snapshot.
 type introApplet struct {
 	Sys      system.System `inject:""`
 	applets  []string
@@ -33,9 +34,12 @@ type introApplet struct {
 
 func (a *introApplet) Configured() error { return nil }
 func (a *introApplet) Run() int {
-	a.applets = a.Sys.Introspector().Applets()
-	a.services = a.Sys.Introspector().Services()
-	a.exts = a.Sys.Introspector().ConfigExtensions()
+	binary := a.Sys.Introspector("")
+	a.applets = binary.Applets()
+	a.exts = binary.ConfigExtensions()
+	if view := a.Sys.Introspector("meta"); view != nil {
+		a.services = view.Services()
+	}
 	return 0
 }
 
@@ -47,15 +51,15 @@ func (p *fakeProvider) ToJSON(in io.Reader) (io.Reader, error)   { return in, ni
 func (p *fakeProvider) FromJSON(in io.Reader) (io.Reader, error) { return in, nil }
 
 // argsProbe is an applet whose Run executes test-provided behavior
-// against the injected Introspector.
+// against the injected System facade.
 type argsProbe struct {
 	Sys system.System `inject:""`
-	do  func(i system.Introspector)
+	do  func(sys system.System)
 }
 
 func (p *argsProbe) Configured() error { return nil }
 func (p *argsProbe) Run() int {
-	p.do(p.Sys.Introspector())
+	p.do(p.Sys)
 	return 0
 }
 
@@ -81,7 +85,7 @@ func longs(infos []ArgInfo) string {
 	return "," + strings.Join(out, ",") + ","
 }
 
-func argsWorld(t *testing.T, files map[string]string, do func(i system.Introspector)) *world {
+func argsWorld(t *testing.T, files map[string]string, do func(sys system.System)) *world {
 	t.Helper()
 	w := newWorld(t, []string{"bin", "meta"}, files, nil)
 	w.applet(0) // "app", with its optional dep field
@@ -97,15 +101,11 @@ func argsWorld(t *testing.T, files map[string]string, do func(i system.Introspec
 
 func TestArgumentsReportsClosureSchema(t *testing.T) {
 	var infos []ArgInfo
-	var err error
-	w := argsWorld(t, nil, func(i system.Introspector) {
-		infos, err = i.Arguments("app", nil)
+	w := argsWorld(t, nil, func(sys system.System) {
+		infos = sys.Introspector("app").Arguments(nil)
 	})
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
-	}
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
 	}
 	all := longs(infos)
 	if !strings.Contains(all, ",greeting,") || !strings.Contains(all, ",config,") {
@@ -116,42 +116,48 @@ func TestArgumentsReportsClosureSchema(t *testing.T) {
 	}
 }
 
-func TestArgumentsHonorsInlineConfigAndControls(t *testing.T) {
+func TestIntrospectionIgnoresConfigFiles(t *testing.T) {
+	// THE determinism pin (target-scoped-introspection design): the
+	// view is built from the catalog alone — a config file enabling a
+	// service must not change the answer, whether named in-line or
+	// found by any search. This is the regression test for the
+	// env→closure vector the 2026-07-29 review proved.
 	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}}`}
 	var withC, withoutC []ArgInfo
-	w := argsWorld(t, files, func(i system.Introspector) {
-		withC, _ = i.Arguments("app", []string{"-c", "/inline/cfg.json"})
-		withoutC, _ = i.Arguments("app", nil)
+	w := argsWorld(t, files, func(sys system.System) {
+		withC = sys.Introspector("app").Arguments([]string{"-c", "/inline/cfg.json"})
+		withoutC = sys.Introspector("app").Arguments(nil)
 	})
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
-	if !strings.Contains(longs(withC), ",extra-flag,") {
-		t.Errorf("an in-line -c enabling a service must add its arguments: %v", longs(withC))
+	if strings.Contains(longs(withC), ",extra-flag,") {
+		t.Errorf("a config file must not shape introspection: %v", longs(withC))
 	}
-	if strings.Contains(longs(withoutC), ",extra-flag,") {
-		t.Errorf("without the -c the service stays cold: %v", longs(withoutC))
+	if longs(withC) != longs(withoutC) {
+		t.Errorf("same binary, same target, same answer — always:\n%v\n%v", longs(withC), longs(withoutC))
 	}
 }
 
-func TestArgumentsBestEffortFallback(t *testing.T) {
-	var infos []ArgInfo
-	var err error
-	w := argsWorld(t, nil, func(i system.Introspector) {
-		infos, err = i.Arguments("app", []string{"--disable", "ghost"})
+func TestArgumentsArgsAreInert(t *testing.T) {
+	// args are reserved for the explicit-control-vocabulary era; today
+	// controls, transforms and poison alike are inert data
+	var plain, controlled, poisoned []ArgInfo
+	w := argsWorld(t, nil, func(sys system.System) {
+		view := sys.Introspector("app")
+		plain = view.Arguments(nil)
+		controlled = view.Arguments([]string{"--disable", "ghost"})
+		poisoned = view.Arguments([]string{"--upgrade-config", "--config", "/nowhere.json"})
 	})
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
-	if err == nil {
-		t.Error("a poisoned control must surface as an error")
-	}
-	if !strings.Contains(longs(infos), ",greeting,") {
-		t.Errorf("fallback must still deliver the registration-level schema: %v", longs(infos))
+	if len(plain) == 0 || longs(plain) != longs(controlled) || longs(plain) != longs(poisoned) {
+		t.Errorf("inert args must not change the answer:\n%v\n%v\n%v", longs(plain), longs(controlled), longs(poisoned))
 	}
 }
 
-func TestArgumentsIsSideEffectFree(t *testing.T) {
+func TestIntrospectionIsSideEffectFree(t *testing.T) {
 	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}, "extra": {"flag": "changed"}}`}
 	w := newWorld(t, []string{"bin", "meta"}, files, nil)
 	w.applet(0)
@@ -159,8 +165,8 @@ func TestArgumentsIsSideEffectFree(t *testing.T) {
 	NewRegistration("test/extra", func() *extraService { return extra },
 		func(x *extraService) *extraCfg { return &x.cfg }).
 		Alias("extra").registerInto(w.cat, w.c)
-	probe := &argsProbe{do: func(i system.Introspector) {
-		i.Arguments("app", []string{"-c", "/inline/cfg.json", "--write-config"})
+	probe := &argsProbe{do: func(sys system.System) {
+		sys.Introspector("app").Arguments([]string{"-c", "/inline/cfg.json", "--write-config"})
 	}}
 	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
@@ -175,24 +181,28 @@ func TestArgumentsIsSideEffectFree(t *testing.T) {
 	}
 }
 
-func TestArgumentsRejectsNonApplets(t *testing.T) {
-	var errService, errUnknown error
-	w := argsWorld(t, nil, func(i system.Introspector) {
-		_, errService = i.Arguments("extra", nil)
-		_, errUnknown = i.Arguments("nope", nil)
+func TestIntrospectorRejectsNonApplets(t *testing.T) {
+	var forService, forUnknown, forID system.Introspector
+	w := argsWorld(t, nil, func(sys system.System) {
+		forService = sys.Introspector("extra")
+		forUnknown = sys.Introspector("nope")
+		forID = sys.Introspector("test/meta")
 	})
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
-	if errService == nil || !strings.Contains(errService.Error(), "not an applet") {
-		t.Errorf("plain service must be rejected: %v", errService)
+	if forService != nil {
+		t.Error("a plain service is not a target: nil")
 	}
-	if errUnknown == nil || !strings.Contains(errUnknown.Error(), "not registered") {
-		t.Errorf("unknown id must be rejected: %v", errUnknown)
+	if forUnknown != nil {
+		t.Error("an unknown name is nil — offer nothing")
+	}
+	if forID != nil {
+		t.Error("Introspector takes dispatch names, never ids")
 	}
 }
 
-func TestIntrospectorReportsComposition(t *testing.T) {
+func TestIntrospectorAnswersFromSnapshotAfterEjection(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	a := &introApplet{}
 	NewBareRegistration("test/meta", func() *introApplet { return a }).
@@ -206,16 +216,23 @@ func TestIntrospectorReportsComposition(t *testing.T) {
 	if strings.Join(a.applets, ",") != "meta" {
 		t.Errorf("applets wrong: %v", a.applets)
 	}
-	// ejection was skipped: the cold dep and the provider are still
-	// enumerable, and the introspector lists itself
-	joined := strings.Join(a.services, ",")
-	for _, want := range []string{"meta", "dep", "fakefmt", "system"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("services must include %q (ejection skipped): %v", want, a.services)
-		}
+	// ejection is UNIFORM now — the cold provider left the registry
+	// even though the system service is in the closure...
+	if _, stillThere := w.rt.reg.ByID("test/fakefmt"); stillThere {
+		t.Error("ejection must be uniform; the snapshot answers, not the live registry")
 	}
+	// ...and the binary-level facts still answer from the snapshot
 	if strings.Join(a.exts, ",") != "json,toml,json5" {
-		t.Errorf("extensions wrong: %v", a.exts)
+		t.Errorf("extensions must answer from the snapshot: %v", a.exts)
+	}
+	// the target view is closure-scoped: meta and its system dep, the
+	// core leading; the cold dep and the provider are NOT members
+	joined := strings.Join(a.services, ",")
+	if a.services[0] != "core" || !strings.Contains(joined, "meta") || !strings.Contains(joined, "system") {
+		t.Errorf("services must be the closure, core first: %v", a.services)
+	}
+	if strings.Contains(joined, "dep") || strings.Contains(joined, "fakefmt") {
+		t.Errorf("services must not reach past the resolved graph: %v", a.services)
 	}
 }
 
@@ -230,7 +247,7 @@ func TestEjectionStillHappensWithoutIntrospector(t *testing.T) {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
 	if _, stillThere := w.rt.reg.ByID("test/fakefmt"); stillThere {
-		t.Error("without the introspector in the closure, cold services must still be ejected")
+		t.Error("cold services must be ejected")
 	}
 }
 
@@ -261,34 +278,13 @@ func TestSystemIdentityIsGuarded(t *testing.T) {
 	}
 }
 
-func TestArgumentsTreatsUpgradeConfigAsInert(t *testing.T) {
-	// an --upgrade-config plan carries no schema (the pure transform
-	// never loads); a completion probe passing the token through must
-	// get the registration-level answer, never a crash
-	var infos []ArgInfo
-	var err error
-	w := argsWorld(t, nil, func(i system.Introspector) {
-		infos, err = i.Arguments("app", []string{"--upgrade-config", "--config", "/nowhere.json"})
-	})
-	if code := w.run(); code != 0 {
-		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
-	}
-	if err != nil {
-		t.Fatalf("the token must be inert data, not a failure: %v", err)
-	}
-	all := longs(infos)
-	if !strings.Contains(all, ",greeting,") || !strings.Contains(all, ",config,") {
-		t.Errorf("the fallback must still answer registration-level: %v", all)
-	}
-}
-
-func TestArgumentsNeverReadsEnvironment(t *testing.T) {
-	// the doc's pin: the per-keystroke plan consults NO environment —
+func TestIntrospectionNeverReadsEnvironment(t *testing.T) {
+	// the doc's pin: the per-keystroke view consults NO environment —
 	// not "nothing sensitive", literally never called
 	calls := 0
 	var got []ArgInfo
-	w := argsWorld(t, nil, func(i system.Introspector) {
-		got, _ = i.Arguments("app", nil)
+	w := argsWorld(t, nil, func(sys system.System) {
+		got = sys.Introspector("app").Arguments(nil)
 	})
 	inner := w.rt.lookupEnv
 	w.rt.lookupEnv = func(name string) (string, bool) {
@@ -305,6 +301,6 @@ func TestArgumentsNeverReadsEnvironment(t *testing.T) {
 		t.Fatal("the schema must still answer")
 	}
 	if calls != 0 {
-		t.Errorf("the introspection plan read the environment %d times — it must never", calls)
+		t.Errorf("the introspection view read the environment %d times — it must never", calls)
 	}
 }

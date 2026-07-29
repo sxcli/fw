@@ -21,26 +21,34 @@ import (
 // systemService is the framework's own service — the private
 // implementation of system.System. PRIVATE is the point: the
 // interface lives in the declarations package, the implementation
-// here, wired to the running composition through the unexported rt
-// field — no public seam exists to replace the framework's guts.
-// The runtime attaches rt at startup; until then the facilities are
-// not usable (nothing can inject the service before a run either).
+// here, wired to the running composition through unexported fields —
+// no public seam exists to replace the framework's guts. The runtime
+// attaches the catalog snapshot at startup, BEFORE ejection: the
+// snapshot serves every later view, so completion's own closure
+// ejects like any other and still answers about the whole binary.
 type systemService struct {
-	rt *runtime
+	cat *catalog // attach-time snapshot; data-plane only
 }
 
 // the private implementation IS the declared interface.
 var _ system.System = (*systemService)(nil)
 
-// Introspector returns the composition's introspection facility.
-// The view is environment-blind BY CONSTRUCTION — a completion query
-// runs per keystroke inside the operator's interactive shell, and
-// that environment is not introspection's input; every facility the
-// view exposes, present and future, inherits this.
-func (s *systemService) Introspector() system.Introspector {
-	envless := *s.rt
-	envless.lookupEnv = func(string) (string, bool) { return "", false }
-	return &Introspector{rt: &envless}
+// Introspector returns the target-scoped introspection view for the
+// applet the dispatch NAME names (never an id); "" is the binary
+// view; an unknown name — or a name that is not an applet — is nil.
+// Every view is built from the catalog snapshot and NOTHING else: no
+// config files, no location search, no environment — a completion
+// query runs per keystroke inside the operator's interactive shell,
+// and that shell is not introspection's input. Same binary, same
+// target, same answer, always.
+func (s *systemService) Introspector(applet string) system.Introspector {
+	if s.cat == nil {
+		return nil // no run attached: no composition to introspect
+	}
+	if v := s.cat.introspector(applet); v != nil {
+		return v
+	}
+	return nil // explicit: a typed nil must not masquerade as a view
 }
 
 // the system service is cataloged like every service — by init,

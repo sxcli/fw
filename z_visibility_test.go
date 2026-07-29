@@ -139,7 +139,7 @@ func TestIntrospectorAppletsOmitHiddenAndSystem(t *testing.T) {
 	if err := w.build(); err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
-	i := &Introspector{rt: w.rt}
+	i := &Introspector{cat: &catalog{reg: w.rt.reg}}
 	if got := strings.Join(i.Applets(), ","); got != "app" {
 		t.Errorf("Applets() = %q, want %q", got, "app")
 	}
@@ -156,7 +156,7 @@ func TestSingleAppletReportsDispatchTruth(t *testing.T) {
 	if err := w.build(); err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
-	i := &Introspector{rt: w.rt}
+	i := &Introspector{cat: &catalog{reg: w.rt.reg}}
 	if id, ok := i.SingleApplet(); !ok || id != "app" {
 		t.Errorf("System applet must not break single-applet mode: %q %v", id, ok)
 	}
@@ -167,7 +167,7 @@ func TestSingleAppletReportsDispatchTruth(t *testing.T) {
 	if err := w2.build(); err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
-	i2 := &Introspector{rt: w2.rt}
+	i2 := &Introspector{cat: &catalog{reg: w2.rt.reg}}
 	if id, ok := i2.SingleApplet(); ok || id != "" {
 		t.Errorf("Hidden non-System applet must count for the mode: %q %v", id, ok)
 	}

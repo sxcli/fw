@@ -15,8 +15,6 @@
 package fw
 
 import (
-	"errors"
-	"fmt"
 	"sxcli.dev/fw/system"
 
 	"sxcli.dev/conf/engine"
@@ -29,22 +27,17 @@ import (
 // re-exported so fw-side consumers keep one import.
 type ArgInfo = system.ArgInfo
 
-// Introspector is the core's read-only view of the binary's
-// composition, for services that implement completions, documentation
-// generators and similar meta features outside the core. There is
-// exactly one: the core constructs and registers it itself under the
-// alias "introspection" (id sxcli.dev/fw/introspection) — it reports the composition truth, and
-// truth does not federate. Consumers inject it by concrete type:
-//
-//	type CompletionApplet struct {
-//		I *fw.Introspector `inject:""`
-//	}
-//
-// The one price of introspection: a closure containing the Introspector
-// is never ejected — enumerating the binary requires keeping the
-// registry alive. Only invocations that injected it pay that.
+// Introspector is the TARGET-SCOPED read-only view behind
+// system.Introspector: one applet's resolved graph, built from the
+// attach-time catalog snapshot and NOTHING else — no config files, no
+// location search, no environment. Same binary, same target, same
+// answer, always; ejection cannot shrink the snapshot, so completion
+// keeps its facts while its own closure stays as lean as any other.
+// A nil target is the binary view: applet listing, no closure.
 type Introspector struct {
-	rt *runtime
+	cat     *catalog             // attach-time snapshot; data-plane only
+	target  *registry.Descriptor // nil: the binary view
+	ordered []graph.Member       // the target's resolved closure, composed order
 }
 
 // Applets returns the primary alias of every registered public
@@ -52,10 +45,11 @@ type Introspector struct {
 // selectors a completion offers as first words. Hidden and System
 // applets are omitted: they are not commands offered to a human, and
 // a completion must not offer what a human should not type.
+// Binary-level: the same on every view.
 func (i *Introspector) Applets() []string {
 	var out []string
-	for _, d := range i.rt.reg.All() {
-		if _, isApplet := d.Instance.(Applet); isApplet && !d.Hidden {
+	for _, d := range i.cat.reg.All() {
+		if d.Concrete.Implements(appletType) && !d.Hidden {
 			out = append(out, primaryAlias(d))
 		}
 	}
@@ -64,19 +58,18 @@ func (i *Introspector) Applets() []string {
 
 // SingleApplet reports the applet that would run with no selector
 // word: in single-applet mode — exactly one non-System applet
-// registered — its primary alias and true, otherwise "" and false. This is
-// dispatch-mode truth straight from the dispatch rules, and consumers
-// must not re-derive it from Applets: that listing is public-only,
-// while a Hidden non-System applet still counts for the mode.
+// registered — its primary alias and true, otherwise "" and false.
+// This is dispatch-mode truth straight from the dispatch rules, and
+// consumers must not re-derive it from Applets: that listing is
+// public-only, while a Hidden non-System applet still counts for the
+// mode. Binary-level: the same on every view.
 func (i *Introspector) SingleApplet() (string, bool) {
 	alias := ""
 	n := 0
-	for _, d := range i.rt.reg.All() {
-		if _, isApplet := d.Instance.(Applet); isApplet {
-			if !d.System {
-				n++
-				alias = primaryAlias(d)
-			}
+	for _, d := range i.cat.reg.All() {
+		if d.Concrete.Implements(appletType) && !d.System {
+			n++
+			alias = primaryAlias(d)
 		}
 	}
 	ok := n == 1
@@ -86,98 +79,98 @@ func (i *Introspector) SingleApplet() (string, bool) {
 	return alias, ok
 }
 
-// Services returns the primary alias of every registered service —
-// applets included — in composed order: the operator vocabulary,
-// exactly what --disable and --enable take, which is what a
-// HintServiceID completion offers.
-func (i *Introspector) Services() []string {
-	// the core is a virtual root, not a registry entry — its presence
-	// here is synthesized, because it is truthfully part of every
-	// binary (spec §5)
-	out := []string{CoreAlias}
-	for _, d := range i.rt.reg.All() {
-		out = append(out, primaryAlias(d))
-	}
-	return out
-}
-
-// resolve maps an introspection reference — alias or id, both legal —
-// to its descriptor. Alias first; cross-vocabulary collisions were
-// startup violations, so the pick is deterministic.
-func (i *Introspector) resolve(ref string) (*registry.Descriptor, bool) {
-	d, found := i.rt.byAlias[ref]
-	if !found {
-		d, found = i.rt.reg.ByID(ref)
-	}
-	return d, found
-}
-
-// Arguments returns the argument schema the given applet would have if
-// invoked with args: the real planning pipeline runs — lenient core
-// peek honoring an in-line --config, file loading, controls from every
-// source, closure resolution — with zero side effects (nothing is
-// written, ejected or mutated; --write-config and --help in args are
-// inert data). Suppressed features are absent, exactly as at execution.
-//
-// args must be the words BEFORE the completion cursor, not including
-// the word being completed: a half-typed token passed as data would be
-// planned as configuration.
-//
-// The result is best-effort: when planning collects violations (a
-// broken config file, an unknown id in a control), Arguments retries
-// with no files and no controls — the registration-level schema — and
-// returns that alongside the joined violations. A non-nil error
-// therefore does not mean an empty result; callers wanting candidates
-// may ignore it, callers wanting diagnostics must not.
-func (i *Introspector) Arguments(appletID string, args []string) ([]ArgInfo, error) {
-	var out []ArgInfo
-	var err error
-	if d, registered := i.resolve(appletID); !registered {
-		err = fmt.Errorf("introspection: %q is not registered", appletID)
-	} else if _, isApplet := d.Instance.(Applet); !isApplet {
-		err = fmt.Errorf("introspection: %q is not an applet", appletID)
-	} else {
-		c := &fail.Collector{}
-		p := i.rt.plan(c, d, args)
-		if c.Len() == 0 && p.sch != nil {
-			out = argInfos(p.sch)
-		} else {
-			// an --upgrade-config plan carries no schema (the pure
-			// transform never loads); introspection treats the token
-			// as inert data and answers registration-level
-			err = errors.Join(c.All()...)
-			fallback := &fail.Collector{}
-			var core engine.Core
-			var ctrl coreControls
-			var kn upgradeKnobs
-			root := i.rt.coreRoot(fallback, d, nil)
-			var res graph.Result
-			if fallback.Len() == 0 {
-				res = graph.Resolve(fallback, i.rt.reg, root, graph.Controls{})
-			}
-			if fallback.Len() == 0 {
-				sch := engine.NewSchema(fallback, primaryAlias(d), coreContribs(&core, &ctrl, &kn), sections(res.Ordered), i.rt.suppressed)
-				if fallback.Len() == 0 {
-					out = argInfos(sch)
+// ConfigExtensions returns every config file extension this binary can
+// read: "json" first, then each registered format provider's
+// extensions in registration order, deduplicated. Binary-level.
+func (i *Introspector) ConfigExtensions() []string {
+	out := []string{"json"}
+	for _, d := range i.cat.reg.All() {
+		if providesType(d, providerType) {
+			if p, ok := d.Instance.(ConfigFormatProvider); ok {
+				for _, ext := range p.Extensions() {
+					if !contains(out, ext) {
+						out = append(out, ext)
+					}
 				}
 			}
 		}
 	}
-	return out, err
+	return out
 }
 
-// Describe returns the long-form description a service declared via
-// its chain Metadata, or "" when it declared none (or the id is unknown).
-func (i *Introspector) Describe(serviceID string) string {
+// Services returns the primary aliases of the TARGET's resolved
+// graph — the core leading (a virtual root is truthfully part of
+// every closure, spec §5), then the closure members in COMPOSED
+// order, matching every other listing. The binary view has no
+// closure: nil.
+func (i *Introspector) Services() []string {
+	if i.target == nil {
+		return nil
+	}
+	out := []string{CoreAlias}
+	for _, m := range i.ordered {
+		out = append(out, primaryAlias(m.Desc))
+	}
+	return out
+}
+
+// Describe returns the long-form description of a member of the
+// target's resolved graph — alias or id, both vocabularies are legal
+// inside the graph — or "" for anything outside it: introspection
+// does not reach past the closure.
+func (i *Introspector) Describe(ref string) string {
 	out := ""
-	if serviceID == CoreAlias || serviceID == CoreID {
-		out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
-	} else if d, registered := i.resolve(serviceID); registered {
-		if meta, has := d.Metadata.(*engine.Meta); has {
-			out = meta.Description
+	if i.target != nil {
+		if ref == CoreAlias || ref == CoreID {
+			out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
+		} else if d, member := i.member(ref); member {
+			if meta, has := d.Metadata.(*engine.Meta); has {
+				out = meta.Description
+			}
 		}
 	}
 	return out
+}
+
+// member resolves a reference — alias or id — to a descriptor of the
+// target's closure; anything else, registered or not, is not a member.
+func (i *Introspector) member(ref string) (*registry.Descriptor, bool) {
+	d, found := i.cat.byAlias[ref]
+	if !found {
+		d, found = i.cat.reg.ByID(ref)
+	}
+	if found {
+		for _, m := range i.ordered {
+			if m.Desc == d {
+				return d, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// Arguments returns the target's closure-true argument schema, built
+// from the catalog snapshot alone — registration-level truth, no
+// files, no environment, no controls. args are the words BEFORE the
+// completion cursor; today they are inert (reserved for the
+// explicit-control-vocabulary era, when line-carried controls
+// participate in the solve). The binary view answers nil.
+func (i *Introspector) Arguments(_ []string) []ArgInfo {
+	if i.target == nil {
+		return nil
+	}
+	c := &fail.Collector{}
+	var core engine.Core
+	var ctrl coreControls
+	var kn upgradeKnobs
+	sch := engine.NewSchema(c, primaryAlias(i.target), coreContribs(&core, &ctrl, &kn), sections(i.ordered), i.cat.suppressed)
+	if c.Len() != 0 {
+		// the closure solved at view construction; a schema violation
+		// here is a startup-checked inconsistency — offer nothing
+		// rather than half of something
+		return nil
+	}
+	return argInfos(sch)
 }
 
 // argInfos maps a schema to its public description.
@@ -202,24 +195,47 @@ func argInfos(sch *engine.Schema) []ArgInfo {
 	return out
 }
 
-// ConfigExtensions returns every config file extension this binary can
-// read: "json" first, then each registered format provider's
-// extensions in registration order, deduplicated.
-func (i *Introspector) ConfigExtensions() []string {
-	out := []string{"json"}
-	for _, d := range i.rt.reg.All() {
-		if providesType(d, providerType) {
-			if p, ok := d.Instance.(ConfigFormatProvider); ok {
-				for _, ext := range p.Extensions() {
-					if !contains(out, ext) {
-						out = append(out, ext)
-					}
-				}
-			}
-		}
-	}
-	return out
-}
-
 // the concrete Introspector IS the system vocabulary's interface.
 var _ system.Introspector = (*Introspector)(nil)
+
+// introspector builds the view for one dispatch name against this
+// catalog: "" is the binary view; an unknown name, a non-applet, or
+// a target that cannot resolve is nil. The one construction path —
+// the system service delegates here, and so do tests.
+func (ca *catalog) introspector(applet string) *Introspector {
+	if applet == "" {
+		return &Introspector{cat: ca}
+	}
+	d, known := ca.byAlias[applet] // dispatch names only — ids do not resolve here
+	if !known || !d.Concrete.Implements(appletType) {
+		return nil
+	}
+	c := &fail.Collector{}
+	root := ca.coreRoot(c, d, nil)
+	var res graph.Result
+	if c.Len() == 0 {
+		res = graph.Resolve(c, ca.reg, root, graph.Controls{})
+	}
+	if c.Len() != 0 {
+		// the target cannot resolve against its own catalog — a
+		// startup-checked inconsistency; offer nothing
+		return nil
+	}
+	// members in COMPOSED order, exactly as plan() builds the real
+	// schema: the spec promises Order drives listings, and NewSchema's
+	// first-come-first-served short forms make section order SEMANTIC
+	// — a view in resolution order would hand shorts to the wrong
+	// owner. The virtual root is never stored in the catalog, so it
+	// cannot appear here; the view synthesizes the core itself.
+	keep := map[string]bool{}
+	for _, m := range res.Ordered {
+		keep[m.Desc.ID] = true
+	}
+	var members []graph.Member
+	for _, cd := range ca.reg.All() {
+		if keep[cd.ID] {
+			members = append(members, graph.Member{Desc: cd})
+		}
+	}
+	return &Introspector{cat: ca, target: d, ordered: members}
+}

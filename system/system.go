@@ -61,29 +61,38 @@ type ArgInfo struct {
 	Hint    ValueHint    // advisory value denotation from registration Metadata; never enforced
 }
 
-// Introspector is the read-only view of the binary's composition,
-// for services that implement completions, documentation generators
-// and similar meta features outside the core.
+// Introspector is a TARGET-SCOPED read-only view: what one applet's
+// resolved graph looks like, for services that implement completions,
+// documentation generators and similar meta features outside the
+// core. The view is built from the binary's catalog alone — no config
+// files, no location search, no environment — so its answers are
+// input-deterministic: same binary, same target, same answer, always.
 type Introspector interface {
 	// Applets returns the primary aliases of the binary's public
-	// applets, in registration order.
+	// applets, in registration order — a binary-level fact, the same
+	// on every view. Hidden and System applets are omitted.
 	Applets() []string
 	// SingleApplet reports the applet that would run with no
 	// selector word — its primary alias — from the core's own
-	// dispatch rules.
+	// dispatch rules. Binary-level, the same on every view.
 	SingleApplet() (string, bool)
-	// Services returns the primary alias of every registered
-	// service, the core leading.
-	Services() []string
 	// ConfigExtensions returns the file extensions the binary's
-	// format providers claim, "json" included.
+	// format providers claim, "json" included. Binary-level.
 	ConfigExtensions() []string
-	// Describe returns a service's long-form description; alias or
-	// id, both vocabularies are legal.
-	Describe(serviceID string) string
-	// Arguments returns the closure-true argument schema the applet
-	// would have if invoked with args — the words BEFORE the cursor.
-	Arguments(appletID string, args []string) ([]ArgInfo, error)
+	// Services returns the primary aliases of the TARGET's resolved
+	// graph — the core leading, then the closure members in order.
+	// The binary view (target "") has no closure: nil.
+	Services() []string
+	// Describe returns the long-form description of a member of the
+	// target's resolved graph (alias or id); "" for anything outside
+	// the closure — introspection does not reach past the graph.
+	Describe(ref string) string
+	// Arguments returns the target's closure-true argument schema.
+	// args are the words BEFORE the completion cursor; today they are
+	// inert (the solve is catalog-only), reserved for the
+	// explicit-control-vocabulary era when line-carried controls
+	// participate. The binary view answers nil.
+	Arguments(args []string) []ArgInfo
 }
 
 // System is the framework's facade service: the core's facilities
@@ -94,6 +103,11 @@ type Introspector interface {
 // it trivially. Inject it like any service; ask it for what you
 // need.
 type System interface {
-	// Introspector returns the composition's introspection facility.
-	Introspector() Introspector
+	// Introspector returns the target-scoped introspection view for
+	// the applet the dispatch NAME names (never an id). The empty
+	// name is the binary view: applet listing, no closure. An
+	// unknown name — or a name that is not an applet — returns nil:
+	// a completion caller can do nothing with prose, so nil means
+	// "offer nothing".
+	Introspector(applet string) Introspector
 }

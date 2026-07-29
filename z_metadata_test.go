@@ -22,6 +22,18 @@ import (
 	"testing"
 )
 
+// metaProbe introspects its OWN target view; the extra dependency
+// makes test/extra a closure member — the target-scoped way to see an
+// annotated service (controls in Arguments args are inert by design).
+type metaProbe struct {
+	Sys   system.System `inject:""`
+	Extra *extraService `inject:"test/extra"`
+	do    func(sys system.System)
+}
+
+func (p *metaProbe) Configured() error { return nil }
+func (p *metaProbe) Run() int          { p.do(p.Sys); return 0 }
+
 func annotatedWorld(t *testing.T, md *Metadata) (*world, *extraService) {
 	t.Helper()
 	w := newWorld(t, []string{"bin", "meta"}, nil, nil)
@@ -43,11 +55,12 @@ func TestMetadataFlowsIntoIntrospection(t *testing.T) {
 	var desc string
 	var infos []ArgInfo
 	w, _ := annotatedWorld(t, md)
-	probe := &argsProbe{do: func(i system.Introspector) {
-		desc = i.Describe("extra")
-		infos, _ = i.Arguments("app", []string{"--enable", "extra"})
+	probe := &metaProbe{do: func(sys system.System) {
+		view := sys.Introspector("meta")
+		desc = view.Describe("extra")
+		infos = view.Arguments(nil)
 	}}
-	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *metaProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -272,9 +285,10 @@ func TestDescribeEdgeCases(t *testing.T) {
 	w := newWorld(t, []string{"bin", "meta"}, nil, nil)
 	w.applet(0)
 	w.dep(false) // registered, no metadata
-	probe := &argsProbe{do: func(i system.Introspector) {
-		unknown = i.Describe("nope")
-		unannotated = i.Describe("dep")
+	probe := &argsProbe{do: func(sys system.System) {
+		view := sys.Introspector("meta")
+		unknown = view.Describe("nope")
+		unannotated = view.Describe("dep") // registered, but outside the closure
 	}}
 	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
@@ -327,15 +341,15 @@ func TestIntDomainEnforcedEndToEnd(t *testing.T) {
 func TestArgInfoSliceTypeIsElementType(t *testing.T) {
 	var tagInfo *ArgInfo
 	w, _ := enforcementWorld(t, []string{"bin", "meta"}, nil, nil)
-	probe := &argsProbe{do: func(i system.Introspector) {
-		infos, _ := i.Arguments("app", []string{"--enable", "extra"})
+	probe := &metaProbe{do: func(sys system.System) {
+		infos := sys.Introspector("meta").Arguments(nil)
 		for idx := range infos {
 			if infos[idx].Long == "extra-tag" {
 				tagInfo = &infos[idx]
 			}
 		}
 	}}
-	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *metaProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
@@ -417,8 +431,8 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 	}}
 	var flagHint, configHint, disableHint ValueHint
 	w, _ := annotatedWorld(t, md)
-	probe := &argsProbe{do: func(i system.Introspector) {
-		infos, _ := i.Arguments("app", []string{"--enable", "extra"})
+	probe := &metaProbe{do: func(sys system.System) {
+		infos := sys.Introspector("meta").Arguments(nil)
 		for _, a := range infos {
 			if a.Long == "extra-flag" {
 				flagHint = a.Hint
@@ -431,7 +445,7 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 			}
 		}
 	}}
-	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
+	NewBareRegistration("test/meta", func() *metaProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())

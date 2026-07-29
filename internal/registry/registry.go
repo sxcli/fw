@@ -34,6 +34,22 @@ func (r *Registry) fail(format string, args ...any) {
 	r.c.Fail(format, args...)
 }
 
+// Snapshot returns a shallow copy of the registry — same descriptors,
+// independent membership — so a later Retain on the original cannot
+// shrink the copy. Data-plane only: the snapshot serves reads and
+// solves; committing into it is not its purpose.
+func (r *Registry) Snapshot() *Registry {
+	byID := make(map[string]*Descriptor, len(r.byID))
+	for id, d := range r.byID {
+		byID[id] = d
+	}
+	return &Registry{
+		c:       r.c,
+		byID:    byID,
+		ordered: append([]*Descriptor(nil), r.ordered...),
+	}
+}
+
 // Commit stores a catalog entry built by the root's registration
 // chain: the typed side already ran the semantic checks, so the
 // registry validates only what it owns — id uniqueness across the
@@ -48,7 +64,7 @@ func (r *Registry) fail(format string, args ...any) {
 func (r *Registry) Commit(d *Descriptor) {
 	if _, dup := r.byID[d.ID]; !dup {
 		if d.Deps == nil {
-			r.collectDeps(d)
+			collectDeps(d, r.c)
 		}
 		r.ordered = append(r.ordered, d)
 		r.byID[d.ID] = d
@@ -70,10 +86,10 @@ func (r *Registry) Virtual(id string, instance any, c *fail.Collector) *Descript
 	t := reflect.TypeOf(instance)
 	if instance != nil && t.Kind() == reflect.Pointer && t.Elem().Kind() == reflect.Struct && !reflect.ValueOf(instance).IsNil() {
 		d = &Descriptor{ID: id, Instance: instance, Concrete: t}
-		saved := r.c
-		r.c = c
-		r.collectDeps(d)
-		r.c = saved
+		// the caller's collector rides as a PARAMETER: Virtual runs
+		// against shared snapshots, possibly concurrently — the
+		// registry itself is never mutated
+		collectDeps(d, c)
 	} else {
 		c.Fail("virtual service %q: instance must be a non-nil pointer to struct", id)
 	}
@@ -110,7 +126,7 @@ func (r *Registry) Retain(keep map[string]bool) {
 	r.ordered = kept
 }
 
-func (r *Registry) collectDeps(d *Descriptor) {
+func collectDeps(d *Descriptor, c *fail.Collector) {
 	for _, f := range reflect.VisibleFields(d.Concrete.Elem()) {
 		if tag, tagged := f.Tag.Lookup("inject"); tagged {
 			if f.IsExported() {
@@ -122,23 +138,23 @@ func (r *Registry) collectDeps(d *Descriptor) {
 							dep.Type = f.Type.Elem()
 							d.Deps = append(d.Deps, dep)
 						} else {
-							r.fail("service %q field %s: inject slices carry interfaces only (concrete types are unique)", d.ID, f.Name)
+							c.Fail("service %q field %s: inject slices carry interfaces only (concrete types are unique)", d.ID, f.Name)
 						}
 					} else if f.Type.Kind() == reflect.Interface || f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
 						if len(ids) <= 1 {
 							dep.Type = f.Type
 							d.Deps = append(d.Deps, dep)
 						} else {
-							r.fail("service %q field %s: a single-valued inject field may name at most one id", d.ID, f.Name)
+							c.Fail("service %q field %s: a single-valued inject field may name at most one id", d.ID, f.Name)
 						}
 					} else {
-						r.fail("service %q field %s: inject fields must be an interface, a pointer to struct, or a slice of interface", d.ID, f.Name)
+						c.Fail("service %q field %s: inject fields must be an interface, a pointer to struct, or a slice of interface", d.ID, f.Name)
 					}
 				} else {
-					r.fail("service %q field %s: %v", d.ID, f.Name, err)
+					c.Fail("service %q field %s: %v", d.ID, f.Name, err)
 				}
 			} else {
-				r.fail("service %q field %s: inject tag on unexported field", d.ID, f.Name)
+				c.Fail("service %q field %s: inject tag on unexported field", d.ID, f.Name)
 			}
 		}
 	}

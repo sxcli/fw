@@ -73,9 +73,9 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 		t.Fatalf("build failed: %v", err)
 	}
 	w.rt = &runtime{
-		reg:  app.reg,
-		c:    w.c,
-		argv: argv,
+		catalog: catalog{reg: app.reg},
+		c:       w.c,
+		argv:    argv,
 		lookupEnv: func(name string) (string, bool) {
 			v, ok := env[name]
 			return v, ok
@@ -270,35 +270,50 @@ func TestOrderSequenceDecidesAmongRanked(t *testing.T) {
 	}
 }
 
-// appProbe runs assertions against the injected Introspector from
-// inside the composed world, keeping the whole registry alive.
+// appOutsider is registered but referenced by nobody: the scoping
+// pin's control group.
+type appOutsider struct{}
+
+func (a *appOutsider) Configured() error { return nil }
+
+// appProbe runs assertions against the injected System facade from
+// inside the composed world — the closure ejects like any other; the
+// views answer from the attach-time snapshot.
 type appProbe struct {
-	Sys system.System `inject:""`
-	do  func(i system.Introspector)
+	Sys  system.System `inject:""`
+	Desc *appAux       `inject:"example.com/app/described"`
+	do   func(sys system.System)
 }
 
 func (p *appProbe) Configured() error { return nil }
-func (p *appProbe) Run() int          { p.do(p.Sys.Introspector()); return 0 }
+func (p *appProbe) Run() int          { p.do(p.Sys); return 0 }
 
-func TestIntrospectionSpeaksAliases(t *testing.T) {
+func TestIntrospectionSpeaksAliasesTargetScoped(t *testing.T) {
 	var applets, services []string
-	var single, descByAlias, descByID string
-	var argsByAlias, argsByID, argsUnknown error
+	var single, descByAlias, descByID, descOutside string
+	var args []ArgInfo
+	var byID, unknown system.Introspector
 	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		NewBareRegistration("example.com/app/probe", func() *appProbe {
-			return &appProbe{do: func(i system.Introspector) {
-				applets = i.Applets()
-				services = i.Services()
-				single, _ = i.SingleApplet()
-				descByAlias = i.Describe("described")
-				descByID = i.Describe("example.com/app/described")
-				_, argsByAlias = i.Arguments("probe", nil)
-				_, argsByID = i.Arguments("example.com/app/probe", nil)
-				_, argsUnknown = i.Arguments("ghost", nil)
+			return &appProbe{do: func(sys system.System) {
+				binary := sys.Introspector("")
+				applets = binary.Applets()
+				single, _ = binary.SingleApplet()
+				view := sys.Introspector("probe")
+				services = view.Services()
+				descByAlias = view.Describe("described")
+				descByID = view.Describe("example.com/app/described")
+				descOutside = view.Describe("outsider")
+				args = view.Arguments(nil)
+				byID = sys.Introspector("example.com/app/probe")
+				unknown = sys.Introspector("ghost")
 			}}
 		}).Alias("probe").registerInto(reg, c)
 		NewBareRegistration("example.com/app/described", func() *appAux { return &appAux{log: log} }).
 			Alias("described").Metadata(&Metadata{Description: "a well-described service"}).
+			registerInto(reg, c)
+		NewBareRegistration("example.com/app/outsider", func() *appOutsider { return &appOutsider{} }).
+			Alias("outsider").Metadata(&Metadata{Description: "not in the closure"}).
 			registerInto(reg, c)
 	}
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register)
@@ -313,15 +328,24 @@ func TestIntrospectionSpeaksAliases(t *testing.T) {
 	}
 	joined := strings.Join(services, ",")
 	if services[0] != "core" || !strings.Contains(joined, "described") || !strings.Contains(joined, "system") || strings.Contains(joined, "example.com") {
-		t.Errorf("Services must be operator names, core first, the system service included: %v", services)
+		t.Errorf("Services must be operator names, core first, closure members only: %v", services)
+	}
+	if strings.Contains(joined, "outsider") {
+		t.Errorf("Services must not reach past the resolved graph: %v", services)
 	}
 	if descByAlias != "a well-described service" || descByID != descByAlias {
-		t.Errorf("Describe must accept both vocabularies: %q / %q", descByAlias, descByID)
+		t.Errorf("Describe must accept both vocabularies inside the graph: %q / %q", descByAlias, descByID)
 	}
-	if argsByAlias != nil || argsByID != nil {
-		t.Errorf("Arguments must accept both vocabularies: %v / %v", argsByAlias, argsByID)
+	if descOutside != "" {
+		t.Errorf("Describe must not reach past the resolved graph: %q", descOutside)
 	}
-	if argsUnknown == nil {
-		t.Error("Arguments must reject unknown references")
+	if len(args) == 0 {
+		t.Error("the target view must carry the closure-true schema")
+	}
+	if byID != nil {
+		t.Error("Introspector takes dispatch names, never ids")
+	}
+	if unknown != nil {
+		t.Error("an unknown name is nil — offer nothing")
 	}
 }
