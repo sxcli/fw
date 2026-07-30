@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sxcli.dev/rules/solver"
 
 	"sxcli.dev/conf/engine"
@@ -33,7 +34,7 @@ import (
 type AppBuilder struct {
 	acceptAll bool
 	accepts   []string
-	order     []string
+	orders    [][]string // every Order call, verbatim — Build judges once-only
 	renames   []rename
 }
 
@@ -67,10 +68,11 @@ func (b *AppBuilder) AcceptAll() *AppBuilder {
 // single-valued matching, slices gather ranked first (in Order
 // sequence) then unranked sorted by id, and listings follow the same
 // order. Order never admits — ranking an un-accepted id is a
-// violation, which doubles as a typo catcher. Multiple calls append;
-// ranking an id twice is a violation.
+// violation, which doubles as a typo catcher. The ranking is declared
+// ONCE, atomically: a second call is a violation (the message shows
+// both lists), and ranking an id twice within the list is one too.
 func (b *AppBuilder) Order(ids ...string) *AppBuilder {
-	b.order = append(b.order, ids...)
+	b.orders = append(b.orders, ids)
 	return b
 }
 
@@ -176,11 +178,20 @@ func (b *AppBuilder) admitted(cat *registry.Registry, c *fail.Collector) map[str
 	return out
 }
 
-// ranked validates the Order list — membership required, no repeats —
-// and returns each ranked id's position.
+// ranked validates the Order declaration — one call, membership
+// required, no repeats — and returns each ranked id's position. On a
+// second call the FIRST ranking stays the effective one, so later
+// verdicts are deterministic while the violation reports.
 func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[string]int {
 	out := map[string]int{}
-	for i, id := range b.order {
+	if len(b.orders) > 1 {
+		c.Fail(solver.OrderOnceRule, strings.Join(b.orders[0], ", "), strings.Join(b.orders[1], ", "))
+	}
+	var order []string
+	if len(b.orders) > 0 {
+		order = b.orders[0]
+	}
+	for i, id := range order {
 		if !accepted[id] {
 			c.Fail(solver.OrderNotAcceptedRule, id)
 		} else if _, dup := out[id]; dup {

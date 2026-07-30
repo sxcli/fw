@@ -108,6 +108,7 @@ func TestCompositionViolations(t *testing.T) {
 		{"unknown accept", Builder().Accept("example.com/x/ghost"), "unknown service id"},
 		{"order without membership", Builder().Accept("example.com/x/a").Order("example.com/x/b"), "never admits"},
 		{"order twice", Builder().AcceptAll().Order("example.com/x/a", "example.com/x/a"), "ranked twice"},
+		{"order called twice", Builder().AcceptAll().Order("example.com/x/a").Order("example.com/x/b"), "declared once, atomically"},
 		{"alias without membership", Builder().Accept("example.com/x/a").Alias("example.com/x/b", "bb"), "not accepted"},
 		{"alias reserved", Builder().AcceptAll().Alias("example.com/x/a", "core"), "reserved"},
 		{"alias collision by rename", Builder().AcceptAll().Alias("example.com/x/a", "bravo"), "claimed by both"},

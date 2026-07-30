@@ -431,7 +431,8 @@ Two independent axes, two verbs:
   catcher). Ranked beats unranked in single-valued matching; slice
   fields gather ranked members first in `Order` sequence, then
   unranked **sorted by id**; `Order` also drives listing order (usage,
-  `Applets()`, help sections). Multiple `Order` calls append.
+  `Applets()`, help sections). The ranking is declared once,
+  atomically: a second `Order` call is a violation.
 - **`Alias(id, names...)` — composition-level rename.** Overrides what
   an accepted service answers to, for this app only, upstream
   untouched: `Builder.Alias` > registration `.Alias(...)` —
@@ -794,8 +795,11 @@ type FileSinkConfig struct {
   The core's own config lives under the reserved ID `core`.
 - `conf:"long[,short]"` — the ONE operator name: grants `--long`/`-s`
   AND feeds env derivation. Top level only ("mirror the value into a
-  top-level field yourself"). Duplicate long names across the closure
-  = startup error; short names are first-come-first-served.
+  top-level field yourself"). Long names MUST be unique per applet
+  closure. Short names MUST be unique per config struct. Applets must
+  resolve short name collisions using `ShortArgPriority` (ratified
+  2026-07-29, `docs/design/v0.3.0-to-v0.4.0-short-argument-priority.md`;
+  until it lands the runtime still resolves first-come-first-served).
 - `env:"NAME"` — verbatim GLOBAL (no alias prefix — its job is
   matching names you don't own); legal at any depth. `env:"-"` = no
   env at all. Absent → derived.
