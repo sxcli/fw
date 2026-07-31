@@ -180,10 +180,14 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	// the chain's declarations are judged by the shared rules — the
 	// same Check sxcli-vet runs; this side only translates and
 	// prefixes
+	isApplet := concrete.Implements(appletType)
 	chain := registration.Chain{
 		ID:           r.id,
 		ReservedIDs:  []string{CoreID},
 		Aliases:      r.aliases,
+		Applet:       isApplet,
+		Starter:      concrete.Implements(starterType),
+		Stopper:      concrete.Implements(stopperType),
 		Core:         r.isCore,
 		Reserved:     []string{CoreAlias, SystemAlias},
 		HasConfig:    r.cfgType != nil,
@@ -202,10 +206,6 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		concrete.String())
 	for _, body := range providesBodies {
 		c.Fail("service %q: %s", r.id, body)
-	}
-	isApplet := concrete.Implements(appletType)
-	if isApplet && (concrete.Implements(starterType) || concrete.Implements(stopperType)) {
-		c.Fail("service %q: an applet must not implement Starter or Stopper", r.id)
 	}
 	if (r.hidden || r.system) && !isApplet {
 		c.Fail("service %q: Hidden/System apply only to applets", r.id)
