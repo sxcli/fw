@@ -203,51 +203,34 @@ func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[str
 	return out
 }
 
-// renamed validates the Alias overrides — membership required, names
-// valid — and returns the composed alias sets.
+// renamed hands the Alias overrides to the shared rules — the
+// verdicts (membership, grammar, reservations, double renames) are
+// the solver's; this side only translates and reports.
 func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c *fail.Collector) map[string][]string {
-	out := map[string][]string{}
-	for _, r := range b.renames {
-		if !accepted[r.id] {
-			c.Fail("alias: %q is not accepted", r.id)
-		} else if len(r.names) == 0 {
-			c.Fail("alias: %q needs at least one name", r.id)
-		} else {
-			seen := map[string]bool{}
-			for _, a := range r.names {
-				if !validAlias(a) {
-					c.Fail("alias: %q for %q must be lowercase letters, digits and hyphens, starting with a letter", a, r.id)
-				} else if a == CoreAlias || a == SystemAlias {
-					c.Fail("alias: %q is reserved", a)
-				} else if seen[a] {
-					c.Fail("alias: %q for %q given twice", a, r.id)
-				}
-				seen[a] = true
-			}
-			if _, dup := out[r.id]; dup {
-				c.Fail("alias: %q renamed twice", r.id)
-			} else {
-				out[r.id] = r.names
-			}
-		}
+	renames := make([]solver.Rename, len(b.renames))
+	for i, r := range b.renames {
+		renames[i] = solver.Rename{ID: r.id, Names: r.names}
+	}
+	out, bodies := solver.CheckRenames(renames,
+		func(id string) bool { return accepted[id] },
+		[]string{CoreAlias, SystemAlias})
+	for _, body := range bodies {
+		c.Fail("%s", body)
 	}
 	return out
 }
 
-// checkAliases rejects composed-alias collisions among the accepted,
-// naming both claimants.
+// checkAliases hands the accepted members' effective names to the
+// shared rules for the collision verdict.
 func (b *AppBuilder) checkAliases(cat *registry.Registry, accepted map[string]bool, renamed map[string][]string, c *fail.Collector) {
-	claimed := map[string]string{}
+	var members []solver.Named
 	for _, d := range cat.All() {
 		if accepted[d.ID] {
-			for _, a := range composedAliases(d, renamed) {
-				if prev, taken := claimed[a]; taken {
-					c.Fail("alias %q is claimed by both %q and %q — rename one with Builder.Alias", a, prev, d.ID)
-				} else {
-					claimed[a] = d.ID
-				}
-			}
+			members = append(members, solver.Named{ID: d.ID, Aliases: composedAliases(d, renamed)})
 		}
+	}
+	for _, body := range solver.CheckAliases(members) {
+		c.Fail("%s", body)
 	}
 }
 
