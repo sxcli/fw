@@ -186,11 +186,15 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		ReservedIDs:  []string{CoreID},
 		Aliases:      r.aliases,
 		Applet:       isApplet,
+		AppletKnown:  true, // reflect always answers
 		Starter:      concrete.Implements(starterType),
 		Stopper:      concrete.Implements(stopperType),
+		Hidden:       r.hidden,
+		System:       r.system,
 		Core:         r.isCore,
 		Reserved:     []string{CoreAlias, SystemAlias},
 		HasConfig:    r.cfgType != nil,
+		NilAccessor:  r.cfgType != nil && r.access == nil,
 		UpgradeSteps: len(r.steps),
 	}
 	violations := registration.Check(chain)
@@ -206,12 +210,6 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		concrete.String())
 	for _, body := range providesBodies {
 		c.Fail("service %q: %s", r.id, body)
-	}
-	if (r.hidden || r.system) && !isApplet {
-		c.Fail("service %q: Hidden/System apply only to applets", r.id)
-	}
-	if r.cfgType != nil && r.access == nil {
-		c.Fail("service %q: nil config accessor — use NewBareRegistration for config-less services", r.id)
 	}
 	if len(r.steps) == 0 || r.cfgType != nil {
 		// the chain's SHAPE is type-level work and the commit owns it
