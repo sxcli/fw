@@ -17,7 +17,6 @@ package fw
 import (
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/fw/internal/registry"
-	"sxcli.dev/rules/grammar"
 )
 
 // CoreID is the framework core's identity — the machine-facing name
@@ -36,22 +35,9 @@ const SystemAlias = "system"
 // introspection entry. No service may claim it.
 const CoreAlias = engine.CoreID
 
-// validServiceID reports whether id is package-shaped — the shared
-// rule, one home: sxcli.dev/rules/grammar. The floor (at least one
-// '/') makes the id and alias grammars disjoint by construction. The
-// convention that an id BEGINS WITH the package's actual import path
-// cannot be checked at runtime — that guarantee is sxcli-vet's.
-func validServiceID(id string) bool { return grammar.ValidServiceID(id) }
-
 // primaryAlias returns the name shown in listings and used for the
 // env prefix and config section. Every catalog entry has one: the
 // chain refuses to commit without a declared alias.
 func primaryAlias(d *registry.Descriptor) string {
 	return d.Aliases[0]
 }
-
-// validAlias reports whether a is a legal operator-facing name — the
-// shared rule, one home: sxcli.dev/rules/grammar. One grammar for
-// every alias origin: registration primary, secondary, Builder.Alias
-// rename.
-func validAlias(a string) bool { return grammar.ValidAlias(a) }

@@ -16,7 +16,7 @@ package fw
 
 import (
 	"reflect"
-	"sxcli.dev/rules/grammar"
+	"sxcli.dev/rules/registration"
 	"sxcli.dev/rules/solver"
 
 	"sxcli.dev/conf/engine"
@@ -177,25 +177,21 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	if r.committed {
 		c.Fail("service %q: registered twice", r.id)
 	}
-	if !validServiceID(r.id) {
-		c.Fail("service id %q: %s", r.id, grammar.ServiceIDRule)
-	} else if r.id == CoreID {
-		c.Fail("service id %q is reserved for the framework core", r.id)
+	// the chain's declarations are judged by the shared rules — the
+	// same Check sxcli-vet runs; this side only translates and
+	// prefixes
+	chain := registration.Chain{
+		ID:           r.id,
+		ReservedIDs:  []string{CoreID},
+		Aliases:      r.aliases,
+		Core:         r.isCore,
+		Reserved:     []string{CoreAlias, SystemAlias},
+		HasConfig:    r.cfgType != nil,
+		UpgradeSteps: len(r.steps),
 	}
-	if len(r.aliases) == 0 {
-		c.Fail("service %q: an alias is required — name what operators will type", r.id)
-	}
-	seen := map[string]bool{}
-	for _, a := range r.aliases {
-		if !validAlias(a) {
-			c.Fail("service %q: alias %q must be lowercase letters, digits and hyphens, starting with a letter, no consecutive or trailing hyphens", r.id, a)
-		} else if (a == CoreAlias || a == SystemAlias) && !r.isCore {
-			// reserved AGAINST user services; the core family owns them
-			c.Fail("service %q: alias %q is reserved", r.id, a)
-		} else if seen[a] {
-			c.Fail("service %q: alias %q declared twice", r.id, a)
-		}
-		seen[a] = true
+	violations := registration.Check(chain)
+	for _, v := range violations {
+		c.Fail("service %q: %s", r.id, v.Body)
 	}
 	// the flow and the words are the shared rules'; only the reflect
 	// operations are ours (functions at key places)
@@ -217,13 +213,12 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	if r.cfgType != nil && r.access == nil {
 		c.Fail("service %q: nil config accessor — use NewBareRegistration for config-less services", r.id)
 	}
-	if len(r.steps) > 0 && r.cfgType == nil {
-		c.Fail("service %q: Migrate requires a config struct — a bare registration has no schema to evolve", r.id)
-	} else {
+	if len(r.steps) == 0 || r.cfgType != nil {
 		// the chain's SHAPE is type-level work and the commit owns it
 		// (spec: "the commit validates the chain"); the engine hands
 		// back bare bodies and the prefix is OURS — fw says "service".
-		// The factory-default version, an instance fact, stays
+		// The steps-without-config case was judged by the shared rules
+		// above. The factory-default version, an instance fact, stays
 		// schema-time.
 		for _, body := range engine.ChainShape(r.steps, r.cfgType) {
 			c.Fail("service %q: %s", r.id, body)
