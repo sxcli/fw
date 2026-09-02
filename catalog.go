@@ -181,6 +181,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	// same Check sxcli-vet runs; this side only translates and
 	// prefixes
 	isApplet := concrete.Implements(appletType)
+	_, idClaimed := reg.ByID(r.id)
 	chain := registration.Chain{
 		ID:           r.id,
 		ReservedIDs:  []string{CoreID},
@@ -196,6 +197,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		HasConfig:    r.cfgType != nil,
 		NilAccessor:  r.cfgType != nil && r.access == nil,
 		Positionals:  engine.HasPositionals(r.cfgType),
+		IDClaimed:    idClaimed,
 		UpgradeSteps: len(r.steps),
 	}
 	violations := registration.Check(chain)

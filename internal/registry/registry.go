@@ -69,6 +69,12 @@ func (r *Registry) Commit(d *Descriptor) {
 		r.ordered = append(r.ordered, d)
 		r.byID[d.ID] = d
 	} else {
+		// BACKSTOP, not the check: the registration chain already
+		// judges this via registration.Chain.IDClaimed
+		// (sxcli.dev/rules/registration.Check), so a duplicate never
+		// reaches Commit through the chain. This branch guards the
+		// map against internal callers only. If the rule ever
+		// changes, change it THERE — and revisit this branch.
 		r.fail("service %q: duplicate id", d.ID)
 	}
 }
