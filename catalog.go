@@ -195,6 +195,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		Reserved:     []string{CoreAlias, SystemAlias},
 		HasConfig:    r.cfgType != nil,
 		NilAccessor:  r.cfgType != nil && r.access == nil,
+		Positionals:  engine.HasPositionals(r.cfgType),
 		UpgradeSteps: len(r.steps),
 	}
 	violations := registration.Check(chain)
@@ -221,9 +222,6 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		for _, body := range engine.ChainShape(r.steps, r.cfgType) {
 			c.Fail("service %q: %s", r.id, body)
 		}
-	}
-	if !isApplet && engine.HasPositionals(r.cfgType) {
-		c.Fail("service %q: positionals are invocation data — only applet configs may declare pos fields", r.id)
 	}
 	if r.cfgType != nil {
 		// tag and field-type validation, type-level: the registration
