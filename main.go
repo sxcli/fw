@@ -27,6 +27,7 @@ import (
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
 	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/rules/solver"
 )
 
 // Main is the busybox-compatibility sugar of the composition model:
@@ -667,14 +668,18 @@ func (rt *runtime) explicitPath(peek engine.Core) string {
 func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls {
 	ctl := graph.Controls{}
 	for _, ref := range ctrl.Disable {
-		if d, ok, tied := rt.resolveRef(c, ref); ok {
+		if coreRef(ref) {
+			c.Fail(solver.CoreControlRule, "disable", ref)
+		} else if d, ok, tied := rt.resolveRef(c, ref); ok {
 			ctl.Disable = append(ctl.Disable, d.ID)
 		} else if !tied {
 			c.Fail("disable: unknown service %q", ref)
 		}
 	}
 	for _, ref := range ctrl.Enable {
-		if d, ok, tied := rt.resolveRef(c, ref); ok {
+		if coreRef(ref) {
+			c.Fail(solver.CoreControlRule, "enable", ref)
+		} else if d, ok, tied := rt.resolveRef(c, ref); ok {
 			ctl.Enable = append(ctl.Enable, d.ID)
 		} else if !tied {
 			c.Fail("enable: unknown service %q", ref)
@@ -683,6 +688,14 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 	for _, entry := range ctrl.Override {
 		from, to, wellFormed := strings.Cut(entry, "=")
 		if wellFormed && from != "" && to != "" {
+			if coreRef(from) || coreRef(to) {
+				offender := from
+				if coreRef(to) {
+					offender = to
+				}
+				c.Fail(solver.CoreControlRule, "override", offender)
+				continue
+			}
 			if ctl.Override == nil {
 				ctl.Override = map[string]string{}
 			}
@@ -699,6 +712,14 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 		}
 	}
 	return ctl
+}
+
+// coreRef reports whether the reference names the framework core
+// itself — the virtual root is never a registry member, so the
+// solver's core-family verdict cannot reach it; this guard says the
+// same words (solver.CoreControlRule) for the same act.
+func coreRef(ref string) bool {
+	return ref == CoreAlias || ref == CoreID
 }
 
 // providers returns every registered service declaring

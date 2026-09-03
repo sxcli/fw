@@ -203,6 +203,29 @@ func TestControlsSpeakBothVocabularies(t *testing.T) {
 	}
 }
 
+func TestCoreFamilyIsNoControlTarget(t *testing.T) {
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		registerSrv("srv")(reg, c, log)
+	}
+	want := "is a core service — the core family cannot be enabled, disabled or overridden"
+	cases := [][]string{
+		{"bin", "--disable", "system"},
+		{"bin", "--enable", "system"},
+		{"bin", "--override", "example.com/app/srv=system"},
+		{"bin", "--override", "sxcli.dev/fw/system=srv"},
+		{"bin", "--disable", "core"},
+		{"bin", "--disable", "sxcli.dev/fw"},
+		{"bin", "--enable", "core"},
+		{"bin", "--override", "core=srv"},
+	}
+	for _, argv := range cases {
+		w, code := appWorld(t, Builder().AcceptAll(), argv, nil, nil, register)
+		if code != 2 || !strings.Contains(w.stderr.String(), want) {
+			t.Errorf("%v must refuse with the core-family verdict: code=%d\n%s", argv, code, w.stderr.String())
+		}
+	}
+}
+
 func TestBuildSurfacesCommitViolations(t *testing.T) {
 	reg, catalogC := catalogWorld()
 	NewBareRegistration("example.com/app/bad", func() *appAux { return &appAux{} }).

@@ -84,6 +84,7 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 func renderMember(d *registry.Descriptor) solver.Member {
 	m := solver.Member{
 		ID:       d.ID,
+		Core:     d.Core,
 		Concrete: typeID(d.Concrete),
 		Aliases:  d.Aliases,
 		Ranked:   d.Ranked,
