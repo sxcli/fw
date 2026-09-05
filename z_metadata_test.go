@@ -23,7 +23,8 @@ import (
 )
 
 // metaProbe introspects its OWN target view; the extra dependency
-// makes test/extra a closure member — the target-scoped way to see an
+// makes test/extra a member of the resolved service set — the
+// target-scoped way to see an
 // annotated service (controls in Arguments args are inert by design).
 type metaProbe struct {
 	Sys   system.System `inject:""`
@@ -288,7 +289,7 @@ func TestDescribeEdgeCases(t *testing.T) {
 	probe := &argsProbe{do: func(sys system.System) {
 		view := sys.Introspector("meta")
 		unknown = view.Describe("nope")
-		unannotated = view.Describe("dep") // registered, but outside the closure
+		unannotated = view.Describe("dep") // registered, but outside the resolved service set
 	}}
 	NewBareRegistration("test/meta", func() *argsProbe { return probe }).
 		Alias("meta").registerInto(w.cat, w.c)

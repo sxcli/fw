@@ -24,7 +24,7 @@ binary with:
 
 ### In scope for v1
 
-- Full core: service model, registration, DI, closure resolution, dispatch,
+- Full core: service model, registration, DI, resolved-service-set resolution, dispatch,
   lifecycle, config/arg/env machinery, `Tr()`, `--help`, `--write-config`.
 - One non-JSON config format provider: **YAML** (TOML will never ship in-tree;
   third parties may publish their own provider).
@@ -50,7 +50,7 @@ sxcli-fw/
 ├── platform_windows.go   — SCM integration (svc.Run, handler, SCMApplet)
 ├── internal/
 │   ├── registry/         — service descriptors, registration validation
-│   ├── graph/            — closure resolution, topological order
+│   ├── graph/            — resolved-service-set resolution, topological order
 │   └── platform/         — platform layer internals if they outgrow root files
 ├── sink/
 │   ├── console/          — slog.Handler → terminal (opt-in sink)
@@ -133,7 +133,8 @@ type SCMApplet interface {
 
 - An applet (implements `Applet`; `SCMApplet` extends it) that also
   implements `Starter`/`Stopper` is a registration error.
-- `Configured()` is called in dependency order on every closure member that
+- `Configured()` is called in dependency order on every member of the
+  resolved service set that
   is `Configurable`; `Start()` in dependency order on every `Starter`;
   `Stop()` in exact reverse order of the *successful* Start calls.
 - Lifecycle calls are sequential — no concurrency in the core.
@@ -303,7 +304,7 @@ is irrelevant — the options describe what the applet *is*, not how it
 got there: a library of ordinary applets registers them plain, and
 once accepted they count and list like any command. In
 every other respect Hidden/System applets are ordinary: id rules, the
-`APPLETID_` env prefix, config files, closure resolution and the
+`APPLETID_` env prefix, config files, resolved-service-set resolution and the
 lifecycle are unchanged.
 
 **Metadata** is declarative — no interfaces on the instance or the
@@ -467,8 +468,8 @@ loudly; `Accept`/`Order` when the composition itself is the point.
 Nothing learned at one tier is unlearned at the next — `Solo` *is* the
 builder route, pre-composed.
 
-Ejection is unchanged in spirit and simpler in mechanism: closure
-resolution decides lifecycle as always, and accepted-but-cold
+Ejection is unchanged in spirit and simpler in mechanism:
+resolved-service-set resolution decides lifecycle as always, and accepted-but-cold
 instances are released after `Retain` — born cheap at Build, dropped
 before `Configured` ever runs.
 
@@ -493,7 +494,8 @@ nothing".
 Every view answers from a catalog snapshot taken at startup, before
 any ejection. No config files, no location search, no environment:
 same binary, same target, same answer, always. Ejection is uniform —
-a closure containing the system service ejects like any other; the
+a resolved service set containing the system service ejects like any
+other; the
 snapshot feeds the views, not the live registry.
 
 A target view serves only the target's resolved graph:
@@ -528,8 +530,8 @@ A struct tag on exported fields of the registered *instance*:
 ```go
 type MyService struct {
     Log     slog.Handler    `inject:""`            // by interface: sole match, or the ranked one
-    Sinks   []slog.Handler  `inject:""`            // by interface, ALL registered (all enter closure)
-    Chosen  []slog.Handler  `inject:"id1,id2"`     // listed IDs seed the closure
+    Sinks   []slog.Handler  `inject:""`            // by interface, ALL registered (all enter the resolved service set)
+    Chosen  []slog.Handler  `inject:"id1,id2"`     // listed IDs seed the resolved service set
     Store   *BoltStore      `inject:""`            // by concrete type (unique)
     Extra   slog.Handler    `inject:";optional"`   // optional: nil if absent
 }
@@ -559,8 +561,9 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
 - Slice fields: **interface element types only**. Injection delivers *all
   enabled* matching services in registration order — with listed IDs the
   slice may contain *more* than listed (seeded services and other
-  closure members of that type are included too). A type-only slice pulls
-  **every** registered service of that type into the closure; listing IDs
+  members of that type in the resolved service set are included too).
+  A type-only slice pulls **every** registered service of that type
+  into the resolved service set; listing IDs
   is how to narrow that.
 - `;optional`: zero matches leaves a nil field / possibly-empty slice.
   Without it, zero matches is a startup error.
@@ -604,7 +607,8 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
      changing the binary's command-line contract. That breaking change is
      the developer's responsibility to manage.
    - Only dispatch changes. The sole applet's ID still anchors the
-     `APPLETID_` env prefix and config file names; closure resolution,
+     `APPLETID_` env prefix and config file names; resolved-service-set
+     resolution,
      disable/enable/override, and the lifecycle proceed as usual.
 3. **If the first argument exists and does not start with `-`:** it is
    always an applet selector. Look it up, dispatch with the remaining args,
@@ -622,7 +626,8 @@ No parameters by design: the argument vector is platform-sourced (POSIX:
    and `System` ones omitted — to stderr
    and exits non-zero. In single-applet mode the applet list is dropped
    from the usage output. `--help` renders only the dispatched applet's
-   argument schema (core + closure, grouped by service ID) and never an
+   argument schema (core + the resolved service set, grouped by service
+   ID) and never an
    applet list; enumerating applets is a future core argument (see Open
    Items).
 
@@ -644,7 +649,8 @@ init() registrations → Main()
      unknown arguments ignored in this pass
   4. config file discovery and loading (format providers used pre-lifecycle
      as pure stream transforms)
-  5. closure resolution, rooted at the core node (below): the core's
+  5. resolved-service-set resolution, rooted at the core node (below):
+     the core's
      inject fields — the dispatched applet, the registered translator
      (optional), the format providers in use — plus transitive deps,
      with disable/enable/override applied; dependency-ordered via SCC
@@ -652,8 +658,10 @@ init() registrations → Main()
      cold services are ejected from the registry so their instances
      can be garbage collected
   6. strict full parse — complete arg/env schema now known
-     (core + every closure member); unknown argument = error
-  7. fill each closure member's config struct (in place, merged values)
+     (core + every member of the resolved service set); unknown
+     argument = error
+  7. fill the config struct of each member of the resolved service
+     set (in place, merged values)
   8. inject dependency fields
   9. Configured() on each Configurable, dependency order — the
     registered Translator's dependency subtree always first (§7),
@@ -688,7 +696,8 @@ indistinguishable from an unset one and falls back to its default when
 the dump is loaded.
 
 `--help,-h` (core-owned) prints the dispatched applet's full argument schema
-— core + entire closure, grouped by service ID, with usage texts (rendered
+— core + the entire resolved service set, grouped by service ID, with
+usage texts (rendered
 through `Tr()`) and the **current effective values** (all sources already
 merged: what the binary would actually use) — to stdout and exits 0.
 
@@ -704,7 +713,8 @@ on a per-invocation virtual root the runtime composes dynamically
   type (concrete-type matching is automatic — no interface declaration
   exists or is needed for applets);
 - the registered **Translator**, optional by interface: present means
-  pulled into the closure, absent means fine (the exactly-one rule of
+  pulled into the resolved service set, absent means fine (the
+  exactly-one rule of
   §7 is checked separately);
 - one field per **format provider in use** this invocation (extension
   matched an actually loaded file or the `--write-config` target), by
@@ -713,8 +723,9 @@ on a per-invocation virtual root the runtime composes dynamically
 The registry's own tag machinery collects these dependencies and the
 graph matches and injects them unmodified — the core consumes services
 through the same mechanism it offers everyone, and after injection the
-core's fields ARE the runtime's references. The node joins the ordered
-closure (last — it depends on everything) and is inert in the
+core's fields ARE the runtime's references. The node joins the
+ordered resolved service set (last — it depends on everything) and is
+inert in the
 lifecycle: the composed struct has no methods. Seeds are gone as a
 concept; what used to be seed lists (AlwaysOn — removed, provider
 seeds, the translator seed) are now visible dependency edges.
@@ -740,10 +751,12 @@ is today. The core node is the graph-and-injection side only.
 Part of the core's config struct (settable via args, env, or file like
 everything else):
 
-- `disable` — service IDs removed from the closure even if required.
+- `disable` — service IDs removed from the resolved service set even
+  if required.
   Disabling the dispatched applet itself is a startup error, as is
   listing the same id in both `enable` and `disable`.
-- `enable` — service IDs forced into the closure (with their transitive
+- `enable` — service IDs forced into the resolved service set (with
+  their transitive
   dependencies) even if nothing requires them.
 - `override` — ID remapping (`sqlite=mysql`): wherever a dependency names
   `sqlite`, resolve `mysql` instead. The substitute must satisfy the
@@ -755,7 +768,8 @@ everything else):
   but each unused key is logged as a **warning**, so a typo never
   silently changes nothing.
 
-This is why closure resolution (step 5) happens *after* config loading
+This is why resolved-service-set resolution (step 5) happens *after*
+config loading
 (steps 3–4): enablement is configuration-driven (e.g. an applet declares a
 SQLite database service but the user configures MySQL instead).
 
@@ -795,8 +809,8 @@ type FileSinkConfig struct {
   The core's own config lives under the reserved ID `core`.
 - `conf:"long[,short]"` — the ONE operator name: grants `--long`/`-s`
   AND feeds env derivation. Top level only ("mirror the value into a
-  top-level field yourself"). Long names MUST be unique per applet
-  closure. Short names MUST be unique per config struct. Applets must
+  top-level field yourself"). Long names MUST be unique per applet's
+  resolved service set. Short names MUST be unique per config struct. Applets must
   resolve short name collisions using `ShortArgPriority` (ratified
   2026-07-29, `docs/design/v0.3.0-to-v0.4.0-short-argument-priority.md`;
   until it lands the runtime still resolves first-come-first-served).
@@ -808,7 +822,8 @@ type FileSinkConfig struct {
   fold with `_` inside a name (camel humps, single hyphens/
   underscores). A conf-tagged field claims a short global name: applet
   `cat` + conf `log-max-age` → `CAT__LOG_MAX_AGE` (longs are unique
-  across the closure). An untagged field is addressed by its file
+  across the resolved service set). An untagged field is addressed by
+  its file
   path, QUALIFIED by its section — `CAT__FILESINK__BACKUPS`,
   `CAT__FILESINK__ROTATION__SIZE` — so foreign packages' unnamed
   fields can never collide, and `Builder.Alias` is the repair lever
@@ -1102,7 +1117,7 @@ $ mytool --upgrade-config --config /etc/mytool/config.json \
   (`engine.ParseFromVersions`). fw serves since the parity pass
   (2026-07-19): the transform short-circuits at peek, and its schema
   covers the WHOLE catalog — the file serves the whole binary, not
-  one applet's closure.
+  one applet's resolved service set.
 
 ### --validate-config and best-effort --help (decided AND implemented 2026-07-19)
 
@@ -1135,7 +1150,8 @@ fields, legal ONLY on applet configs in fw (commit violation
 otherwise) and on the root struct standalone — which is the same
 statement, since the root IS the applet. Only the ACTIVE config's
 declarations bind (the dispatched applet's section, the root); a
-second applet's declarations in the closure stay dormant. This
+second applet's declarations in the resolved service set stay
+dormant. This
 dissolves the multiple-pos:"1" collision by construction.
 
 The tail joins the contract: indexed positionals are required by
@@ -1304,7 +1320,8 @@ extension, or an extension another provider already claims, is a
 startup violation. Providers are ordinary services: registered
 cold, discovered by interface, used statelessly. The provider whose
 extension matched an actually loaded file (or the `--write-config`
-target) is added as a closure seed — it receives the normal lifecycle and
+target) is added as a seed of the resolved service set — it receives
+the normal lifecycle and
 survives ejection, keeping a future value-only config reload able to
 re-read the file. Unused providers stay cold and are ejected. A provider
 wanting an unconditional lifecycle declares a dependency or is forced in
@@ -1335,7 +1352,8 @@ with `--enable`.
   one ascii letter/digit; env names are uppercase letters, digits and
   underscores, not digit-first. Embedded fields in config structs are
   not supported (registration error).
-- Duplicate explicit env names across the closure are a startup error
+- Duplicate explicit env names across the resolved service set are a
+  startup error
   (derived names cannot collide because long names are unique).
 
 ## 7. Logging & Tr()
@@ -1345,7 +1363,8 @@ with `--enable`.
 Built on `log/slog`. A log sink is a service declaring
 `Provides[slog.Handler]()` — console, file, syslog/journald ship as
 subpackages, each with its own config struct. Sink activation falls out of
-the normal machinery (imports, closure, enable/disable): a sink is used
+the normal machinery (imports, the resolved service set,
+enable/disable): a sink is used
 when it is `--enable`d or pulled by a genuine dependency, and stays cold
 otherwise. No sink is on by default — the framework guarantees a raw
 stderr floor instead (below), and the console sink is opt-in like every
@@ -1391,7 +1410,8 @@ collecting every record emitted during startup. After the `Configured`
 phase, the multihandler is assembled, the buffer **replays** into it, and
 the default swaps over.
 
-- Zero `slog.Handler` services in the closure → the core's unconditional
+- Zero `slog.Handler` services in the resolved service set → the
+  core's unconditional
   **logging floor**: a plain stderr text handler. This is the default —
   a binary that links no sink, or links sinks but enables none, still
   gets startup and runtime records on stderr. Enabling a sink
@@ -1448,7 +1468,8 @@ discovered through the registry, not an applet dependency:
   registered — more than one is a startup violation (a developer
   error: two catalog systems linked into one binary).
 - If present, it is an **optional dependency edge of the core node**
-  (§5) and thereby joins every closure. `--disable` still wins: the
+  (§5) and thereby joins every resolved service set. `--disable`
+  still wins: the
   operator can force raw msgids, exactly as `--disable` drops any
   other service.
 - **Configured-first, everywhere output renders**: the translator's
@@ -1657,7 +1678,7 @@ the checks tests cannot express.
 
 | Item | State |
 | --- | --- |
-| `ConfigurationUpdated` trigger (file watch? signal? API?) | interface reserved, semantics open — but constrained: a reload only re-fills config values of closure members; the graph is immutable once resolved (no add/remove/rewire, ever) |
+| `ConfigurationUpdated` trigger (file watch? signal? API?) | interface reserved, semantics open — but constrained: a reload only re-fills config values of members of the resolved service set; the graph is immutable once resolved (no add/remove/rewire, ever) |
 | Terminal UI provider | concept named, comes after v1 |
 | i18n catalog module (gettext `.po`/`.mo` loading, locale chain, `Plural-Forms` evaluator, embedded-FS handoff) | the core seam (Translator, TrN, seeding, Configured-first) is DONE — see §7; the catalog implementation is the separate `sxcli.dev/i18n` module, next in line |
 | Demo applet | undecided; will not mirror busybox applets |

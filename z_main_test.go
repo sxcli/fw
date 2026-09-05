@@ -221,7 +221,7 @@ func TestHappyPathLifecycleOrder(t *testing.T) {
 	a := w.applet(7)
 	a.D = nil
 	w.dep(false)
-	// make the applet require the dep so it joins the closure
+	// make the applet require the dep so it joins the resolved service set
 	w.cat.All()[0].Deps[0].Optional = false
 	code := w.run()
 	if code != 7 {
@@ -442,7 +442,7 @@ func TestStartupLogsReachFallbackStderr(t *testing.T) {
 
 func TestControlsIgnoreEnvironment(t *testing.T) {
 	// the closed injection vector: an ambient MYBIN__DISABLE must not
-	// remove a service from the closure — controls are argv/file-only
+	// remove a service from the resolved service set — controls are argv/file-only
 	w := newWorld(t, []string{"bin"}, nil, map[string]string{"BIN__DISABLE": "test/dep"})
 	a := w.applet(0)
 	w.dep(false)

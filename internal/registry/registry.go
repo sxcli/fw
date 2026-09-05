@@ -116,7 +116,8 @@ func (r *Registry) All() []*Descriptor {
 }
 
 // Retain drops every descriptor whose id is not in keep, so the
-// instances of services outside the resolved closure can be garbage
+// instances of services outside the resolved service set can be
+// garbage
 // collected (best effort: a package-level reference kept by the
 // registering package defeats it). The composition is fixed once
 // resolved — ejected services cannot come back.

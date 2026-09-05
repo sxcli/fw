@@ -24,7 +24,8 @@ import (
 // here, wired to the running composition through unexported fields —
 // no public seam exists to replace the framework's guts. The runtime
 // attaches the catalog snapshot at startup, BEFORE ejection: the
-// snapshot serves every later view, so completion's own closure
+// snapshot serves every later view, so completion's own resolved
+// service set
 // ejects like any other and still answers about the whole binary.
 type systemService struct {
 	cat *catalog // attach-time snapshot; data-plane only

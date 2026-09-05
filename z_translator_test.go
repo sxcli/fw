@@ -215,7 +215,7 @@ func TestTranslatorDepFailureIsFatalExactlyOnce(t *testing.T) {
 
 func TestValidateConfigNeverConfigures(t *testing.T) {
 	// load-but-never-run means never-CONFIGURE too: a translator in
-	// the closure stays cold under --validate-config
+	// the resolved service set stays cold under --validate-config
 	w, _ := translatorWorld(t, []string{"bin", "--validate-config"}, false, nil)
 	if code := w.run(); code != 0 {
 		t.Fatalf("a clean config must validate: exit %d\n%s", code, w.stderr.String())

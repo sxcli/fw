@@ -133,7 +133,7 @@ func TestMigrateOnBareRegistrationIsViolation(t *testing.T) {
 
 func TestUpgradeConfigCoversTheWholeCatalog(t *testing.T) {
 	// the file holds a section of a service OUTSIDE the dispatched
-	// applet's closure: the transform must still own it
+	// applet's resolved service set: the transform must still own it
 	path := filepath.Join(t.TempDir(), "config.json")
 	content := `{"app": {"version": 1, "welcome": "hi"}, "dep": {"version": 1}, "stranger": {"keep": true}}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -230,10 +230,11 @@ type twinService struct{ cfg twinCfg }
 
 type twinBrother struct{ cfg twinCfg }
 
-func TestUpgradeConfigToleratesCrossClosureDuplicates(t *testing.T) {
+func TestUpgradeConfigToleratesDuplicateLongsAcrossResolvedServiceSets(t *testing.T) {
 	// two services sharing a long is legal as long as no composed
-	// closure holds both; the transform spans the whole catalog, so
-	// its schema must not enforce closure-scoped uniqueness
+	// resolved service set holds both; the transform spans the whole
+	// catalog, so its schema must not enforce uniqueness scoped to one
+	// resolved service set
 	path := filepath.Join(t.TempDir(), "config.json")
 	content := `{"twina": {"version": 1, "same": "a"}, "twinb": {"version": 1, "same": ""}}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

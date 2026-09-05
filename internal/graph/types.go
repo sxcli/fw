@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package graph resolves the service composition of one invocation: the
-// dependency closure of the dispatched applet, the resolved injection
-// targets of every member, and a dependency-ordered start sequence. Like
+// Package graph resolves the service composition of one invocation:
+// the dispatched applet's resolved service set, the resolved
+// injection targets of every member, and a dependency-ordered start
+// sequence. Like
 // the registry it is ignorant of the framework's interfaces: the applet
 // and the seed services arrive as plain ids computed by the root
 // package.
@@ -26,8 +27,8 @@ import (
 )
 
 // Controls is the config-driven service control surface (the core's
-// disable/enable/override settings). Disable removes services from the
-// closure even when required; Enable forces services (and their
+// disable/enable/override settings). Disable removes services from
+// the resolved service set even when required; Enable forces services (and their
 // transitive dependencies) in; Override remaps ids named in inject tags.
 // Every id in Disable and Enable, and every Override substitute, must be
 // registered. An Override key is just a name — it may refer to an
@@ -41,13 +42,15 @@ type Controls struct {
 	Override map[string]string // requested id → substitute id
 }
 
-// Binding is one resolved inject field of a closure member.
+// Binding is one resolved inject field of a member of the resolved
+// service set.
 type Binding struct {
 	Dep     registry.DepField
 	Targets []*registry.Descriptor // registration order; empty only for unmatched optional fields
 }
 
-// Member is one closure member with its resolved bindings.
+// Member is one member of the resolved service set with its resolved
+// bindings.
 type Member struct {
 	Desc     *registry.Descriptor
 	Bindings []Binding
@@ -55,7 +58,8 @@ type Member struct {
 
 // Result is the resolved composition of one invocation.
 type Result struct {
-	// Ordered is the closure in dependency order: dependencies before
+	// Ordered is the resolved service set in dependency order:
+	// dependencies before
 	// dependents (the Start order; Stop is the exact reverse). Within a
 	// dependency cycle the order degrades to registration order.
 	Ordered []Member
@@ -71,12 +75,12 @@ type Result struct {
 
 // resolver carries the working state of one Resolve call.
 type resolver struct {
-	reg          *registry.Registry
-	c            *fail.Collector
-	root         *registry.Descriptor // the resolution root; a virtual one never appears in reg
-	disabled     map[string]bool
-	override     map[string]string
-	overrideUsed map[string]bool
-	closure      map[string]bool
-	result       Result
+	reg                *registry.Registry
+	c                  *fail.Collector
+	root               *registry.Descriptor // the resolution root; a virtual one never appears in reg
+	disabled           map[string]bool
+	override           map[string]string
+	overrideUsed       map[string]bool
+	resolvedServiceSet map[string]bool
+	result             Result
 }

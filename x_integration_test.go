@@ -269,7 +269,7 @@ func TestWriteConfigRoundTrip(t *testing.T) {
 	}
 }
 
-func TestHelpListsClosureArguments(t *testing.T) {
+func TestHelpListsResolvedServiceSetArguments(t *testing.T) {
 	r := box(t, "single", nil, "", "--help")
 	if r.code != 0 {
 		t.Fatalf("help exit %d\n%s", r.code, r.stderr)
@@ -287,7 +287,8 @@ func TestHelpListsClosureArguments(t *testing.T) {
 	}
 }
 
-// The framework's logging floor: with no sink in the closure, records
+// The framework's logging floor: with no sink in the resolved
+// service set, records
 // still reach stderr through the raw fallback handler.
 func TestLoggingFloorWritesStderr(t *testing.T) {
 	r := box(t, "single", nil, "", "--note", "logged")
@@ -305,7 +306,8 @@ func TestConsoleSinkWritesStderr(t *testing.T) {
 
 func TestOptionalDependencyActivatesItsMatch(t *testing.T) {
 	// per the resolution rules a bare single field pulls its first
-	// registered match into the closure — optional only tolerates zero
+	// registered match into the resolved service set — optional only
+	// tolerates zero
 	// matches
 	r := box(t, "single", nil, "")
 	if !strings.Contains(r.stdout, "greeted=true") {

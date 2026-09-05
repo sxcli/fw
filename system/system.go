@@ -47,7 +47,8 @@ const (
 	HintServiceID = engine.HintCustom
 )
 
-// ArgInfo describes one argument of an applet's closure-true schema.
+// ArgInfo describes one argument of the schema true to an applet's
+// resolved service set.
 type ArgInfo struct {
 	Service string       // owning service ALIAS (the operator name), "core" included
 	Long    string       // long argument name, without dashes
@@ -80,14 +81,17 @@ type Introspector interface {
 	// format providers claim, "json" included. Binary-level.
 	ConfigExtensions() []string
 	// Services returns the primary aliases of the TARGET's resolved
-	// graph — the core leading, then the closure members in order.
-	// The binary view (target "") has no closure: nil.
+	// graph — the core leading, then the resolved service set's
+	// members in order. The binary view (target "") has no resolved
+	// service set: nil.
 	Services() []string
 	// Describe returns the long-form description of a member of the
 	// target's resolved graph (alias or id); "" for anything outside
-	// the closure — introspection does not reach past the graph.
+	// the resolved service set — introspection does not reach past
+	// the graph.
 	Describe(ref string) string
-	// Arguments returns the target's closure-true argument schema.
+	// Arguments returns the argument schema true to the target's
+	// resolved service set.
 	// args are the words BEFORE the completion cursor; today they are
 	// inert (the solve is catalog-only), reserved for the
 	// explicit-control-vocabulary era when line-carried controls
@@ -105,7 +109,8 @@ type Introspector interface {
 type System interface {
 	// Introspector returns the target-scoped introspection view for
 	// the applet the dispatch NAME names (never an id). The empty
-	// name is the binary view: applet listing, no closure. An
+	// name is the binary view: applet listing, no resolved service
+	// set. An
 	// unknown name — or a name that is not an applet — returns nil:
 	// a completion caller can do nothing with prose, so nil means
 	// "offer nothing".

@@ -231,8 +231,8 @@ type invocationPlan struct {
 // section: the service controls, riding the same operator surfaces as
 // the engine's own knobs.
 type coreControls struct {
-	Disable  []string `json:"disable" conf:"disable" env:"-" usage:"service ids to remove from the closure"`
-	Enable   []string `json:"enable" conf:"enable" env:"-" usage:"service ids to force into the closure"`
+	Disable  []string `json:"disable" conf:"disable" env:"-" usage:"service ids to remove from the resolved service set"`
+	Enable   []string `json:"enable" conf:"enable" env:"-" usage:"service ids to force into the resolved service set"`
 	Override []string `json:"override" conf:"override" env:"-" usage:"dependency remapping in from=to form"`
 }
 
@@ -260,7 +260,8 @@ func coreContribs(core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) []eng
 	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}, {Ptr: kn}}
 }
 
-// sections maps a resolved closure to config sections: the primary
+// sections maps a resolved service set to config sections: the
+// primary
 // alias names each section and the metadata assertion happens here —
 // the config engine never sees a descriptor.
 func sections(ordered []graph.Member) []engine.Section {
@@ -276,8 +277,9 @@ func sections(ordered []graph.Member) []engine.Section {
 }
 
 // plan runs the pipeline's planning steps: lenient core peek (honoring
-// an in-line --config), file loading, core refill, controls, closure
-// resolution (with the console fallback), schema construction. It
+// an in-line --config), file loading, core refill, controls,
+// resolved-service-set resolution (with the console fallback),
+// schema construction. It
 // records violations into c and performs no side effects: nothing is
 // written, ejected, injected, configured or started.
 func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string) *invocationPlan {
@@ -358,7 +360,8 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 			keep[m.Desc.ID] = true
 		}
 		// ejection is uniform: the system service answers from its
-		// attach-time snapshot, so no closure needs the registry kept
+		// attach-time snapshot, so no resolved service set needs the
+		// registry kept
 		// alive on its behalf
 		rt.reg.Retain(keep)
 		loaded := p.sch.Apply(rt.c, p.files, p.src)
@@ -420,7 +423,8 @@ func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine
 
 // upgradeConfig serves --upgrade-config: the schema is built from the
 // WHOLE catalog — the file being transformed serves the whole binary,
-// not one applet's closure — and the transform runs against the
+// not one applet's resolved service set — and the transform runs
+// against the
 // explicit --config target.
 func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	if p.target == "" {
@@ -440,9 +444,10 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 		}
 	}
 	// a FILE schema: sections, chains and fields only — argument and
-	// environment uniqueness is closure-scoped by spec and irrelevant
-	// to a file transform (two applets with disjoint closures may both
-	// say conf:"port"; their shared file must still upgrade)
+	// environment uniqueness is scoped to the resolved service set by
+	// spec and irrelevant to a file transform (two applets with
+	// disjoint resolved service sets may both say conf:"port"; their
+	// shared file must still upgrade)
 	sch := engine.NewFileSchema(rt.c, primaryAlias(d), coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
 	if rt.c.Len() == 0 {
 		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
@@ -609,8 +614,9 @@ func (rt *runtime) runApplet(applet Applet) int {
 	return code
 }
 
-// assembleSinks builds the multihandler over the closure's sinks in
-// start order. A closure with no sink falls to the last-resort raw
+// assembleSinks builds the multihandler over the resolved service
+// set's sinks in start order. A resolved service set with no sink
+// falls to the last-resort raw
 // stderr handler — the framework's unconditional logging floor. There
 // is no silence switch: a binary that wants no output redirects stderr
 // itself. Richer logging is opt-in — the console sink (or any other)
@@ -737,7 +743,8 @@ func (rt *runtime) providers() []engine.Provider {
 }
 
 // providerSeeds maps the format providers that actually transcoded a
-// file back to their service ids, so they join the closure and survive
+// file back to their service ids, so they join the resolved service
+// set and survive
 // ejection.
 func (rt *runtime) providerSeeds(files *engine.Files) []string {
 	var out []string
@@ -757,7 +764,8 @@ func (rt *runtime) providerSeeds(files *engine.Files) []string {
 // and concrete type, the Translator (optional: present means pulled,
 // the exactly-one rule is checked at startup), and one optional field
 // per format provider in use (optional preserves the old seed
-// semantics: a --disable'd provider drops from the closure silently;
+// semantics: a --disable'd provider drops from the resolved service
+// set silently;
 // its transcode work happened before resolution regardless). The
 // registry builds the descriptor through its normal machinery but
 // never stores it — see the spec for why the root cannot be a

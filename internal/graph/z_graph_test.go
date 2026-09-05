@@ -167,7 +167,7 @@ func TestColdServicesStayOut(t *testing.T) {
 	reg(r, "t/storea", &storeA{}, storageType) // nothing pulls it
 	res := mustResolve(t, r, "t/app", Controls{})
 	if len(res.Ordered) != 2 {
-		t.Errorf("cold service leaked into closure: %v", ids(res))
+		t.Errorf("cold service leaked into the resolved service set: %v", ids(res))
 	}
 }
 
@@ -189,7 +189,7 @@ func TestRankedWinsTie(t *testing.T) {
 		t.Errorf("the ranked candidate must win, got %q", m.Bindings[0].Targets[0].ID)
 	}
 	if len(res.Ordered) != 2 {
-		t.Errorf("only the winner should join the closure: %v", ids(res))
+		t.Errorf("only the winner should join the resolved service set: %v", ids(res))
 	}
 }
 
@@ -224,7 +224,7 @@ func TestSliceGathersLateJoiners(t *testing.T) {
 		got = append(got, target.ID)
 	}
 	if !reflect.DeepEqual(got, []string{"t/workera", "t/workerb"}) {
-		t.Errorf("slice must gather every closure match in registration order, got %v", got)
+		t.Errorf("slice must gather every match in the resolved service set in registration order, got %v", got)
 	}
 }
 
@@ -339,7 +339,7 @@ func TestOverrideSubstitutes(t *testing.T) {
 	}
 	for _, member := range res.Ordered {
 		if member.Desc.ID == "t/workerb" || member.Desc.ID == "t/storea" {
-			t.Errorf("substituted-away service leaked into closure: %v", ids(res))
+			t.Errorf("substituted-away service leaked into the resolved service set: %v", ids(res))
 		}
 	}
 }
@@ -391,7 +391,7 @@ func TestCycleIsWarningNotError(t *testing.T) {
 	reg(r, "t/pong", &pong{}, storageType)
 	res := mustResolve(t, r, "t/ping", Controls{})
 	if len(res.Ordered) != 2 {
-		t.Fatalf("cycle members must stay in the closure: %v", ids(res))
+		t.Fatalf("cycle members must stay in the resolved service set: %v", ids(res))
 	}
 	if !reflect.DeepEqual(res.Cycles, [][]string{{"t/ping", "t/pong"}}) {
 		t.Errorf("cycle not reported: %v", res.Cycles)
@@ -426,7 +426,7 @@ func TestVirtualRootEdgesJoinAndDisabledOptionalSkips(t *testing.T) {
 	root := r.Virtual("core", &virtualRoot{}, &fail.Collector{})
 	res := mustResolveRoot(t, r, root, Controls{})
 	if len(res.Ordered) != 4 {
-		t.Errorf("root edges must join the closure: %v", ids(res))
+		t.Errorf("root edges must join the resolved service set: %v", ids(res))
 	}
 	if res.Ordered[len(res.Ordered)-1].Desc.ID != "core" {
 		t.Errorf("the root depends on everything and must order last: %v", ids(res))
@@ -461,7 +461,7 @@ func TestSubtreeWalksBindings(t *testing.T) {
 	res := mustResolveRoot(t, r, root, Controls{})
 	sub, ok := res.Subtree("t/workerb")
 	if !ok {
-		t.Fatal("workerb is a closure member")
+		t.Fatal("workerb is in the resolved service set")
 	}
 	if len(sub.Ordered) != 2 || sub.Ordered[0].Desc.ID != "t/storea" || sub.Ordered[1].Desc.ID != "t/workerb" {
 		t.Errorf("subtree must be the reachable set in dependency order: %v", ids(sub))

@@ -32,8 +32,9 @@ type ArgInfo = system.ArgInfo
 // attach-time catalog snapshot and NOTHING else — no config files, no
 // location search, no environment. Same binary, same target, same
 // answer, always; ejection cannot shrink the snapshot, so completion
-// keeps its facts while its own closure stays as lean as any other.
-// A nil target is the binary view: applet listing, no closure.
+// keeps its facts while its own resolved service set stays as lean
+// as any other. A nil target is the binary view: applet listing, no
+// resolved service set.
 type Introspector struct {
 	cat    *catalog             // attach-time snapshot; data-plane only
 	target *registry.Descriptor // nil: the binary view
@@ -100,9 +101,9 @@ func (i *Introspector) ConfigExtensions() []string {
 
 // Services returns the primary aliases of the TARGET's resolved
 // graph — the core leading (a virtual root is truthfully part of
-// every closure, spec §5), then the closure members in COMPOSED
-// order, matching every other listing. The binary view has no
-// closure: nil.
+// every resolved service set, spec §5), then the resolved service
+// set's members in COMPOSED order, matching every other listing.
+// The binary view has no resolved service set: nil.
 func (i *Introspector) Services() []string {
 	if i.target == nil {
 		return nil
@@ -117,12 +118,12 @@ func (i *Introspector) Services() []string {
 // Describe returns the long-form description of a member of the
 // target's resolved graph — alias or id, both vocabularies are legal
 // inside the graph — or "" for anything outside it: introspection
-// does not reach past the closure.
+// does not reach past the resolved service set.
 func (i *Introspector) Describe(ref string) string {
 	out := ""
 	if i.target != nil {
 		if ref == CoreAlias || ref == CoreID {
-			out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every closure grows from"
+			out = "the framework core: configuration, dispatch, resolution and lifecycle; the virtual root every resolved service set grows from"
 		} else if d, member := i.member(ref); member {
 			if meta, has := d.Metadata.(*engine.Meta); has {
 				out = meta.Description
@@ -132,8 +133,9 @@ func (i *Introspector) Describe(ref string) string {
 	return out
 }
 
-// member resolves a reference — alias or id — to a descriptor of the
-// target's closure; anything else, registered or not, is not a member.
+// member resolves a reference — alias or id — to a descriptor in the
+// target's resolved service set; anything else, registered or not,
+// is not a member.
 func (i *Introspector) member(ref string) (*registry.Descriptor, bool) {
 	d, found := i.cat.byAlias[ref]
 	if !found {
@@ -149,8 +151,8 @@ func (i *Introspector) member(ref string) (*registry.Descriptor, bool) {
 	return nil, false
 }
 
-// Arguments returns the target's closure-true argument schema, built
-// from the catalog snapshot alone — registration-level truth, no
+// Arguments returns the argument schema true to the target's
+// resolved service set, built from the catalog snapshot alone — registration-level truth, no
 // files, no environment, no controls. args are the words BEFORE the
 // completion cursor; today they are inert (reserved for the
 // explicit-control-vocabulary era, when line-carried controls
@@ -165,7 +167,8 @@ func (i *Introspector) Arguments(_ []string) []ArgInfo {
 	var kn upgradeKnobs
 	sch := i.cat.schema(c, i.target, i.res, &core, &ctrl, &kn)
 	if c.Len() != 0 {
-		// the closure solved at view construction; a schema violation
+		// the resolved service set solved at view construction; a
+		// schema violation
 		// here is a startup-checked inconsistency — offer nothing
 		// rather than half of something
 		return nil

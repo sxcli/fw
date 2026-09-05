@@ -125,7 +125,7 @@ type Serve struct {
 }
 ```
 
-The framework computes the dependency closure of the dispatched applet,
+The framework computes the resolved service set of the dispatched applet,
 injects fields, then drives the lifecycle in dependency order:
 `Configured()` → `Start()` → the applet's `Run()` → `Stop()` in exact
 reverse. Services never required stay cold — never configured, never
@@ -161,7 +161,7 @@ func main() {
 and run.) Several accepted applets make a busybox-style multi-call
 binary: the framework dispatches by first argument (`mybox serve`) or
 by binary name (`ln -s mybox serve; ./serve`). Each applet pays only
-for its own dependency closure — a five-applet binary running `serve`
+for its own resolved service set — a five-applet binary running `serve`
 never touches the other four applets' services or arguments.
 `Builder.Alias` renames operator surfaces per composition (and pins
 them against upstream changes); ambiguity is never resolved silently —

@@ -52,7 +52,8 @@ func (ca *catalog) index(c *fail.Collector) {
 	}
 }
 
-// composedMembers renders a resolution's closure in COMPOSED order
+// composedMembers renders a resolution's resolved service set in
+// COMPOSED order
 // (Order sequence, then id): the spec promises Order drives listings,
 // help sections included — and NewSchema's first-come-first-served
 // short forms make section order SEMANTIC, so every schema builder
@@ -74,9 +75,10 @@ func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
 	return members
 }
 
-// schema builds the closure-true schema for one target's resolution —
-// THE builder: plan, the help fallback and every introspection view
-// come through here, so section order (and with it short-form
+// schema renders the argument schema of one target's resolved
+// service set — THE builder: plan, the help fallback and every
+// introspection view come through here, so section order (and with
+// it short-form
 // ownership) has one spelling. The operator surfaces speak the
 // target's primary alias, and the sections ride in composed order,
 // both by construction.

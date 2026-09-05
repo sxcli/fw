@@ -15,7 +15,8 @@
 // Package yaml registers the conf module's YAML provider as a
 // composition service: the bare transcoder lives in sxcli.dev/conf/
 // yaml for standalone use; this package is the framework's service
-// wrapper — pulled into the closure only when a yaml config file
+// wrapper — pulled into the resolved service set only when a yaml
+// config file
 // actually matched.
 package yaml
 

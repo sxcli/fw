@@ -300,7 +300,8 @@ type appOutsider struct{}
 func (a *appOutsider) Configured() error { return nil }
 
 // appProbe runs assertions against the injected System facade from
-// inside the composed world — the closure ejects like any other; the
+// inside the composed world — the resolved service set ejects like
+// any other; the
 // views answer from the attach-time snapshot.
 type appProbe struct {
 	Sys  system.System `inject:""`
@@ -336,7 +337,7 @@ func TestIntrospectionSpeaksAliasesTargetScoped(t *testing.T) {
 			Alias("described").Metadata(&Metadata{Description: "a well-described service"}).
 			registerInto(reg, c)
 		NewBareRegistration("example.com/app/outsider", func() *appOutsider { return &appOutsider{} }).
-			Alias("outsider").Metadata(&Metadata{Description: "not in the closure"}).
+			Alias("outsider").Metadata(&Metadata{Description: "not in the resolved service set"}).
 			registerInto(reg, c)
 	}
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register)
@@ -351,7 +352,7 @@ func TestIntrospectionSpeaksAliasesTargetScoped(t *testing.T) {
 	}
 	joined := strings.Join(services, ",")
 	if services[0] != "core" || !strings.Contains(joined, "described") || !strings.Contains(joined, "system") || strings.Contains(joined, "example.com") {
-		t.Errorf("Services must be operator names, core first, closure members only: %v", services)
+		t.Errorf("Services must be operator names, core first, resolved service set members only: %v", services)
 	}
 	if strings.Contains(joined, "outsider") {
 		t.Errorf("Services must not reach past the resolved graph: %v", services)
@@ -363,7 +364,7 @@ func TestIntrospectionSpeaksAliasesTargetScoped(t *testing.T) {
 		t.Errorf("Describe must not reach past the resolved graph: %q", descOutside)
 	}
 	if len(args) == 0 {
-		t.Error("the target view must carry the closure-true schema")
+		t.Error("the target view must carry the schema true to the resolved service set")
 	}
 	if byID != nil {
 		t.Error("Introspector takes dispatch names, never ids")

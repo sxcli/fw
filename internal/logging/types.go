@@ -15,7 +15,7 @@
 // Package logging implements the framework's log fan-out (Multi) and the
 // startup bootstrap handler (Buffer). Both are plain slog.Handlers and
 // know nothing about services: sinks arrive as the handler values the
-// resolved closure provides.
+// resolved service set provides.
 //
 // Multi is deliberately synchronous: a record is delivered on the
 // caller's goroutine to every accepting child. Sink authors must keep

@@ -16,8 +16,8 @@ package fw
 
 // Solo is the single-applet front door and the registration chain's
 // second terminal: commit the registration, accept it (plus whatever
-// its closure needs from the catalog — dependencies resolve as
-// always), and run. It never returns.
+// its resolved service set needs from the catalog — dependencies
+// resolve as always), and run. It never returns.
 //
 //	fw.Solo(fw.NewRegistration("example.com/mytool/srv", newSrv,
 //	    func(s *Srv) *Config { return &s.cfg }).

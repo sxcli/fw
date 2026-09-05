@@ -63,8 +63,8 @@ func (p *argsProbe) Run() int {
 	return 0
 }
 
-// extraService is cold unless enabled; its flag proves closure-true
-// argument introspection.
+// extraService is cold unless enabled; its flag proves argument
+// introspection is true to the resolved service set.
 type extraCfg struct {
 	Version uint32   `json:"version"`
 	Flag    string   `json:"flag" conf:"extra-flag" usage:"only visible when extra is enabled"`
@@ -99,7 +99,7 @@ func argsWorld(t *testing.T, files map[string]string, do func(sys system.System)
 	return w
 }
 
-func TestArgumentsReportsClosureSchema(t *testing.T) {
+func TestArgumentsReportsResolvedServiceSetSchema(t *testing.T) {
 	var infos []ArgInfo
 	w := argsWorld(t, nil, func(sys system.System) {
 		infos = sys.Introspector("app").Arguments(nil)
@@ -121,7 +121,7 @@ func TestIntrospectionIgnoresConfigFiles(t *testing.T) {
 	// view is built from the catalog alone — a config file enabling a
 	// service must not change the answer, whether named in-line or
 	// found by any search. This is the regression test for the
-	// env→closure vector the 2026-07-29 review proved.
+	// env→resolved-service-set vector the 2026-07-29 review proved.
 	files := map[string]string{"/inline/cfg.json": `{"core": {"enable": ["extra"]}}`}
 	var withC, withoutC []ArgInfo
 	w := argsWorld(t, files, func(sys system.System) {
@@ -217,7 +217,7 @@ func TestIntrospectorAnswersFromSnapshotAfterEjection(t *testing.T) {
 		t.Errorf("applets wrong: %v", a.applets)
 	}
 	// ejection is UNIFORM now — the cold provider left the registry
-	// even though the system service is in the closure...
+	// even though the system service is in the resolved service set...
 	if _, stillThere := w.rt.reg.ByID("test/fakefmt"); stillThere {
 		t.Error("ejection must be uniform; the snapshot answers, not the live registry")
 	}
@@ -225,11 +225,12 @@ func TestIntrospectorAnswersFromSnapshotAfterEjection(t *testing.T) {
 	if strings.Join(a.exts, ",") != "json,toml,json5" {
 		t.Errorf("extensions must answer from the snapshot: %v", a.exts)
 	}
-	// the target view is closure-scoped: meta and its system dep, the
+	// the target view is scoped to the resolved service set: meta and
+	// its system dep, the
 	// core leading; the cold dep and the provider are NOT members
 	joined := strings.Join(a.services, ",")
 	if a.services[0] != "core" || !strings.Contains(joined, "meta") || !strings.Contains(joined, "system") {
-		t.Errorf("services must be the closure, core first: %v", a.services)
+		t.Errorf("services must be the resolved service set, core first: %v", a.services)
 	}
 	if strings.Contains(joined, "dep") || strings.Contains(joined, "fakefmt") {
 		t.Errorf("services must not reach past the resolved graph: %v", a.services)

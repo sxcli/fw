@@ -58,7 +58,8 @@ func TestIntrospectionSynthesizesCore(t *testing.T) {
 	}
 }
 
-// The core node itself is inert: it joins the closure but has no
+// The core node itself is inert: it joins the resolved service set
+// but has no
 // lifecycle, so the run is exactly what it was before it existed.
 func TestCoreNodeIsLifecycleInert(t *testing.T) {
 	w := newWorld(t, []string{"bin"}, nil, nil)

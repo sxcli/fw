@@ -22,11 +22,12 @@ import (
 	"sxcli.dev/rules/solver"
 )
 
-// Resolve computes the composition of one invocation: seed the closure
-// with the given root descriptor and every forced Enable, expand it
-// through the inject fields, resolve every member's bindings against
-// the final closure, and order it dependencies-first. The root is any
-// descriptor — a registered service (resolving its own closure) or a
+// Resolve computes the composition of one invocation: seed the
+// resolved service set with the given root descriptor and every
+// forced Enable, expand it through the inject fields, resolve every
+// member's bindings against the final resolved service set, and
+// order it dependencies-first. The root is any descriptor — a
+// registered service (resolving its own service set) or a
 // virtual one the caller composed (the framework's core node); it is
 // never disable-checked, that is the caller's courtesy. Violations are
 // recorded into c; when c grew, the Result must not be used.
@@ -121,8 +122,8 @@ func typeID(t reflect.Type) string {
 // Subtree returns the sub-result reachable from the member named id
 // through its resolved bindings — the member itself included, the main
 // dependency order inherited, no re-resolution: the bindings ARE the
-// edges. ok is false when id is not a closure member (disabled, or
-// never resolved in).
+// edges. ok is false when id is not in the resolved service set
+// (disabled, or never resolved in).
 func (res Result) Subtree(id string) (Result, bool) {
 	byID := map[string]Member{}
 	for _, m := range res.Ordered {

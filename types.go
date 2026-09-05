@@ -17,7 +17,7 @@
 // consumer registers services (applets are just services that
 // implement a specific interface) from package init() functions and calls
 // Main(); the framework dispatches by argv[0] or by the first subcommand
-// argument, resolves the dependency closure of the chosen applet, drives
+// argument, resolves the chosen applet's service set, drives
 // configuration from arguments, environment variables and config files,
 // and runs the service lifecycle around the applet.
 package fw
@@ -35,7 +35,8 @@ type Stopper interface {
 
 // Starter is implemented by services that need a running phase: anything
 // startable must be stoppable. Start is called sequentially, in dependency
-// order, after every closure member has been configured and just before
+// order, after every member of the resolved service set has been
+// configured and just before
 // the applet runs. A Start error aborts startup: already-started services
 // are stopped in reverse order and the process exits non-zero.
 //
@@ -65,7 +66,7 @@ type Configurable interface {
 // Translator is the seam between Tr/TrN and an i18n catalog service.
 // The core itself depends on it: a service declares
 // Provides(fw.Iface[Translator]()), and the core seeds it into every
-// closure and
+// resolved service set and
 // runs its dependency subtree's Configured before anything renders —
 // on the --help and --write-config short-circuits too, which
 // otherwise run no lifecycle at all. Exactly one Translator may be
@@ -113,8 +114,9 @@ type ConfigurationUpdater interface {
 //
 // Providers are ordinary services: registered cold, discovered by this
 // interface, used statelessly. The provider whose extension matched an
-// actually loaded file (or the --write-config target) is pulled into the
-// closure and receives the normal lifecycle; unused providers stay cold
+// actually loaded file (or the --write-config target) is pulled into
+// the resolved service set and receives the normal lifecycle; unused
+// providers stay cold
 // and are ejected. A provider that wants an unconditional lifecycle
 // declares a dependency or is forced in with --enable.
 type ConfigFormatProvider interface {
@@ -124,7 +126,8 @@ type ConfigFormatProvider interface {
 }
 
 // Applet is a dispatchable entry point. The framework brackets Run with
-// the application lifecycle: every closure member is configured and
+// the application lifecycle: every member of the resolved service
+// set is configured and
 // started before Run is invoked, and stopped in reverse order right after
 // it returns. The process exits with Run's return value.
 //
