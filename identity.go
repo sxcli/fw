@@ -16,7 +16,6 @@ package fw
 
 import (
 	"sxcli.dev/conf/engine"
-	"sxcli.dev/fw/internal/registry"
 )
 
 // CoreID is the framework core's identity — the machine-facing name
@@ -34,10 +33,3 @@ const SystemAlias = "system"
 // config section, the virtual root's name, and the synthesized
 // introspection entry. No service may claim it.
 const CoreAlias = engine.CoreID
-
-// primaryAlias returns the name shown in listings and used for the
-// env prefix and config section. Every catalog entry has one: the
-// chain refuses to commit without a declared alias.
-func primaryAlias(d *registry.Descriptor) string {
-	return d.Aliases[0]
-}

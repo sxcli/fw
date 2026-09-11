@@ -219,9 +219,12 @@ served six masters and is retired:
   finally a legal command name). Aliases need only be unique **within
   a composition**: a collision between accepted services is a `Build`
   violation, resolved by the composer. Convention, documented:
-  libraries prefix (`acme-log`), applications go plain. A service may
-  declare several (`.Alias("cherry-pick", "cp")`) — the first is
-  primary (env prefix, config section, listings), all are selectable.
+  libraries prefix (`acme-log`), applications go plain. A service
+  declares exactly ONE name (`.Alias("cherry-pick")`) — the env
+  prefix, config section, selector and listing entry; a second Alias
+  call is a commit violation. The composition renames with
+  `Builder.Alias`, and a renamed service's registration name is its
+  "original alias" — collision messages carry that provenance.
 
 Operator-facing surfaces throughout this spec that historically said
 "service id" — config sections, env prefixes, dispatch selectors,
@@ -250,9 +253,10 @@ func NewBareRegistration[T any](id string, factory func() *T) *Registration[T]
 func Iface[I any]() reflect.Type // type token for Provides
 
 // on *Registration[T]:
-//   Alias(names ...string)      — REQUIRED; first is primary
-//   Provides(types ...reflect.Type)
-//   Metadata(md *Metadata)
+//   Alias(name string)          — REQUIRED; exactly one, once
+//   Provides(t reflect.Type)    — one interface, multi-call
+//   Upgrade(step engine.Step)   — one chain link, multi-call
+//   Metadata(md *Metadata)      — once
 //   Hidden()
 //   System()
 //   Register()                  — the terminal: validate + commit
@@ -434,7 +438,7 @@ Two independent axes, two verbs:
   unranked **sorted by id**; `Order` also drives listing order (usage,
   `Applets()`, help sections). The ranking is declared once,
   atomically: a second `Order` call is a violation.
-- **`Alias(id, names...)` — composition-level rename.** Overrides what
+- **`Alias(id, name)` — composition-level rename.** Overrides what
   an accepted service answers to, for this app only, upstream
   untouched: `Builder.Alias` > registration `.Alias(...)` —
   registration proposes, composition disposes. All operator surfaces
@@ -973,10 +977,8 @@ engine interprets. The engine stays dumb: it walks a chain.
   ```go
   NewRegistration(ID, newServe, accessor).
       Alias("srv").
-      Migrate(
-          conf.Step(1, func(old ConfigV1) ConfigV2 { … }),
-          conf.Step(2, func(old ConfigV2) Config { … }),
-      ).
+      Upgrade(conf.Step(1, func(old ConfigV1) ConfigV2 { … })).
+      Upgrade(conf.Step(2, func(old ConfigV2) Config { … })).
       Register()
   ```
 
@@ -1062,12 +1064,15 @@ implementation forced:
   start above 1 — older = "no longer supported (oldest supported N)".
 - Placement: `engine.Step`/`NewStep` + `Section.Steps` + validation in
   `NewSchema`; front door `conf.Step(1, func(old V1) V2)` (the spec's
-  exact spelling) + `.Migrate(section, steps...)`. The fw
-  registration-chain `.Migrate` landed at the parity pass
-  (2026-07-19): steps ride the descriptor opaquely (the registry stays
-  engine-ignorant, the Metadata pattern), `fw.Step` mirrors
-  `conf.Step`, and a `Migrate` on a bare registration is a commit
-  violation.
+  exact spelling) + `.ConfigUpgrade(step)`, single-step multi-call
+  (renamed from `.Migrate` 2026-09-11, the section parameter long
+  gone since the root-only front door). The fw registration-chain
+  method landed at the parity pass (2026-07-19) and was renamed
+  `.Upgrade` with the single-alias model (2026-09-11), single-step
+  multi-call: steps ride the descriptor
+  opaquely (the registry stays engine-ignorant, the Metadata
+  pattern), `fw.Step` mirrors `conf.Step`, and an `Upgrade` on a
+  bare registration is a commit violation.
 
 ### --upgrade-config (designed AND implemented 2026-07-18)
 
@@ -1614,8 +1619,6 @@ Checks:
   equals-terminal check reads the common composite-literal case
   (`Config{Version: 3}`) and emits "cannot verify" for computed
   defaults, never silence.
-- **Migrate names a declared section** — `.Migrate("x", …)` with no
-  `.Section("x", …)` in the chain.
 - **discarded `served`** — `l, _ := conf.New(…)` ignoring Load's
   second return is the "tool runs after printing help" bug the
   two-phase front door exists to prevent; the API made the mistake

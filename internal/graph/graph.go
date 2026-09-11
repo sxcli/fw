@@ -87,7 +87,7 @@ func renderMember(d *registry.Descriptor) solver.Member {
 		ID:       d.ID,
 		Core:     d.Core,
 		Concrete: typeID(d.Concrete),
-		Aliases:  d.Aliases,
+		Alias:    d.Alias,
 		Ranked:   d.Ranked,
 	}
 	for _, it := range d.Provides {

@@ -111,11 +111,11 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 	return w, run(w.rt)
 }
 
-func registerSrv(alias ...string) func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+func registerSrv(alias string) func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 	return func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		NewRegistration("example.com/app/srv", func() *appSrv { return &appSrv{log: log, cfg: appCfg{Version: 1, Greeting: "default"}} },
 			func(s *appSrv) *appCfg { return &s.cfg }).
-			Alias(alias...).registerInto(reg, c)
+			Alias(alias).registerInto(reg, c)
 	}
 }
 
@@ -147,15 +147,20 @@ func TestHyphenAliasReachesEnv(t *testing.T) {
 	}
 }
 
-func TestSecondaryAliasSelects(t *testing.T) {
-	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin", "cp", "--greeting=via-cp"}, nil, nil,
-		func(reg *registry.Registry, c *fail.Collector, log *[]string) {
-			registerSrv("cherry-pick", "cp")(reg, c, log)
-			NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
-				Alias("two").registerInto(reg, c)
-		})
-	if code != 0 || strings.Join(w.log, ",") != "srv.run:via-cp" {
-		t.Errorf("secondary alias must select: code=%d log=%v stderr:\n%s", code, w.log, w.stderr.String())
+// TestSecondaryAliasSelects died with the single-alias model: a
+// service has exactly ONE operator name and the composition renames
+// it — secondary aliases no longer exist to select by. In its place:
+// a second Alias call is the once-violation, judged by the shared
+// rules at commit.
+func TestAliasDeclaredOnce(t *testing.T) {
+	reg, c := catalogWorld()
+	NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{} }).
+		Alias("two").Alias("dos").registerInto(reg, c)
+	if c.Len() == 0 {
+		t.Fatal("a second Alias call must be a violation")
+	}
+	if !strings.Contains(c.All()[0].Error(), `Alias called twice ("two"; then "dos")`) {
+		t.Errorf("wrong verdict: %v", c.All())
 	}
 }
 
@@ -168,7 +173,7 @@ func TestUsageListsPrimariesInRankOrder(t *testing.T) {
 	b := Builder().AcceptAll().Order("example.com/app/two", "example.com/app/srv")
 	w, code := appWorld(t, b, []string{"bin", "ghost"}, nil, nil,
 		func(reg *registry.Registry, c *fail.Collector, log *[]string) {
-			registerSrv("cherry-pick", "cp")(reg, c, log)
+			registerSrv("cherry-pick")(reg, c, log)
 			NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
 				Alias("two").registerInto(reg, c)
 		})
@@ -176,8 +181,8 @@ func TestUsageListsPrimariesInRankOrder(t *testing.T) {
 		t.Fatalf("dispatch failure expected, code=%d", code)
 	}
 	text := w.stderr.String()
-	if !strings.Contains(text, "two") || !strings.Contains(text, "cherry-pick") || strings.Contains(text, "cp\n") {
-		t.Errorf("usage must list primaries: %s", text)
+	if !strings.Contains(text, "two") || !strings.Contains(text, "cherry-pick") {
+		t.Errorf("usage must list the operator names: %s", text)
 	}
 	if strings.Index(text, "two") > strings.Index(text, "cherry-pick") {
 		t.Errorf("usage must follow rank order: %s", text)

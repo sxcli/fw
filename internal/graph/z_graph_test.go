@@ -96,7 +96,7 @@ var storageType = reflect.TypeOf((*storage)(nil)).Elem()
 // reg commits instance under id the way the root's chain does: the
 // descriptor arrives with identity validated and Provides verified.
 func reg(r *registry.Registry, id string, instance any, provides ...reflect.Type) *registry.Descriptor {
-	d := &registry.Descriptor{ID: id, Instance: instance, Concrete: reflect.TypeOf(instance), Aliases: []string{id}, Provides: provides}
+	d := &registry.Descriptor{ID: id, Instance: instance, Concrete: reflect.TypeOf(instance), Alias: id, Provides: provides}
 	r.Commit(d)
 	return d
 }

@@ -52,7 +52,7 @@ type Descriptor struct {
 	// Catalog-model fields (the composition release). On a committed
 	// catalog entry Instance and ConfigPtr stay nil until Build calls
 	// Make — the catalog holds factories and declarations, no state.
-	Aliases    []string                          // operator-facing names, primary first
+	Alias      string                            // THE operator-facing name
 	Ranked     bool                              // listed in the composition's Order: entitled to win single-valued ties
 	CfgType    reflect.Type                      // *C, nil for config-less services
 	Migrations any                               // opaque migration steps ([]engine.Step); the root maps them into sections

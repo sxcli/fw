@@ -43,7 +43,8 @@ type catalog struct {
 func (ca *catalog) index(c *fail.Collector) {
 	ca.byAlias = map[string]*registry.Descriptor{}
 	for _, d := range ca.reg.All() {
-		for _, a := range d.Aliases {
+		{
+			a := d.Alias
 			if prev, taken := ca.byAlias[a]; taken && prev != d {
 				c.Fail("operator name %q resolves to both %q and %q", a, prev.ID, d.ID)
 			} else {
@@ -85,7 +86,7 @@ func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
 // both by construction.
 func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.Result,
 	core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) *engine.Schema {
-	return engine.NewSchema(c, primaryAlias(d), coreContribs(core, ctrl, kn),
+	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn),
 		sections(ca.composedMembers(res)), ca.suppressed, ca.shortPriority)
 }
 

@@ -107,7 +107,7 @@ func TestMigrateOnTheRegistrationChain(t *testing.T) {
 	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
-		Migrate(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
+		Upgrade(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
 			out.Greeting = old.Greeting
 			set.Add(&out.Greeting)
 		})).registerInto(w.cat, w.c)
@@ -124,7 +124,7 @@ func TestMigrateOnBareRegistrationIsViolation(t *testing.T) {
 	w.applet(0)
 	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").
-		Migrate(Step(1, func(old *parityCfgV1, has *Presence, out *parityCfgV1, set *Presence) {})).
+		Upgrade(Step(1, func(old *parityCfgV1, has *Presence, out *parityCfgV1, set *Presence) {})).
 		registerInto(w.cat, w.c)
 	if w.c.Len() == 0 {
 		t.Fatal("Migrate without a config struct must be a commit violation")
@@ -144,7 +144,7 @@ func TestUpgradeConfigCoversTheWholeCatalog(t *testing.T) {
 	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
-		Migrate(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
+		Upgrade(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
 			out.Greeting = old.Greeting
 			set.Add(&out.Greeting)
 		})).registerInto(w.cat, w.c)

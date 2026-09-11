@@ -89,13 +89,13 @@ func TestAcceptIsASet(t *testing.T) {
 
 func TestAliasOverrideReplacesEntirely(t *testing.T) {
 	_, build := builderWorld(t)
-	app, err := build(Builder().AcceptAll().Alias("example.com/x/a", "anna", "aa"))
+	app, err := build(Builder().AcceptAll().Alias("example.com/x/a", "anna"))
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
 	}
 	d, _ := app.reg.ByID("example.com/x/a")
-	if strings.Join(d.Aliases, ",") != "anna,aa" {
-		t.Errorf("Builder.Alias must replace the registration aliases: %v", d.Aliases)
+	if d.Alias != "anna" {
+		t.Errorf("Builder.Alias must replace the registration alias: %v", d.Alias)
 	}
 }
 

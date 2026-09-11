@@ -35,7 +35,7 @@ func newReg() (*Registry, *fail.Collector) {
 // commit stores instance under id the way the root's chain does: the
 // descriptor arrives with identity and shape already validated.
 func commit(r *Registry, id string, instance any) *Descriptor {
-	d := &Descriptor{ID: id, Instance: instance, Concrete: reflect.TypeOf(instance), Aliases: []string{id}}
+	d := &Descriptor{ID: id, Instance: instance, Concrete: reflect.TypeOf(instance), Alias: id}
 	r.Commit(d)
 	return d
 }

@@ -50,10 +50,15 @@ func catalogWorld() (*registry.Registry, *fail.Collector) {
 // chain builds a valid, committable registration for a catService
 // counting its constructions.
 func chain(id string, built *int) *Registration[catService] {
+	return bareChain(id, built).Alias("cat")
+}
+
+// bareChain is chain without the alias, for the alias-verdict cases.
+func bareChain(id string, built *int) *Registration[catService] {
 	return NewRegistration(id, func() *catService {
 		*built++
 		return &catService{built: built, cfg: catCfg{Version: 1, Level: "info"}}
-	}, func(s *catService) *catCfg { return &s.cfg }).Alias("cat")
+	}, func(s *catService) *catCfg { return &s.cfg })
 }
 
 func TestCommitHoldsNoState(t *testing.T) {
@@ -82,7 +87,7 @@ func TestCommitHoldsNoState(t *testing.T) {
 	if cfg.Level != "info" {
 		t.Errorf("constructor defaults lost: %q", cfg.Level)
 	}
-	if d.Aliases[0] != "cat" || d.CfgType == nil {
+	if d.Alias != "cat" || d.CfgType == nil {
 		t.Errorf("declarations not recorded: %+v", d)
 	}
 }
@@ -112,14 +117,14 @@ func TestCommitViolations(t *testing.T) {
 			return r
 		}, "an alias is required"},
 		{"bad alias charset", func() *Registration[catService] {
-			return chain("example.com/x/cat", &built).Alias("Bad_Name")
+			return bareChain("example.com/x/cat", &built).Alias("Bad_Name")
 		}, "lowercase letters, digits and hyphens"},
 		{"reserved alias", func() *Registration[catService] {
-			return chain("example.com/x/cat", &built).Alias("core")
+			return bareChain("example.com/x/cat", &built).Alias("core")
 		}, "reserved"},
-		{"duplicate alias in chain", func() *Registration[catService] {
-			return chain("example.com/x/cat", &built).Alias("cat")
-		}, "declared twice"},
+		{"alias declared twice", func() *Registration[catService] {
+			return chain("example.com/x/cat", &built).Alias("dos")
+		}, "Alias called twice"},
 		{"bad id shape", func() *Registration[catService] {
 			return chain("Example.com//x", &built)
 		}, "package-shaped"},
@@ -197,12 +202,12 @@ func TestDoubleCommitOfOneChain(t *testing.T) {
 func TestBareAndAppletCommit(t *testing.T) {
 	reg, c := catalogWorld()
 	NewBareRegistration("example.com/x/app", func() *catApplet { return &catApplet{} }).
-		Alias("app", "a").Hidden().registerInto(reg, c)
+		Alias("app").Hidden().registerInto(reg, c)
 	if c.Len() != 0 {
 		t.Fatalf("unexpected violations: %v", c.All())
 	}
 	d, _ := reg.ByID("example.com/x/app")
-	if !d.Hidden || d.CfgType != nil || len(d.Aliases) != 2 {
+	if !d.Hidden || d.CfgType != nil || d.Alias != "app" {
 		t.Errorf("bare applet entry wrong: %+v", d)
 	}
 	inst, cfgPtr := d.Make()

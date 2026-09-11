@@ -51,7 +51,7 @@ func (i *Introspector) Applets() []string {
 	var out []string
 	for _, d := range i.cat.reg.All() {
 		if d.Concrete.Implements(appletType) && !d.Hidden {
-			out = append(out, primaryAlias(d))
+			out = append(out, d.Alias)
 		}
 	}
 	return out
@@ -70,7 +70,7 @@ func (i *Introspector) SingleApplet() (string, bool) {
 	for _, d := range i.cat.reg.All() {
 		if d.Concrete.Implements(appletType) && !d.System {
 			n++
-			alias = primaryAlias(d)
+			alias = d.Alias
 		}
 	}
 	ok := n == 1
@@ -110,7 +110,7 @@ func (i *Introspector) Services() []string {
 	}
 	out := []string{CoreAlias}
 	for _, m := range i.cat.composedMembers(i.res) {
-		out = append(out, primaryAlias(m.Desc))
+		out = append(out, m.Desc.Alias)
 	}
 	return out
 }

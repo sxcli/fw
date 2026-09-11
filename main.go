@@ -198,7 +198,7 @@ func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 	if len(public) > 0 {
 		fmt.Fprintln(rt.stderr, Tr("applets:"))
 		for _, d := range public {
-			fmt.Fprintf(rt.stderr, "  %s\n", primaryAlias(d))
+			fmt.Fprintf(rt.stderr, "  %s\n", d.Alias)
 		}
 	}
 }
@@ -270,7 +270,7 @@ func sections(ordered []graph.Member) []engine.Section {
 		if m.Desc.ConfigPtr != nil {
 			meta, _ := m.Desc.Metadata.(*engine.Meta)
 			steps, _ := m.Desc.Migrations.([]engine.Step)
-			out = append(out, engine.Section{Name: primaryAlias(m.Desc), ID: m.Desc.ID, Ptr: m.Desc.ConfigPtr, Meta: meta, Steps: steps})
+			out = append(out, engine.Section{Name: m.Desc.Alias, ID: m.Desc.ID, Ptr: m.Desc.ConfigPtr, Meta: meta, Steps: steps})
 		}
 	}
 	return out
@@ -286,7 +286,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	// the operator surfaces — env prefix, config file names and
 	// sections, help — speak the applet's primary alias; the graph and
 	// the inject vocabulary speak its id
-	alias := primaryAlias(d)
+	alias := d.Alias
 	p := &invocationPlan{}
 	p.src = engine.Sources{
 		Args:           args,
@@ -446,7 +446,7 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 		if member.ConfigPtr != nil {
 			meta, _ := member.Metadata.(*engine.Meta)
 			steps, _ := member.Migrations.([]engine.Step)
-			all = append(all, engine.Section{Name: primaryAlias(member), Ptr: member.ConfigPtr, Meta: meta, Steps: steps})
+			all = append(all, engine.Section{Name: member.Alias, Ptr: member.ConfigPtr, Meta: meta, Steps: steps})
 		}
 	}
 	// a FILE schema: sections, chains and fields only — argument and
@@ -454,7 +454,7 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	// spec and irrelevant to a file transform (two applets with
 	// disjoint resolved service sets may both say conf:"port"; their
 	// shared file must still upgrade)
-	sch := engine.NewFileSchema(rt.c, primaryAlias(d), coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
+	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
 	if rt.c.Len() == 0 {
 		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
 	}

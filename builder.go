@@ -40,8 +40,8 @@ type AppBuilder struct {
 }
 
 type rename struct {
-	id    string
-	names []string
+	id   string
+	name string
 }
 
 // Builder starts a composition against the catalog.
@@ -94,8 +94,8 @@ func (b *AppBuilder) ShortArgPriority(ids ...string) *AppBuilder {
 // Beyond collision-fixing this is how a released binary pins its
 // operator contract: no upstream rename ever touches a deployed
 // config file again.
-func (b *AppBuilder) Alias(id string, names ...string) *AppBuilder {
-	b.renames = append(b.renames, rename{id: id, names: names})
+func (b *AppBuilder) Alias(id, name string) *AppBuilder {
+	b.renames = append(b.renames, rename{id: id, name: name})
 	return b
 }
 
@@ -147,8 +147,8 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 		for _, id := range b.composedOrder(accepted, rank) {
 			d, _ := cat.ByID(id)
 			member := *d // the catalog entry stays pristine; the App owns the copy
-			if names, over := renamed[id]; over {
-				member.Aliases = names
+			if name, over := renamed[id]; over {
+				member.Alias = name
 			}
 			_, member.Ranked = rank[id]
 			// every catalog entry came through the chain, so Make is
@@ -242,10 +242,10 @@ func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[str
 // renamed hands the Alias overrides to the shared rules — the
 // verdicts (membership, grammar, reservations, double renames) are
 // the solver's; this side only translates and reports.
-func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c *fail.Collector) map[string][]string {
+func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c *fail.Collector) map[string]string {
 	renames := make([]solver.Rename, len(b.renames))
 	for i, r := range b.renames {
-		renames[i] = solver.Rename{ID: r.id, Names: r.names}
+		renames[i] = solver.Rename{ID: r.id, Name: r.name}
 	}
 	out, bodies := solver.CheckRenames(renames,
 		func(id string) bool { return accepted[id] },
@@ -258,11 +258,16 @@ func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c
 
 // checkAliases hands the accepted members' effective names to the
 // shared rules for the collision verdict.
-func (b *AppBuilder) checkAliases(cat *registry.Registry, accepted map[string]bool, renamed map[string][]string, c *fail.Collector) {
+func (b *AppBuilder) checkAliases(cat *registry.Registry, accepted map[string]bool, renamed map[string]string, c *fail.Collector) {
 	var members []solver.Named
 	for _, d := range cat.All() {
 		if accepted[d.ID] {
-			members = append(members, solver.Named{ID: d.ID, Aliases: composedAliases(d, renamed)})
+			n := solver.Named{ID: d.ID, Alias: d.Alias}
+			if name, over := renamed[d.ID]; over {
+				n.Alias = name
+				n.Original = d.Alias
+			}
+			members = append(members, n)
 		}
 	}
 	for _, body := range solver.CheckAliases(members) {
@@ -300,15 +305,6 @@ func (b *AppBuilder) composedOrder(accepted map[string]bool, rank map[string]int
 	sort.Slice(rankedIDs, func(i, j int) bool { return rank[rankedIDs[i]] < rank[rankedIDs[j]] })
 	sort.Strings(rest)
 	return append(rankedIDs, rest...)
-}
-
-// composedAliases returns a member's operator names after renames.
-func composedAliases(d *registry.Descriptor, renamed map[string][]string) []string {
-	out := d.Aliases
-	if names, over := renamed[d.ID]; over {
-		out = names
-	}
-	return out
 }
 
 // defaultsInDomain is the value-level metadata check deferred from the

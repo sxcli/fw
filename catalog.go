@@ -38,18 +38,19 @@ var defaultRegistry = registry.New(defaultCollector)
 // construct freely, commit completely. Until Register is called
 // nothing exists anywhere; the catalog never holds a half-built entry.
 type Registration[T any] struct {
-	id        string
-	factory   func() *T
-	cfgType   reflect.Type // *C, nil for bare registrations
-	access    func(*T) any // returns the instance's *C; nil for bare
-	aliases   []string     // primary first
-	provides  []reflect.Type
-	metadata  *Metadata
-	steps     []engine.Step
-	isCore    bool
-	hidden    bool
-	system    bool
-	committed bool
+	id            string
+	factory       func() *T
+	cfgType       reflect.Type // *C, nil for bare registrations
+	access        func(*T) any // returns the instance's *C; nil for bare
+	aliases       []string     // recorded Alias declarations — exactly one is legal
+	provides      []reflect.Type
+	metadata      *Metadata
+	metadataCalls int
+	steps         []engine.Step
+	isCore        bool
+	hidden        bool
+	system        bool
+	committed     bool
 }
 
 // NewRegistration starts the registration of a service owning a
@@ -83,13 +84,15 @@ func Iface[I any]() reflect.Type {
 	return reflect.TypeOf((*I)(nil)).Elem()
 }
 
-// Alias declares the service's operator-facing names — REQUIRED, and
-// deliberately never derived: the author who names their service made
-// a choice they can be blamed for. The first name is primary (env
-// prefix, config section, listings); all are selectable. Lowercase,
+// Alias declares the service's ONE operator-facing name — REQUIRED,
+// and deliberately never derived: the author who names their service
+// made a choice they can be blamed for. It is the env prefix, the
+// config section, the selector and the listing entry. Lowercase,
 // digits and hyphens; hyphens reach the environment as underscores.
-func (r *Registration[T]) Alias(names ...string) *Registration[T] {
-	r.aliases = append(r.aliases, names...)
+// Declared once — every call is recorded and a second one is a
+// commit violation; the composition renames with AppBuilder.Alias.
+func (r *Registration[T]) Alias(name string) *Registration[T] {
+	r.aliases = append(r.aliases, name)
 	return r
 }
 
@@ -102,12 +105,12 @@ func (r *Registration[T]) core() *Registration[T] {
 	return r
 }
 
-// Provides declares the interfaces the service provides, as Iface
-// tokens. Only declared interfaces participate in dependency
-// injection; declaring one the concrete type does not implement is a
-// violation at the Register commit.
-func (r *Registration[T]) Provides(types ...reflect.Type) *Registration[T] {
-	r.provides = append(r.provides, types...)
+// Provides declares ONE interface the service provides, as an Iface
+// token; call it once per interface. Only declared interfaces
+// participate in dependency injection; declaring one the concrete
+// type does not implement is a violation at the Register commit.
+func (r *Registration[T]) Provides(t reflect.Type) *Registration[T] {
+	r.provides = append(r.provides, t)
 	return r
 }
 
@@ -131,17 +134,20 @@ func Step[From, To any](from uint32, fn func(old *From, has *Presence, out *To, 
 // engine.
 type Presence = engine.Presence
 
-// Migrate attaches the service's config migration chain, oldest step
-// first — how a schema evolves without stranding deployed files. The
-// chain shape is validated when each invocation's schema is built.
-func (r *Registration[T]) Migrate(steps ...engine.Step) *Registration[T] {
-	r.steps = append(r.steps, steps...)
+// Upgrade attaches one link of the service's config upgrade chain,
+// oldest first, one call per step — how a schema evolves without
+// stranding deployed files. The chain shape is validated when each
+// invocation's schema is built.
+func (r *Registration[T]) Upgrade(step engine.Step) *Registration[T] {
+	r.steps = append(r.steps, step)
 	return r
 }
 
-// Metadata attaches the service's declarative description.
+// Metadata attaches the service's declarative description. Declared
+// once — a second call is a commit violation.
 func (r *Registration[T]) Metadata(md *Metadata) *Registration[T] {
 	r.metadata = md
+	r.metadataCalls++
 	return r
 }
 
@@ -183,22 +189,23 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	isApplet := concrete.Implements(appletType)
 	_, idClaimed := reg.ByID(r.id)
 	chain := registration.Chain{
-		ID:           r.id,
-		ReservedIDs:  []string{CoreID},
-		Aliases:      r.aliases,
-		Applet:       isApplet,
-		AppletKnown:  true, // reflect always answers
-		Starter:      concrete.Implements(starterType),
-		Stopper:      concrete.Implements(stopperType),
-		Hidden:       r.hidden,
-		System:       r.system,
-		Core:         r.isCore,
-		Reserved:     []string{CoreAlias, SystemAlias},
-		HasConfig:    r.cfgType != nil,
-		NilAccessor:  r.cfgType != nil && r.access == nil,
-		Positionals:  engine.HasPositionals(r.cfgType),
-		IDClaimed:    idClaimed,
-		UpgradeSteps: len(r.steps),
+		ID:            r.id,
+		ReservedIDs:   []string{CoreID},
+		Aliases:       r.aliases,
+		Applet:        isApplet,
+		AppletKnown:   true, // reflect always answers
+		Starter:       concrete.Implements(starterType),
+		Stopper:       concrete.Implements(stopperType),
+		Hidden:        r.hidden,
+		System:        r.system,
+		Core:          r.isCore,
+		Reserved:      []string{CoreAlias, SystemAlias},
+		HasConfig:     r.cfgType != nil,
+		NilAccessor:   r.cfgType != nil && r.access == nil,
+		Positionals:   engine.HasPositionals(r.cfgType),
+		MetadataCalls: r.metadataCalls,
+		IDClaimed:     idClaimed,
+		UpgradeSteps:  len(r.steps),
 	}
 	violations := registration.Check(chain)
 	for _, v := range violations {
@@ -252,7 +259,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 			Metadata:   meta,
 			Hidden:     r.hidden || r.system,
 			System:     r.system,
-			Aliases:    append([]string(nil), r.aliases...),
+			Alias:      r.aliases[0],
 			CfgType:    r.cfgType,
 			Migrations: append([]engine.Step(nil), r.steps...),
 			Make: func() (any, any) {
