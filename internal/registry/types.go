@@ -52,12 +52,13 @@ type Descriptor struct {
 	// Catalog-model fields (the composition release). On a committed
 	// catalog entry Instance and ConfigPtr stay nil until Build calls
 	// Make — the catalog holds factories and declarations, no state.
-	Alias      string                            // THE operator-facing name
-	Applet     bool                              // a dispatchable entry point; data only, set by the commit
-	Ranked     bool                              // listed in the composition's Order: entitled to win single-valued ties
-	CfgType    reflect.Type                      // *C, nil for config-less services
-	Migrations any                               // opaque migration steps ([]engine.Step); the root maps them into sections
-	Make       func() (instance any, cfgPtr any) // factory ⊗ accessor, composed
+	Alias           string                            // THE operator-facing name
+	Applet          bool                              // a dispatchable entry point; data only, set by the commit
+	AllowsSuperuser bool                              // the applet accepts running with superuser privileges
+	Ranked          bool                              // listed in the composition's Order: entitled to win single-valued ties
+	CfgType         reflect.Type                      // *C, nil for config-less services
+	Migrations      any                               // opaque migration steps ([]engine.Step); the root maps them into sections
+	Make            func() (instance any, cfgPtr any) // factory ⊗ accessor, composed
 	// in typed land; every static check ran before it was erased
 }
 

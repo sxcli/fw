@@ -153,6 +153,7 @@ type runtime struct {
 	openPinned     func(string) (io.ReadCloser, error)
 	configMaxBytes uint64           // effective config file size cap in bytes; 0 = unlimited
 	execApplet     func(Applet) int // nil → applet.Run(); the SCM handler overrides
+	superuser      func() bool      // platform truth: id 0 on unix, elevated token on Windows
 	reported       bool
 	translatorID   string // id of the sole Translator-providing service, "" = none
 }
@@ -167,6 +168,7 @@ func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *ru
 		stderr:    os.Stderr,
 		locations: engine.ProductionLocations,
 		stat:      engine.StatRegular,
+		superuser: isSuperuser,
 		lstat: func(path string) error {
 			_, err := os.Lstat(path)
 			return err

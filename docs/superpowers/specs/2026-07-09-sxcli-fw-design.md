@@ -615,6 +615,16 @@ suppressible as `FeatureApplets`; a bare `--` ends its argv scan.
 document — and the dispatch-failure usage text points at
 `--applets` instead of embedding the list.
 
+Running as superuser (id 0 on unix, an elevated token on Windows) is
+refused unless the dispatched applet's registration declared
+`.AllowsSuperuser()` — acceptance is the author's knowledge, not the
+operator's, and the program that never expected root does not run as
+root. The refusal is a startup verdict naming the applet, before any
+applet code runs; `--applets` refuses too (no applet vouches for the
+listing). The one door that still serves is `--help`, preceded by a
+loud warning — an operator staring at a refusing binary needs the
+page that explains it.
+
 ### Entry point
 
 ```go

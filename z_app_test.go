@@ -56,6 +56,10 @@ func (a *appAux) Configured() error {
 // appWorld composes an App from a private catalog and wires a
 // runtime with hermetic seams around it.
 func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]string, register func(reg *registry.Registry, c *fail.Collector, log *[]string)) (*world, int) {
+	return appWorldWith(t, b, argv, files, env, register, nil)
+}
+
+func appWorldWith(t *testing.T, b *AppBuilder, argv []string, files, env map[string]string, register func(reg *registry.Registry, c *fail.Collector, log *[]string), tweak func(*world)) (*world, int) {
 	t.Helper()
 	w := &world{c: &fail.Collector{}}
 	reg, catalogC := catalogWorld()
@@ -107,6 +111,9 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 		openPinned: func(path string) (io.ReadCloser, error) { return nil, fs.ErrNotExist },
 	}
 	t.Cleanup(func() { activeTranslator = nil })
+	if tweak != nil {
+		tweak(w)
+	}
 	// the app is already built above; drive the pipeline directly
 	return w, run(w.rt)
 }
@@ -485,6 +492,46 @@ func errText2(c *fail.Collector) string {
 		b.WriteString("|")
 	}
 	return b.String()
+}
+
+func TestSuperuserGate(t *testing.T) {
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		registerSrv("srv")(reg, c, log)
+	}
+	asRoot := func(w *world) { w.rt.superuser = func() bool { return true } }
+	// execution refuses, naming the applet
+	w, code := appWorldWith(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register, asRoot)
+	if code != 2 || !strings.Contains(w.stderr.String(), `applet "srv" does not support running as root`) {
+		t.Errorf("root must refuse without the declaration: code=%d\n%s", code, w.stderr.String())
+	}
+	// --help still serves, with the warning
+	w, code = appWorldWith(t, Builder().AcceptAll(), []string{"bin", "--help"}, nil, nil, register, asRoot)
+	if code != 0 || !strings.Contains(w.stderr.String(), "warning: running as root is not supported") {
+		t.Errorf("help must serve with the warning: code=%d\n%s", code, w.stderr.String())
+	}
+	if !strings.Contains(w.stdout.String(), "--greeting") {
+		t.Errorf("help must still render the schema: %q", w.stdout.String())
+	}
+	// --applets has no applet to vouch for the run
+	w, code = appWorldWith(t, Builder().AcceptAll(), []string{"bin", "--applets"}, nil, nil, register, asRoot)
+	if code != 2 || !strings.Contains(w.stderr.String(), "--applets: running as root is not supported") {
+		t.Errorf("the listing must refuse as root: code=%d\n%s", code, w.stderr.String())
+	}
+	// the declaration lets everything through
+	allowed := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewRegistration("example.com/app/srv", func() *appSrv { return &appSrv{log: log, cfg: appCfg{Version: 1, Greeting: "default"}} },
+			func(s *appSrv) *appCfg { return &s.cfg }).
+			Alias("srv").AllowsSuperuser().registerInto(reg, c)
+	}
+	w, code = appWorldWith(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, allowed, asRoot)
+	if code != 0 {
+		t.Errorf("the declaration must let the applet run: code=%d\n%s", code, w.stderr.String())
+	}
+	// a plain id is unaffected
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register)
+	if code != 0 {
+		t.Errorf("non-root runs are untouched: code=%d\n%s", code, w.stderr.String())
+	}
 }
 
 func TestBuildSurfacesCommitViolations(t *testing.T) {

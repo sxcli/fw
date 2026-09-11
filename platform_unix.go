@@ -34,3 +34,9 @@ func platformMain(app *App) int {
 func BinaryBasename(argv0 string) string {
 	return filepath.Base(argv0)
 }
+
+// isSuperuser reports whether the process runs with superuser
+// privileges: the effective user id is 0.
+func isSuperuser() bool {
+	return os.Geteuid() == 0
+}

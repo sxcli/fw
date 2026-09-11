@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
 )
@@ -104,4 +105,11 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 // dispatch refuses).
 func BinaryBasename(argv0 string) string {
 	return strings.TrimSuffix(filepath.Base(argv0), ".exe")
+}
+
+// isSuperuser reports whether the process runs with superuser
+// privileges: an elevated token. Windows folks cope with the unix
+// name.
+func isSuperuser() bool {
+	return windows.GetCurrentProcessToken().IsElevated()
 }

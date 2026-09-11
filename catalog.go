@@ -50,6 +50,7 @@ type Registration[T any] struct {
 	isCore        bool
 	hidden        bool
 	system        bool
+	superuser     bool
 	committed     bool
 }
 
@@ -93,6 +94,16 @@ func Iface[I any]() reflect.Type {
 // commit violation; the composition renames with AppBuilder.Alias.
 func (r *Registration[T]) Alias(name string) *Registration[T] {
 	r.aliases = append(r.aliases, name)
+	return r
+}
+
+// AllowsSuperuser declares that the applet is written to run with
+// superuser privileges — id 0 on unix, an elevated token on Windows.
+// Absent, the default, the framework refuses to start the applet as
+// superuser: acceptance is the author's knowledge, not the
+// operator's.
+func (r *Registration[T]) AllowsSuperuser() *Registration[T] {
+	r.superuser = true
 	return r
 }
 
@@ -252,17 +263,18 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		r.committed = true
 		factory, access := r.factory, r.access
 		reg.Commit(&registry.Descriptor{
-			ID:         r.id,
-			Core:       r.isCore,
-			Applet:     isApplet,
-			Concrete:   concrete,
-			Provides:   append([]reflect.Type(nil), r.provides...),
-			Metadata:   meta,
-			Hidden:     r.hidden || r.system,
-			System:     r.system,
-			Alias:      r.aliases[0],
-			CfgType:    r.cfgType,
-			Migrations: append([]engine.Step(nil), r.steps...),
+			ID:              r.id,
+			Core:            r.isCore,
+			Applet:          isApplet,
+			AllowsSuperuser: r.superuser,
+			Concrete:        concrete,
+			Provides:        append([]reflect.Type(nil), r.provides...),
+			Metadata:        meta,
+			Hidden:          r.hidden || r.system,
+			System:          r.system,
+			Alias:           r.aliases[0],
+			CfgType:         r.cfgType,
+			Migrations:      append([]engine.Step(nil), r.steps...),
 			Make: func() (any, any) {
 				inst := factory()
 				var cfgPtr any

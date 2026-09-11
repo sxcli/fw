@@ -82,14 +82,27 @@ func run(rt *runtime) int {
 	if rt.c.Len() > 0 {
 		rt.report(buffer)
 	} else if rt.appletsRequested() {
-		// the listing serves before dispatch: `mybox --applets` has no
-		// selector word, so dispatch would fail exactly when the
-		// listing is wanted most
-		code = rt.listApplets()
+		if rt.isRoot() {
+			// only --help serves as root: the listing has no applet
+			// to vouch for the run
+			rt.c.Fail("--applets: running as root is not supported")
+			code = rt.report(buffer)
+		} else {
+			// the listing serves before dispatch: `mybox --applets`
+			// has no selector word, so dispatch would fail exactly
+			// when the listing is wanted most
+			code = rt.listApplets()
+		}
 	} else if d, applet, args, ok := rt.dispatch(); ok {
 		code = rt.execute(buffer, d, applet, args)
 	}
 	return code
+}
+
+// isRoot answers the platform's superuser truth; test worlds that
+// never set the seam are not root.
+func (rt *runtime) isRoot() bool {
+	return rt.superuser != nil && rt.superuser()
 }
 
 // appletsRequested scans argv for the --applets core argument — a
@@ -416,6 +429,16 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 	code := 2
 	rt.workingSet(d)
 	p := rt.plan(rt.c, d, args)
+	if rt.isRoot() && !d.AllowsSuperuser {
+		if p.help && !p.upgrade {
+			// help is the one door that still serves — an operator
+			// staring at a refusing binary needs the page that
+			// explains it
+			fmt.Fprintln(rt.stderr, Tr("warning: running as root is not supported"))
+		} else {
+			rt.c.Fail("applet %q does not support running as root — the registration can declare AllowsSuperuser", d.Alias)
+		}
+	}
 	if p.upgrade {
 		if rt.c.Len() == 0 {
 			rt.upgradeConfig(d, p)
