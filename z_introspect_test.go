@@ -99,6 +99,42 @@ func argsWorld(t *testing.T, files map[string]string, do func(sys system.System)
 	return w
 }
 
+// posProbeApplet declares positional slots so introspection has
+// something to report: an optional hinted input and a rest tail.
+type posProbeCfg struct {
+	Version uint32   `json:"version"`
+	Input   string   `json:"input" pos:"0,optional" usage:"input file"`
+	Tail    []string `json:"tail" pos:"rest" usage:"everything else"`
+}
+
+type posProbeApplet struct{ cfg posProbeCfg }
+
+func (p *posProbeApplet) Configured() error { return nil }
+func (p *posProbeApplet) Run() int          { return 0 }
+
+func TestPositionalsReportTheSlots(t *testing.T) {
+	var slots []PosInfo
+	w := argsWorld(t, nil, func(sys system.System) {
+		slots = sys.Introspector("posapp").Positionals()
+	})
+	NewRegistration("test/posapp", func() *posProbeApplet { return &posProbeApplet{cfg: posProbeCfg{Version: 1}} },
+		func(p *posProbeApplet) *posProbeCfg { return &p.cfg }).
+		Alias("posapp").
+		Metadata(&Metadata{Fields: map[string]any{
+			"Input": FieldMetadata[string]{Hint: HintFile},
+		}}).
+		registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if len(slots) != 2 || slots[0].Name != "input" || !slots[1].Rest {
+		t.Fatalf("slots wrong: %+v", slots)
+	}
+	if slots[0].Hint != HintFile {
+		t.Errorf("the hint must ride the slot: %+v", slots[0])
+	}
+}
+
 func TestArgumentsReportsResolvedServiceSetSchema(t *testing.T) {
 	var infos []ArgInfo
 	w := argsWorld(t, nil, func(sys system.System) {

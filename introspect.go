@@ -27,6 +27,9 @@ import (
 // re-exported so fw-side consumers keep one import.
 type ArgInfo = system.ArgInfo
 
+// PosInfo mirrors the system vocabulary for positional slots.
+type PosInfo = system.PosInfo
+
 // Introspector is the TARGET-SCOPED read-only view behind
 // system.Introspector: one applet's resolved graph, built from the
 // attach-time catalog snapshot and NOTHING else — no config files, no
@@ -175,6 +178,39 @@ func (i *Introspector) Arguments(_ []string) []ArgInfo {
 		return nil
 	}
 	return argInfos(sch)
+}
+
+// Positionals returns the target's positional slots — the same
+// catalog-only schema Arguments answers from, so the two views
+// cannot disagree.
+func (i *Introspector) Positionals() []system.PosInfo {
+	if i.target == nil {
+		return nil
+	}
+	c := &fail.Collector{}
+	var core engine.Core
+	ctrl := newControlKnobs()
+	var kn upgradeKnobs
+	var ls listingKnob
+	sch := i.cat.schema(c, i.target, i.res, &core, ctrl, &kn, &ls)
+	if c.Len() != 0 {
+		// the same offer-nothing rule as Arguments: a schema
+		// violation here is a startup-checked inconsistency
+		return nil
+	}
+	var out []system.PosInfo
+	indexed, rest := sch.PositionalFields()
+	for k := 0; k < len(indexed); k++ {
+		f := indexed[k]
+		out = append(out, system.PosInfo{Name: f.JSONPath[len(f.JSONPath)-1],
+			Usage: f.Usage, Type: f.Type, Allowed: f.Allowed, Hint: f.Hint})
+	}
+	if rest != nil {
+		out = append(out, system.PosInfo{Name: rest.JSONPath[len(rest.JSONPath)-1],
+			Usage: rest.Usage, Type: rest.Type, Allowed: rest.Allowed,
+			Hint: rest.Hint, Rest: true})
+	}
+	return out
 }
 
 // argInfos maps a schema to its public description.

@@ -22,8 +22,6 @@
 package system
 
 import (
-	"reflect"
-
 	"sxcli.dev/conf/engine"
 )
 
@@ -48,19 +46,15 @@ const (
 )
 
 // ArgInfo describes one argument of the schema true to an applet's
-// resolved service set.
-type ArgInfo struct {
-	Service string       // owning service ALIAS (the operator name), "core" included
-	Long    string       // long argument name, without dashes
-	Short   string       // single-character short form
-	Env     string       // environment variable name
-	Usage   string       // untranslated help text; render via Tr
-	Type    reflect.Type // field type; element type for slices
-	IsSlice bool         // repeatable argument, comma-separated env, json array
-	Allowed []any        // closed value domain from registration Metadata; values are of Type
-	Doc     string       // long-form description from registration Metadata
-	Hint    ValueHint    // advisory value denotation from registration Metadata; never enforced
-}
+// resolved service set. The type is the conf engine's — schema
+// description is conf's domain, and the completion engine consumes
+// it without any framework dependency; this alias is fw's name for
+// it.
+type ArgInfo = engine.ArgInfo
+
+// PosInfo describes one positional slot of the target's schema, in
+// slot order; the conf engine's type, aliased like ArgInfo.
+type PosInfo = engine.PosInfo
 
 // Introspector is a TARGET-SCOPED read-only view: what one applet's
 // resolved graph looks like, for services that implement completions,
@@ -97,6 +91,10 @@ type Introspector interface {
 	// explicit-control-vocabulary era when line-carried controls
 	// participate. The binary view answers nil.
 	Arguments(args []string) []ArgInfo
+	// Positionals returns the target's positional slots in order,
+	// indexed slots first, the rest collector (when declared) last.
+	// The binary view has none: nil.
+	Positionals() []PosInfo
 }
 
 // System is the framework's facade service: the core's facilities
