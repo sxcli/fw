@@ -577,6 +577,33 @@ Tag value grammar: `"<id>[,<id>...][;optional]"`.
 
 ## 5. Dispatch & Application Lifecycle
 
+A binary can carry many applets, but exactly one is active per
+invocation. Dispatch chooses it, and only that applet's service set
+is resolved. This is a HARD invariant of the dependency graph, not a
+side effect of dispatch — enforced at every door that could introduce
+an applet into the graph:
+
+1. **Controls.** Applets are not addressable by controls, the
+   dispatched one included: any applet reference in
+   `--enable`/`--disable`/`--override` reports plain "unknown
+   service" — applets are not services from the operator's seat.
+2. **Dependency resolution.** Right after dispatch the invocation
+   gets its WORKING SET: a catalog snapshot with every applet except
+   the dispatched one ejected. Resolution runs against a registry
+   holding one applet by construction, so a dependency naming a
+   dormant applet — by id, interface or concrete type — is simply
+   unresolvable. The catalog itself is immutable after Build;
+   dispatch, introspection and --upgrade-config read it, nothing
+   shrinks it. Cold-service ejection operates on the working set.
+3. **The backstop.** After resolution the resolved service set must
+   hold exactly one applet; any other count is an internal error,
+   reported loudly — the door nobody imagined.
+
+The one sanctioned applet ↔ service channel: a composed service can
+observe the ACTIVE applet through interfaces the applet chose to
+`Provides` on the root. Dormant applets are unreachable in any run,
+completion invocations included.
+
 ### Entry point
 
 ```go

@@ -216,10 +216,14 @@ func TestIntrospectorAnswersFromSnapshotAfterEjection(t *testing.T) {
 	if strings.Join(a.applets, ",") != "meta" {
 		t.Errorf("applets wrong: %v", a.applets)
 	}
-	// ejection is UNIFORM now — the cold provider left the registry
-	// even though the system service is in the resolved service set...
-	if _, stillThere := w.rt.reg.ByID("test/fakefmt"); stillThere {
+	// ejection is UNIFORM now — the cold provider left the WORKING
+	// set even though the system service is in the resolved service
+	// set; the catalog itself stays whole
+	if _, stillThere := w.rt.ws.ByID("test/fakefmt"); stillThere {
 		t.Error("ejection must be uniform; the snapshot answers, not the live registry")
+	}
+	if _, inCatalog := w.rt.reg.ByID("test/fakefmt"); !inCatalog {
+		t.Error("the catalog is immutable — ejection shrinks only the working set")
 	}
 	// ...and the binary-level facts still answer from the snapshot
 	if strings.Join(a.exts, ",") != "json,toml,json5" {
@@ -247,8 +251,8 @@ func TestEjectionStillHappensWithoutIntrospector(t *testing.T) {
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
 	}
-	if _, stillThere := w.rt.reg.ByID("test/fakefmt"); stillThere {
-		t.Error("cold services must be ejected")
+	if _, stillThere := w.rt.ws.ByID("test/fakefmt"); stillThere {
+		t.Error("cold services must be ejected from the working set")
 	}
 }
 

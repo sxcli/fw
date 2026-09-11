@@ -53,6 +53,7 @@ type Descriptor struct {
 	// catalog entry Instance and ConfigPtr stay nil until Build calls
 	// Make — the catalog holds factories and declarations, no state.
 	Alias      string                            // THE operator-facing name
+	Applet     bool                              // a dispatchable entry point; data only, set by the commit
 	Ranked     bool                              // listed in the composition's Order: entitled to win single-valued ties
 	CfgType    reflect.Type                      // *C, nil for config-less services
 	Migrations any                               // opaque migration steps ([]engine.Step); the root maps them into sections

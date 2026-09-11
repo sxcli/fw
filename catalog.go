@@ -254,6 +254,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		reg.Commit(&registry.Descriptor{
 			ID:         r.id,
 			Core:       r.isCore,
+			Applet:     isApplet,
 			Concrete:   concrete,
 			Provides:   append([]reflect.Type(nil), r.provides...),
 			Metadata:   meta,

@@ -21,16 +21,17 @@ import (
 	"sxcli.dev/conf/fail"
 )
 
-// Disabling the dispatched applet keeps its human message even though
-// the applet is now a required dependency of the core node.
+// Applets are not addressable by controls — the dispatched one
+// included. The old "applet is disabled" special case died with the
+// one-applet rule that made it possible.
 func TestDisablingDispatchedAppletFails(t *testing.T) {
 	w := newWorld(t, []string{"bin", "--disable", "app"}, nil, nil)
 	w.applet(0)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
-	if !strings.Contains(w.stderr.String(), `applet "app" is disabled`) {
-		t.Errorf("human message lost:\n%s", w.stderr.String())
+	if !strings.Contains(w.stderr.String(), `disable: unknown service "app"`) {
+		t.Errorf("an applet must be unknown to controls:\n%s", w.stderr.String())
 	}
 }
 

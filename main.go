@@ -95,8 +95,16 @@ func run(rt *runtime) int {
 // string naming one service's alias and a DIFFERENT service's id — is
 // a loud violation, never a silent pick.
 func (rt *runtime) resolveRef(c *fail.Collector, ref string) (*registry.Descriptor, bool, bool) {
-	byAlias, aliasHit := rt.byAlias[ref]
-	byID, idHit := rt.reg.ByID(ref)
+	byAlias, aliasHit := rt.wsByAlias[ref]
+	byID, idHit := rt.ws.ByID(ref)
+	if aliasHit && byAlias.Applet {
+		// applets are not services from the operator's seat — the
+		// dispatched one included; dormant ones are not even here
+		aliasHit = false
+	}
+	if idHit && byID.Applet {
+		idHit = false
+	}
 	var out *registry.Descriptor
 	ok := false
 	tied := false
@@ -330,14 +338,22 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	}
 	if c.Len() == before {
 		root := rt.coreRoot(c, d, rt.providerSeeds(p.files))
-		if contains(p.ctl.Disable, d.ID) {
-			// as a required dependency of the core node the applet
-			// would fail resolution anyway; this keeps the message
-			// human
-			c.Fail("applet %q is disabled", alias)
+		if c.Len() == before {
+			p.res = graph.Resolve(c, rt.ws, root, p.ctl)
 		}
 		if c.Len() == before {
-			p.res = graph.Resolve(c, rt.reg, root, p.ctl)
+			// the backstop behind every door: resolution ran against
+			// a working set holding one applet by construction, so
+			// any other count means a door nobody imagined
+			applets := 0
+			for i := 0; i < len(p.res.Ordered); i++ {
+				if p.res.Ordered[i].Desc.Applet {
+					applets++
+				}
+			}
+			if applets != 1 {
+				c.Fail("internal: the resolved service set holds %d applets — exactly one is ever active", applets)
+			}
 		}
 	}
 	if c.Len() == before {
@@ -350,6 +366,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 // parse, then help/write-config short-circuits or the lifecycle.
 func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, applet Applet, args []string) int {
 	code := 2
+	rt.workingSet(d)
 	p := rt.plan(rt.c, d, args)
 	if p.upgrade {
 		if rt.c.Len() == 0 {
@@ -369,7 +386,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 		// attach-time snapshot, so no resolved service set needs the
 		// registry kept
 		// alive on its behalf
-		rt.reg.Retain(keep)
+		rt.ws.Retain(keep)
 		loaded := p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 {
 			// declared positionals were assigned by Apply; an
@@ -712,6 +729,13 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 				ctl.Override = map[string]string{}
 			}
 			if fromD, ok, _ := rt.resolveRef(c, from); ok {
+				if fromD.Core {
+					// the solver's core-family verdict is unreachable
+					// when the entry never forms (an unknown to side
+					// would fail first); same act, same words
+					c.Fail(solver.CoreControlRule, "override", from)
+					continue
+				}
 				from = fromD.ID
 			}
 			if toD, ok, tied := rt.resolveRef(c, to); ok {

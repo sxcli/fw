@@ -35,6 +35,14 @@ type catalog struct {
 	byAlias       map[string]*registry.Descriptor // every operator name → its service; built by index
 	suppressed    []string
 	shortPriority []string // the composition's contested-short ranking
+
+	// the working set: this invocation's copy of the catalog, built
+	// right after dispatch with every applet except the dispatched
+	// one ejected — resolution and controls run against a registry
+	// holding one applet by construction. The catalog above stays
+	// whole; nothing shrinks it again.
+	ws        *registry.Registry
+	wsByAlias map[string]*registry.Descriptor
 }
 
 // index builds the operator-name index: every alias resolves to its
@@ -88,6 +96,26 @@ func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.R
 	core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) *engine.Schema {
 	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn),
 		sections(ca.composedMembers(res)), ca.suppressed, ca.shortPriority)
+}
+
+// workingSet builds the invocation's working set for the dispatched
+// applet: a catalog snapshot minus every other applet, plus the alias
+// index over what remains.
+func (ca *catalog) workingSet(dispatched *registry.Descriptor) {
+	ca.ws = ca.reg.Snapshot()
+	keep := map[string]bool{}
+	all := ca.ws.All()
+	for i := 0; i < len(all); i++ {
+		if !all[i].Applet || all[i].ID == dispatched.ID {
+			keep[all[i].ID] = true
+		}
+	}
+	ca.ws.Retain(keep)
+	ca.wsByAlias = map[string]*registry.Descriptor{}
+	rest := ca.ws.All()
+	for i := 0; i < len(rest); i++ {
+		ca.wsByAlias[rest[i].Alias] = rest[i]
+	}
 }
 
 // snapshot returns an independent copy of the catalog's data — the

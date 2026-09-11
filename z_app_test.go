@@ -336,6 +336,111 @@ func TestShortArgPriorityEndToEnd(t *testing.T) {
 	}
 }
 
+// wantsIface requires a catIface provider — and in its world the
+// only provider is a dormant applet, which the working set has
+// already ejected.
+type wantsIface struct {
+	Dep catIface `inject:""`
+}
+
+func (w *wantsIface) Configured() error { return nil }
+func (w *wantsIface) Run() int          { return 0 }
+
+// provApplet is that dormant applet: it provides catIface, but a
+// dormant applet is structurally invisible to resolution.
+type provApplet struct{}
+
+func (p *provApplet) Configured() error { return nil }
+func (p *provApplet) Run() int          { return 0 }
+func (p *provApplet) Cat()              {}
+
+func TestDormantAppletsAreUnreachable(t *testing.T) {
+	twoApplets := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		registerSrv("srv")(reg, c, log)
+		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
+			Alias("two").registerInto(reg, c)
+	}
+	// controls cannot name a dormant applet, by alias or id
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin", "srv", "--enable", "two"}, nil, nil, twoApplets)
+	if code != 2 || !strings.Contains(w.stderr.String(), `enable: unknown service "two"`) {
+		t.Errorf("a dormant applet must be unknown to controls: code=%d\n%s", code, w.stderr.String())
+	}
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "srv", "--enable", "example.com/app/two"}, nil, nil, twoApplets)
+	if code != 2 || !strings.Contains(w.stderr.String(), `enable: unknown service "example.com/app/two"`) {
+		t.Errorf("a dormant applet id must be unknown to controls: code=%d\n%s", code, w.stderr.String())
+	}
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "srv", "--override", "example.com/app/srv=two"}, nil, nil, twoApplets)
+	if code != 2 || !strings.Contains(w.stderr.String(), `unknown`) {
+		t.Errorf("an applet substitute must be unknown: code=%d\n%s", code, w.stderr.String())
+	}
+	// a dependency naming a dormant applet's id is unresolvable
+	depOnApplet := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewBareRegistration("example.com/app/main", func() *appDepOnApplet { return &appDepOnApplet{} }).
+			Alias("main").registerInto(reg, c)
+		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
+			Alias("two").registerInto(reg, c)
+	}
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "main"}, nil, nil, depOnApplet)
+	if code != 2 || !strings.Contains(w.stderr.String(), `unknown service id "example.com/app/two"`) {
+		t.Errorf("a named-id dep on a dormant applet must be unresolvable: code=%d\n%s", code, w.stderr.String())
+	}
+	// an interface dep never sees a dormant applet as a candidate,
+	// even when it is the only provider
+	ifaceWorld := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewBareRegistration("example.com/app/wants", func() *wantsIface { return &wantsIface{} }).
+			Alias("wants").registerInto(reg, c)
+		NewBareRegistration("example.com/app/prov", func() *provApplet { return &provApplet{} }).
+			Alias("prov").Provides(Iface[catIface]()).registerInto(reg, c)
+	}
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "wants"}, nil, nil, ifaceWorld)
+	if code != 2 || !strings.Contains(w.stderr.String(), "no registered service satisfies") {
+		t.Errorf("an interface dep must not see a dormant applet: code=%d\n%s", code, w.stderr.String())
+	}
+}
+
+type appDepOnApplet struct {
+	Two *appSrv2 `inject:"example.com/app/two"`
+}
+
+func (a *appDepOnApplet) Configured() error { return nil }
+func (a *appDepOnApplet) Run() int          { return 0 }
+
+func TestOneAppletBackstop(t *testing.T) {
+	depOnApplet := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		NewBareRegistration("example.com/app/main", func() *appDepOnApplet { return &appDepOnApplet{} }).
+			Alias("main").registerInto(reg, c)
+		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
+			Alias("two").registerInto(reg, c)
+	}
+	// the normal run refuses at resolution: the dormant applet is not
+	// in the working set, so the named-id dep is unresolvable
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin", "main"}, nil, nil, depOnApplet)
+	if code != 2 {
+		t.Fatalf("the dep on a dormant applet must refuse: code=%d", code)
+	}
+	// force a working set that kept both applets — the door nobody
+	// imagined — and re-plan: resolution now pulls the second applet
+	// in, and the backstop must refuse it
+	w.rt.ws = w.rt.reg.Snapshot()
+	w.rt.wsByAlias = w.rt.byAlias
+	d, _ := w.rt.reg.ByID("example.com/app/main")
+	c := &fail.Collector{}
+	w.rt.plan(c, d, nil)
+	all := errText2(c)
+	if !strings.Contains(all, "exactly one is ever active") {
+		t.Errorf("the backstop must catch a second applet: %v", c.All())
+	}
+}
+
+func errText2(c *fail.Collector) string {
+	var b strings.Builder
+	for _, e := range c.All() {
+		b.WriteString(e.Error())
+		b.WriteString("|")
+	}
+	return b.String()
+}
+
 func TestBuildSurfacesCommitViolations(t *testing.T) {
 	reg, catalogC := catalogWorld()
 	NewBareRegistration("example.com/app/bad", func() *appAux { return &appAux{} }).
