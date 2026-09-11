@@ -73,9 +73,10 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 		t.Fatalf("build failed: %v", err)
 	}
 	w.rt = &runtime{
-		catalog: catalog{reg: app.reg},
-		c:       w.c,
-		argv:    argv,
+		catalog:        catalog{reg: app.reg, shortPriority: app.shortPriority},
+		configMaxBytes: configMaxBytes,
+		c:              w.c,
+		argv:           argv,
 		lookupEnv: func(name string) (string, bool) {
 			v, ok := env[name]
 			return v, ok
@@ -223,6 +224,110 @@ func TestCoreFamilyIsNoControlTarget(t *testing.T) {
 		if code != 2 || !strings.Contains(w.stderr.String(), want) {
 			t.Errorf("%v must refuse with the core-family verdict: code=%d\n%s", argv, code, w.stderr.String())
 		}
+	}
+}
+
+func TestConfigMaxBytesOperatorOverride(t *testing.T) {
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		registerSrv("srv")(reg, c, log)
+	}
+	pad := "{}" + strings.Repeat(" ", 100)
+	files := map[string]string{"/etc/srv/config.json": pad}
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, files, nil, register)
+	if code != 0 {
+		t.Fatalf("the padded file fits the default cap: code=%d\n%s", code, w.stderr.String())
+	}
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "--config-max-bytes", "10"}, files, nil, register)
+	if code != 2 || !strings.Contains(w.stderr.String(), "exceeds the 10 byte limit") {
+		t.Errorf("the operator's cap must win: code=%d\n%s", code, w.stderr.String())
+	}
+	// a negative value cannot even parse into the unsigned knob
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "--config-max-bytes=-1"}, files, nil, register)
+	if code != 2 || !strings.Contains(w.stderr.String(), `--config-max-bytes: invalid unsigned integer "-1"`) {
+		t.Errorf("a negative cap must refuse loudly: code=%d\n%s", code, w.stderr.String())
+	}
+	// an explicit zero removes the cap for this run, beating the
+	// author's own tighter setting
+	oldCap := configMaxBytes
+	t.Cleanup(func() { configMaxBytes = oldCap })
+	ConfigMaxBytes(10)
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "--config-max-bytes=0"}, files, nil, register)
+	if code != 0 {
+		t.Errorf("zero must mean unlimited: code=%d\n%s", code, w.stderr.String())
+	}
+	// and without the override the author's tiny cap refuses the file
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin"}, files, nil, register)
+	if code != 2 || !strings.Contains(w.stderr.String(), "exceeds the 10 byte limit") {
+		t.Errorf("the author's cap must hold when not overridden: code=%d\n%s", code, w.stderr.String())
+	}
+}
+
+type shortyACfg struct {
+	Version uint32 `json:"version"`
+	A       int    `json:"a" conf:"a-value,p"`
+}
+
+type shortyBCfg struct {
+	Version uint32 `json:"version"`
+	B       int    `json:"b" conf:"b-value,p"`
+}
+
+type shortyA struct{ cfg shortyACfg }
+
+func (s *shortyA) Configured() error { return nil }
+
+type shortyB struct{ cfg shortyBCfg }
+
+func (s *shortyB) Configured() error { return nil }
+
+// shortyApp pulls both contenders into its resolved service set.
+type shortyApp struct {
+	One *shortyA `inject:"example.com/app/one"`
+	Two *shortyB `inject:"example.com/app/two"`
+}
+
+func (s *shortyApp) Configured() error { return nil }
+func (s *shortyApp) Run() int          { return 0 }
+
+func registerShorties(reg *registry.Registry, c *fail.Collector, log *[]string) {
+	NewBareRegistration("example.com/app/shorty", func() *shortyApp { return &shortyApp{} }).
+		Alias("shorty").registerInto(reg, c)
+	NewRegistration("example.com/app/one", func() *shortyA { return &shortyA{cfg: shortyACfg{Version: 1}} },
+		func(s *shortyA) *shortyACfg { return &s.cfg }).
+		Alias("one").registerInto(reg, c)
+	NewRegistration("example.com/app/two", func() *shortyB { return &shortyB{cfg: shortyBCfg{Version: 1}} },
+		func(s *shortyB) *shortyBCfg { return &s.cfg }).
+		Alias("two").registerInto(reg, c)
+}
+
+func TestShortArgPriorityEndToEnd(t *testing.T) {
+	// unresolved contest: startup violation naming both services
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, registerShorties)
+	if code != 2 || !strings.Contains(w.stderr.String(), `short -p is contested by "example.com/app/one" and "example.com/app/two"`) {
+		t.Errorf("an unresolved contest must refuse startup: code=%d\n%s", code, w.stderr.String())
+	}
+	// the composition's list resolves it; the loser is long-only
+	b := Builder().AcceptAll().ShortArgPriority("example.com/app/two")
+	w, code = appWorld(t, b, []string{"bin", "-p", "7"}, nil, nil, registerShorties)
+	if code != 0 {
+		t.Errorf("a listed winner resolves the contest: code=%d\n%s", code, w.stderr.String())
+	}
+	// a second call and an unknown id are Build violations
+	reg, catalogC := catalogWorld()
+	var log []string
+	registerShorties(reg, catalogC, &log)
+	_, err := Builder().AcceptAll().
+		ShortArgPriority("example.com/app/two").
+		ShortArgPriority("example.com/app/one").buildFrom(reg, catalogC)
+	if err == nil || !strings.Contains(err.Error(), "ShortArgPriority called twice") {
+		t.Errorf("the priority is declared once, atomically: %v", err)
+	}
+	reg, catalogC = catalogWorld()
+	registerShorties(reg, catalogC, &log)
+	_, err = Builder().AcceptAll().
+		ShortArgPriority("example.com/app/ghost").buildFrom(reg, catalogC)
+	if err == nil || !strings.Contains(err.Error(), `short-priority: unknown service id "example.com/app/ghost"`) {
+		t.Errorf("an unknown id must be a violation: %v", err)
 	}
 }
 

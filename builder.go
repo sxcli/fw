@@ -35,6 +35,7 @@ type AppBuilder struct {
 	acceptAll bool
 	accepts   []string
 	orders    [][]string // every Order call, verbatim — Build judges once-only
+	shortPrio [][]string // every ShortArgPriority call, verbatim — same judgment
 	renames   []rename
 }
 
@@ -73,6 +74,17 @@ func (b *AppBuilder) AcceptAll() *AppBuilder {
 // both lists), and ranking an id twice within the list is one too.
 func (b *AppBuilder) Order(ids ...string) *AppBuilder {
 	b.orders = append(b.orders, ids)
+	return b
+}
+
+// ShortArgPriority declares the composition's one priority list for
+// contested short arguments: on a collision within a resolved
+// service set, a listed service beats an unlisted one and the
+// earlier listing wins among listed; the loser keeps its long form
+// only. Core shorts stay reserved regardless. Like Order the list is
+// declared once, atomically.
+func (b *AppBuilder) ShortArgPriority(ids ...string) *AppBuilder {
+	b.shortPrio = append(b.shortPrio, ids)
 	return b
 }
 
@@ -123,6 +135,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 	}
 	accepted := b.admitted(cat, c)
 	rank := b.ranked(accepted, c)
+	shortPriority := b.shortPriority(cat, c)
 	renamed := b.renamed(cat, accepted, c)
 	if c.Len() == 0 {
 		b.checkAliases(cat, accepted, renamed, c)
@@ -145,7 +158,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 			defaultsInDomain(&member, c)
 		}
 		if c.Len() == 0 {
-			app = &App{reg: reg}
+			app = &App{reg: reg, shortPriority: shortPriority}
 		}
 	}
 	var err error
@@ -176,6 +189,29 @@ func (b *AppBuilder) admitted(cat *registry.Registry, c *fail.Collector) map[str
 		}
 	}
 	return out
+}
+
+// shortPriority validates the ShortArgPriority declaration through
+// the shared rules — one call, cataloged ids, no repeats — and
+// returns the effective list. On a second call the FIRST list stays
+// effective, mirroring Order's once-only semantics.
+func (b *AppBuilder) shortPriority(cat *registry.Registry, c *fail.Collector) []string {
+	if len(b.shortPrio) > 1 {
+		c.Fail(solver.ShortPriorityOnceRule, strings.Join(b.shortPrio[0], ", "), strings.Join(b.shortPrio[1], ", "))
+	}
+	var priority []string
+	if len(b.shortPrio) > 0 {
+		priority = b.shortPrio[0]
+	}
+	known := func(id string) bool {
+		_, ok := cat.ByID(id)
+		return ok
+	}
+	violations := solver.CheckShortPriority(priority, known)
+	for _, v := range violations {
+		c.Fail("%s", v.Body)
+	}
+	return priority
 }
 
 // ranked validates the Order declaration — one call, membership

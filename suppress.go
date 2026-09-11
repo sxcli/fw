@@ -14,6 +14,8 @@
 
 package fw
 
+import "sxcli.dev/conf/engine"
+
 // CoreFeature identifies one suppressible piece of the framework core's
 // configuration surface.
 type CoreFeature int
@@ -36,6 +38,9 @@ const (
 	FeatureHelp
 	// FeatureValidateConfig is the --validate-config argument.
 	FeatureValidateConfig
+	// FeatureConfigMaxBytes is the --config-max-bytes argument, the
+	// operator's run-scoped override of the config file size cap.
+	FeatureConfigMaxBytes
 	// FeatureUpgradeConfig is the --upgrade-config tool, its
 	// --from-version companion included (inert alone).
 	FeatureUpgradeConfig
@@ -59,27 +64,27 @@ var coreFeatureLongs = map[CoreFeature]string{
 	FeatureHelp:           "help",
 	FeatureValidateConfig: "validate-config",
 	FeatureUpgradeConfig:  "upgrade-config",
+	FeatureConfigMaxBytes: "config-max-bytes",
 }
 
 // suppressedCore holds the long names of suppressed core fields; Main
 // passes it into the configuration machinery.
 var suppressedCore []string
 
-// maxConfigSize is the config file size cap; Main passes it into the
-// configuration machinery.
-var maxConfigSize int64
+// configMaxBytes is the effective config file size cap; Main passes
+// it into the configuration machinery. Zero means unlimited, so the
+// declaration carries the default instead of a sentinel.
+var configMaxBytes uint64 = engine.DefaultConfigMaxBytes
 
-// MaxConfigSize sets this binary's config file size cap in bytes; a
+// ConfigMaxBytes sets this binary's config file size cap in bytes; a
 // file larger than the cap is refused with a loud startup error. The
-// default (1 MiB) covers any sane configuration. Like Suppress this is
-// a build-time property of the binary: call it from main() or an init()
-// before Main.
-func MaxConfigSize(limit int64) {
-	if limit > 0 {
-		maxConfigSize = limit
-	} else {
-		defaultCollector.Fail("MaxConfigSize: the limit must be positive, got %d", limit)
-	}
+// default (1 MiB) covers any sane configuration; zero removes the
+// cap entirely, and the operator may override either choice for one
+// run with --config-max-bytes (0 = unlimited there too). Like
+// Suppress this is a build-time property of the binary: call it from
+// main() or an init() before Main.
+func ConfigMaxBytes(limit uint64) {
+	configMaxBytes = limit
 }
 
 // scmDebugEnabled records the FeatureSCMDebug opt-in; the windows

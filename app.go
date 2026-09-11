@@ -31,7 +31,8 @@ import (
 // The composition is immutable from Build on — the graph-immutability
 // philosophy one layer up.
 type App struct {
-	reg *registry.Registry
+	reg           *registry.Registry
+	shortPriority []string // the composition's contested-short ranking
 }
 
 // Main runs the composed App: dispatch, configuration, resolution,

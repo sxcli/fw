@@ -75,7 +75,7 @@ deleting the assertion.
   API; single-running-app rule), open item for an injectable
   Invocation service
 - `activeTranslator` → pardoned (single-running-app rule, documented)
-- `Suppress`/`Enable`/`MaxConfigSize` state → untouched (open item)
+- `Suppress`/`Enable`/`ConfigMaxBytes` state → untouched (open item)
 - `Tr`/`TrN` → stay package-level by design (authoring surface)
 
 ## Subtleties (the misses waiting to happen)

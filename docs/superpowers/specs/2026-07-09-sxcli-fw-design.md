@@ -810,9 +810,10 @@ type FileSinkConfig struct {
 - `conf:"long[,short]"` — the ONE operator name: grants `--long`/`-s`
   AND feeds env derivation. Top level only ("mirror the value into a
   top-level field yourself"). Long names MUST be unique per applet's
-  resolved service set. Short names MUST be unique per config struct. Applets must
-  resolve short name collisions using `ShortArgPriority` (ratified
-  2026-07-29, `docs/design/v0.3.0-to-v0.4.0-short-argument-priority.md`;
+  resolved service set. Short names MUST be unique per config struct.
+  The composition must resolve cross-service short collisions with
+  the builder's once-only `ShortArgPriority` list (ratified
+  2026-09-11, `docs/design/v0.3.0-to-v0.4.0-short-argument-priority.md`;
   until it lands the runtime still resolves first-come-first-served).
 - `env:"NAME"` — verbatim GLOBAL (no alias prefix — its job is
   matching names you don't own); legal at any depth. `env:"-"` = no
@@ -1238,8 +1239,15 @@ file is even opened**; an oversized config is never opened, read or
 parsed. A capped
 reader underneath is defense in depth against stat races and lying
 sizes, and never truncates silently. Like feature suppression the cap
-is a build-time property of the binary: `fw.MaxConfigSize(bytes)`
-before `Main`.
+is a build-time property of the binary: `fw.ConfigMaxBytes(bytes)`
+before `Main`; zero removes the cap entirely. The operator may
+override either choice for one run with the core argument
+`--config-max-bytes` (run-scoped, argument-only like every core
+argument; suppressible as `FeatureConfigMaxBytes`): the argument
+wins over the author's setting in both directions, and zero means
+unlimited at every level — the cap is unsigned, so a negative value
+is a plain invalid-argument error, and no hand-written validation
+exists anywhere.
 
 The core's `--config,-c` path is itself an ordinary config value with the
 usual source precedence — default empty, settable via env, the argument
@@ -1299,9 +1307,10 @@ deliberate lockdown), stated here so nobody discovers it in
 production.
 
 Misusing the build-time API is itself a collected startup violation,
-never silently ignored: `MaxConfigSize` with a non-positive limit,
-`Suppress` of the default-off `FeatureSCMDebug`, `Enable` of a
-default-on feature, and unknown features everywhere.
+never silently ignored: `Suppress` of the default-off
+`FeatureSCMDebug`, `Enable` of a default-on feature, and unknown
+features everywhere. (A negative config size cap is no longer even
+representable — the cap is unsigned end to end.)
 
 ### Format providers
 
@@ -1697,7 +1706,7 @@ the checks tests cannot express.
 | Shell completion service | decided: a SEPARATE module (`sxcli.dev` namespace), never in core — the first external Introspector consumer; registers per-shell `System` applets (invoked `binary <id> …` by the generated scripts); any capability gap it hits is fixed as a core API improvement, never a backdoor |
 | Disabling first-token applet dispatch entirely (build-time policy for binaries that want basename/single-applet behavior only) | idea noted while designing Hidden/System — registration/`Suppress`-style knob, unscheduled; interaction with System selectors must be resolved when designed |
 | Composition release fallout | §4's model, implemented: fw rework (catalog, Builder, identity/alias split, registration chain), every ecosystem package gains a path-ID constant, a declared alias and the factory registration shape (completion shells, sinks, yaml, future i18n), docs/site/README rewritten; ships as one breaking release together with the four committed rework phases (AlwaysOn removal, core node, subtree, exactly-once) |
-| Package-level `Suppress`/`Enable`/`MaxConfigSize` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
+| Package-level `Suppress`/`Enable`/`ConfigMaxBytes` under the Builder | the globals read like leftovers once the Builder exists (`.Suppress(…)` as a chain method is the obvious home); undecided, decide during composition implementation |
 | `fwtest` public test harness | unblocked by `Build() (App, error)` — compose, build, run, assert; the internal world harness made public |
 | `sxcli.dev/conf` extraction (the config engine as a standalone module) | DONE 2026-07-19, ahead of the v1 plan — the surface closed and the train was the forcing function (shipping v0.3.0 on `sxcli.dev/fw/conf` would have scheduled a second break for standalone adopters). Own repo, module `sxcli.dev/conf`: package `conf` at root (the front door), `engine/` beside it, and `fail/` — the Collector left fw's internal (shared signatures demanded one public home; `sxcli.dev/utils` was considered and rejected: one repo per PRODUCT, not per package). fw requires the module (replace until publishing); the train gains a front car: conf v0.1.0 tags first |
 | Config schema versioning & migration chain | DESIGNED 2026-07-18 (§6): mandated `Version uint32` + typed per-section `conf.Step` chain, version-implies-complete, migrate-then-merge; supersedes the earlier "renamed from" metadata idea; lands with the conf pipeline promotion |

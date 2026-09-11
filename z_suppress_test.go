@@ -18,6 +18,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"sxcli.dev/conf/engine"
 )
 
 func TestSuppressMapsFeaturesToLongNames(t *testing.T) {
@@ -42,20 +44,20 @@ func TestSuppressDeduplicates(t *testing.T) {
 	}
 }
 
-func TestMaxConfigSize(t *testing.T) {
-	old := maxConfigSize
-	t.Cleanup(func() { maxConfigSize = old })
-	MaxConfigSize(4096)
-	if maxConfigSize != 4096 {
-		t.Errorf("limit not set: %d", maxConfigSize)
+func TestConfigMaxBytes(t *testing.T) {
+	old := configMaxBytes
+	t.Cleanup(func() { configMaxBytes = old })
+	if configMaxBytes != engine.DefaultConfigMaxBytes {
+		t.Errorf("the declaration carries the default: %d", configMaxBytes)
 	}
-	before := defaultCollector.Len()
-	MaxConfigSize(0)
-	if defaultCollector.Len() != before+1 {
-		t.Error("a non-positive limit must be a violation")
+	ConfigMaxBytes(4096)
+	if configMaxBytes != 4096 {
+		t.Errorf("limit not set: %d", configMaxBytes)
 	}
-	if maxConfigSize != 4096 {
-		t.Error("a rejected limit must not overwrite the previous one")
+	// zero is the author choosing unlimited — a value, not a reset
+	ConfigMaxBytes(0)
+	if configMaxBytes != 0 {
+		t.Error("zero must be stored as an explicit unlimited")
 	}
 }
 

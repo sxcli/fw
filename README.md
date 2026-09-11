@@ -200,7 +200,7 @@ The binary author decides which core features exist at all:
 
 ```go
 fw.Suppress(fw.FeatureConfigFile, fw.FeatureOverride) // no --config, no rewiring
-fw.MaxConfigSize(64 << 10)                            // tighter than the 1 MiB default
+fw.ConfigMaxBytes(64 << 10)                           // tighter than the 1 MiB default
 ```
 
 Suppressed features vanish: the argument becomes unknown, the env var

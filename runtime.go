@@ -31,9 +31,10 @@ import (
 // copy at attach, so an introspection view holds exactly the data it
 // needs and nothing else — no environment, no sources, no seams.
 type catalog struct {
-	reg        *registry.Registry
-	byAlias    map[string]*registry.Descriptor // every operator name → its service; built by index
-	suppressed []string
+	reg           *registry.Registry
+	byAlias       map[string]*registry.Descriptor // every operator name → its service; built by index
+	suppressed    []string
+	shortPriority []string // the composition's contested-short ranking
 }
 
 // index builds the operator-name index: every alias resolves to its
@@ -85,7 +86,7 @@ func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
 func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.Result,
 	core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) *engine.Schema {
 	return engine.NewSchema(c, primaryAlias(d), coreContribs(core, ctrl, kn),
-		sections(ca.composedMembers(res)), ca.suppressed)
+		sections(ca.composedMembers(res)), ca.suppressed, ca.shortPriority)
 }
 
 // snapshot returns an independent copy of the catalog's data — the
@@ -99,9 +100,10 @@ func (ca *catalog) snapshot() *catalog {
 		aliases[a] = d
 	}
 	return &catalog{
-		reg:        ca.reg.Snapshot(),
-		byAlias:    aliases,
-		suppressed: append([]string(nil), ca.suppressed...),
+		reg:           ca.reg.Snapshot(),
+		byAlias:       aliases,
+		suppressed:    append([]string(nil), ca.suppressed...),
+		shortPriority: append([]string(nil), ca.shortPriority...),
 	}
 }
 
@@ -120,7 +122,7 @@ type runtime struct {
 	lstat          func(string) error
 	open           func(string) (io.ReadCloser, error)
 	openPinned     func(string) (io.ReadCloser, error)
-	maxConfigBytes int64            // config file size cap in bytes; <=0 → the 1 MiB default
+	configMaxBytes uint64           // effective config file size cap in bytes; 0 = unlimited
 	execApplet     func(Applet) int // nil → applet.Run(); the SCM handler overrides
 	reported       bool
 	translatorID   string // id of the sole Translator-providing service, "" = none
@@ -128,7 +130,7 @@ type runtime struct {
 
 func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *runtime {
 	return &runtime{
-		catalog:   catalog{reg: app.reg, suppressed: suppressedCore},
+		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
 		c:         &fail.Collector{},
 		argv:      argv,
 		lookupEnv: os.LookupEnv,
@@ -142,7 +144,7 @@ func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *ru
 		},
 		open:           func(path string) (io.ReadCloser, error) { return os.Open(path) },
 		openPinned:     engine.OpenPinned,
-		maxConfigBytes: maxConfigSize,
+		configMaxBytes: configMaxBytes,
 		execApplet:     execApplet,
 	}
 }

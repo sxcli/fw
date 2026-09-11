@@ -270,7 +270,7 @@ func sections(ordered []graph.Member) []engine.Section {
 		if m.Desc.ConfigPtr != nil {
 			meta, _ := m.Desc.Metadata.(*engine.Meta)
 			steps, _ := m.Desc.Migrations.([]engine.Step)
-			out = append(out, engine.Section{Name: primaryAlias(m.Desc), Ptr: m.Desc.ConfigPtr, Meta: meta, Steps: steps})
+			out = append(out, engine.Section{Name: primaryAlias(m.Desc), ID: m.Desc.ID, Ptr: m.Desc.ConfigPtr, Meta: meta, Steps: steps})
 		}
 	}
 	return out
@@ -289,25 +289,31 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	alias := primaryAlias(d)
 	p := &invocationPlan{}
 	p.src = engine.Sources{
-		Args:         args,
-		LookupEnv:    rt.lookupEnv,
-		Locations:    rt.locations(alias),
-		Stat:         rt.stat,
-		Lstat:        rt.lstat,
-		Open:         rt.open,
-		OpenPinned:   rt.openPinned,
-		Providers:    rt.providers(),
-		SuppressCore: rt.suppressed,
-		MaxSize:      rt.maxConfigBytes,
+		Args:           args,
+		LookupEnv:      rt.lookupEnv,
+		Locations:      rt.locations(alias),
+		Stat:           rt.stat,
+		Lstat:          rt.lstat,
+		Open:           rt.open,
+		OpenPinned:     rt.openPinned,
+		Providers:      rt.providers(),
+		SuppressCore:   rt.suppressed,
+		ConfigMaxBytes: rt.configMaxBytes,
 	}
 	before := c.Len()
 	var peek engine.Core
+	// pre-seeded with the author's effective cap: the lenient parse
+	// overwrites it only when the argument appears, so absent keeps
+	// the author's value and an explicit 0 is the operator choosing
+	// UNLIMITED
+	peek.ConfigMaxBytes = rt.configMaxBytes
 	var peekCtrl coreControls
 	var peekKn upgradeKnobs
 	engine.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl, &peekKn))
 	p.help = peek.Help
 	p.validate = peek.ValidateConfig
 	p.target = peek.Config
+	p.src.ConfigMaxBytes = peek.ConfigMaxBytes
 	if peekKn.UpgradeConfig && c.Len() == before {
 		// the pure file transform never loads configuration; the rest
 		// of the plan is not its business
