@@ -213,8 +213,14 @@ func TestUnknownAppletPrintsUsage(t *testing.T) {
 	if r.code == 0 {
 		t.Fatal("unknown applet must fail")
 	}
-	if !strings.Contains(r.stderr, "usage:") || !strings.Contains(r.stderr, "probe") || !strings.Contains(r.stderr, "echo") {
-		t.Errorf("usage dump wrong:\n%s", r.stderr)
+	if !strings.Contains(r.stderr, "usage:") || !strings.Contains(r.stderr, "--applets") || strings.Contains(r.stderr, "probe") {
+		t.Errorf("usage must point at --applets, listing nothing:\n%s", r.stderr)
+	}
+	// and the pointer's target answers: the real binary lists its
+	// public applets, composed order, exit 0
+	r = box(t, "multi", nil, "", "--applets")
+	if r.code != 0 || !strings.Contains(r.stdout, "probe") || !strings.Contains(r.stdout, "echo") {
+		t.Errorf("the listing must serve pre-dispatch: exit %d\nstdout:\n%s", r.code, r.stdout)
 	}
 }
 

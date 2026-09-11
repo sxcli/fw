@@ -73,7 +73,7 @@ func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]
 		t.Fatalf("build failed: %v", err)
 	}
 	w.rt = &runtime{
-		catalog:        catalog{reg: app.reg, shortPriority: app.shortPriority},
+		catalog:        catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
 		configMaxBytes: configMaxBytes,
 		c:              w.c,
 		argv:           argv,
@@ -169,23 +169,69 @@ type appSrv2 struct{ log *[]string }
 func (a *appSrv2) Configured() error { return nil }
 func (a *appSrv2) Run() int          { *a.log = append(*a.log, "two.run"); return 0 }
 
-func TestUsageListsPrimariesInRankOrder(t *testing.T) {
+// The applet listing left the usage text for --applets; usage now
+// points there instead of embedding the directory.
+func TestUsagePointsAtApplets(t *testing.T) {
 	b := Builder().AcceptAll().Order("example.com/app/two", "example.com/app/srv")
-	w, code := appWorld(t, b, []string{"bin", "ghost"}, nil, nil,
-		func(reg *registry.Registry, c *fail.Collector, log *[]string) {
-			registerSrv("cherry-pick")(reg, c, log)
-			NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
-				Alias("two").registerInto(reg, c)
-		})
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		registerSrv("cherry-pick")(reg, c, log)
+		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
+			Alias("two").registerInto(reg, c)
+	}
+	w, code := appWorld(t, b, []string{"bin", "ghost"}, nil, nil, register)
 	if code != 2 {
 		t.Fatalf("dispatch failure expected, code=%d", code)
 	}
 	text := w.stderr.String()
-	if !strings.Contains(text, "two") || !strings.Contains(text, "cherry-pick") {
-		t.Errorf("usage must list the operator names: %s", text)
+	if !strings.Contains(text, "--applets") || strings.Contains(text, "cherry-pick") {
+		t.Errorf("usage must point at --applets and embed no list: %s", text)
 	}
-	if strings.Index(text, "two") > strings.Index(text, "cherry-pick") {
-		t.Errorf("usage must follow rank order: %s", text)
+}
+
+type hidApplet struct{}
+
+func (h *hidApplet) Configured() error { return nil }
+func (h *hidApplet) Run() int          { return 0 }
+
+func TestAppletsListing(t *testing.T) {
+	b := Builder().AcceptAll().Order("example.com/app/two", "example.com/app/srv")
+	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
+		registerSrv("cherry-pick")(reg, c, log)
+		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
+			Alias("two").
+			Metadata(&Metadata{Description: "the second applet\nlong tail"}).
+			registerInto(reg, c)
+		NewBareRegistration("example.com/app/hid", func() *hidApplet { return &hidApplet{} }).
+			Alias("hid").Hidden().registerInto(reg, c)
+	}
+	// pre-dispatch: no selector word, the listing still serves
+	w, code := appWorld(t, b, []string{"bin", "--applets"}, nil, nil, register)
+	if code != 0 {
+		t.Fatalf("the listing serves pre-dispatch: code=%d\n%s", code, w.stderr.String())
+	}
+	out := w.stdout.String()
+	if !strings.Contains(out, "two — the second applet") || !strings.Contains(out, "cherry-pick") {
+		t.Errorf("the listing must carry aliases and first description lines: %q", out)
+	}
+	if strings.Contains(out, "long tail") || strings.Contains(out, "hid") {
+		t.Errorf("hidden applets and description tails stay out: %q", out)
+	}
+	if strings.Index(out, "two") > strings.Index(out, "cherry-pick") {
+		t.Errorf("the listing follows composed order: %q", out)
+	}
+	// a bare -- ends the scan: the token belongs to the applet
+	w, code = appWorld(t, b, []string{"bin", "ghost", "--", "--applets"}, nil, nil, register)
+	if code != 2 || strings.Contains(w.stdout.String(), "cherry-pick") {
+		t.Errorf("past a bare -- the token is not the core argument: code=%d", code)
+	}
+	// suppressed: the scan never runs and the argument is unknown
+	// like any other
+	oldSup := suppressedCore
+	t.Cleanup(func() { suppressedCore = oldSup })
+	Suppress(FeatureApplets)
+	w, code = appWorld(t, b, []string{"bin", "cherry-pick", "--applets"}, nil, nil, register)
+	if code != 2 || !strings.Contains(w.stderr.String(), "unknown argument --applets") {
+		t.Errorf("a suppressed listing must leave an unknown argument: code=%d\n%s", code, w.stderr.String())
 	}
 }
 

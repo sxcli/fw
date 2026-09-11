@@ -604,6 +604,17 @@ observe the ACTIVE applet through interfaces the applet chose to
 `Provides` on the root. Dormant applets are unreachable in any run,
 completion invocations included.
 
+Enumerating the binary is a catalog question with its own door: the
+core argument `--applets` prints the public applets — one per line,
+alias plus the first line of the description, composed order, the
+Hidden filter of `Introspector.Applets()` — and exits 0. It serves
+PRE-dispatch (`mybox --applets` has no selector word), reads only
+the immutable catalog, and is argument-only, run-scoped and
+suppressible as `FeatureApplets`; a bare `--` ends its argv scan.
+`--help` never lists applets — help is the dispatched applet's
+document — and the dispatch-failure usage text points at
+`--applets` instead of embedding the list.
+
 ### Entry point
 
 ```go

@@ -81,10 +81,60 @@ func run(rt *runtime) int {
 
 	if rt.c.Len() > 0 {
 		rt.report(buffer)
+	} else if rt.appletsRequested() {
+		// the listing serves before dispatch: `mybox --applets` has no
+		// selector word, so dispatch would fail exactly when the
+		// listing is wanted most
+		code = rt.listApplets()
 	} else if d, applet, args, ok := rt.dispatch(); ok {
 		code = rt.execute(buffer, d, applet, args)
 	}
 	return code
+}
+
+// appletsRequested scans argv for the --applets core argument — a
+// bare `--` ends the scan, and suppressing FeatureApplets turns the
+// token back into an unknown argument for whatever runs.
+func (rt *runtime) appletsRequested() bool {
+	if contains(rt.suppressed, "applets") {
+		return false
+	}
+	for i := 1; i < len(rt.argv); i++ {
+		if rt.argv[i] == "--" {
+			break
+		}
+		if rt.argv[i] == "--applets" {
+			return true
+		}
+	}
+	return false
+}
+
+// listApplets prints the binary's public applets from the catalog —
+// no resolution, no config load, no working set: the listing is a
+// catalog question and this is its door. Composed order, the same
+// Hidden filter as Introspector.Applets.
+func (rt *runtime) listApplets() int {
+	all := rt.reg.All()
+	for i := 0; i < len(all); i++ {
+		if all[i].Applet && !all[i].Hidden {
+			line := all[i].Alias
+			if meta, has := all[i].Metadata.(*engine.Meta); has && meta.Description != "" {
+				line += " — " + firstLine(meta.Description)
+			}
+			fmt.Fprintln(rt.stdout, line)
+		}
+	}
+	return 0
+}
+
+// firstLine cuts a description at its first newline: the listing is
+// one line per applet.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // resolveRef resolves an operator-supplied service reference — an
@@ -204,10 +254,7 @@ func (rt *runtime) usage(public []*registry.Descriptor, reason string) {
 	fmt.Fprintln(rt.stderr, reason)
 	fmt.Fprintln(rt.stderr, Tr("usage: <binary> <applet> [arguments]"))
 	if len(public) > 0 {
-		fmt.Fprintln(rt.stderr, Tr("applets:"))
-		for _, d := range public {
-			fmt.Fprintf(rt.stderr, "  %s\n", d.Alias)
-		}
+		fmt.Fprintln(rt.stderr, Tr("run with --applets to list the applets"))
 	}
 }
 
@@ -239,6 +286,7 @@ type invocationPlan struct {
 // section: the service controls, riding the same operator surfaces as
 // the engine's own knobs.
 type coreControls struct {
+	Applets  bool     `json:"applets" conf:"applets" env:"-" dump:"-" usage:"list the binary's applets and exit"`
 	Disable  []string `json:"disable" conf:"disable" env:"-" usage:"service ids to remove from the resolved service set"`
 	Enable   []string `json:"enable" conf:"enable" env:"-" usage:"service ids to force into the resolved service set"`
 	Override []string `json:"override" conf:"override" env:"-" usage:"dependency remapping in from=to form"`

@@ -41,6 +41,9 @@ const (
 	// FeatureConfigMaxBytes is the --config-max-bytes argument, the
 	// operator's run-scoped override of the config file size cap.
 	FeatureConfigMaxBytes
+	// FeatureApplets is the --applets listing, the binary's catalog
+	// door for humans.
+	FeatureApplets
 	// FeatureUpgradeConfig is the --upgrade-config tool, its
 	// --from-version companion included (inert alone).
 	FeatureUpgradeConfig
@@ -65,6 +68,7 @@ var coreFeatureLongs = map[CoreFeature]string{
 	FeatureValidateConfig: "validate-config",
 	FeatureUpgradeConfig:  "upgrade-config",
 	FeatureConfigMaxBytes: "config-max-bytes",
+	FeatureApplets:        "applets",
 }
 
 // suppressedCore holds the long names of suppressed core fields; Main

@@ -303,8 +303,8 @@ func TestDispatchFailuresPrintUsage(t *testing.T) {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
 	text := w.stderr.String()
-	if !strings.Contains(text, "usage:") || !strings.Contains(text, "app") || !strings.Contains(text, "second") {
-		t.Errorf("usage dump wrong:\n%s", text)
+	if !strings.Contains(text, "usage:") || !strings.Contains(text, "--applets") || strings.Contains(text, "second") {
+		t.Errorf("usage must point at --applets, listing nothing:\n%s", text)
 	}
 }
 
