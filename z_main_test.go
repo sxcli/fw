@@ -128,7 +128,7 @@ func newWorld(t *testing.T, argv []string, files map[string]string, env map[stri
 	w := &world{c: &fail.Collector{}}
 	w.cat = registry.New(w.c)
 	w.rt = &runtime{
-		catalog: catalog{suppressed: effectiveSuppressedCore()},
+		catalog: catalog{suppressed: suppressedCore},
 		c:       w.c,
 		argv:    argv,
 		lookupEnv: func(name string) (string, bool) {
@@ -382,7 +382,6 @@ func TestStartFailureStopsStarted(t *testing.T) {
 }
 
 func TestDisableStripsOptionalDependency(t *testing.T) {
-	enableControls(t)
 	w := newWorld(t, []string{"bin", "--disable", "dep"}, nil, nil)
 	a := w.applet(0)
 	w.dep(false)
@@ -399,7 +398,6 @@ func TestDisableStripsOptionalDependency(t *testing.T) {
 }
 
 func TestWriteConfigToStdout(t *testing.T) {
-	enableControls(t)
 	w := newWorld(t, []string{"bin", "--write-config", "--greeting", "dumped"}, nil, nil)
 	w.applet(0)
 	if code := w.run(); code != 0 {

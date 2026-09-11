@@ -25,7 +25,6 @@ import (
 // included. The old "applet is disabled" special case died with the
 // one-applet rule that made it possible.
 func TestDisablingDispatchedAppletFails(t *testing.T) {
-	enableControls(t)
 	w := newWorld(t, []string{"bin", "--disable", "app"}, nil, nil)
 	w.applet(0)
 	if code := w.run(); code != 2 {

@@ -79,27 +79,15 @@ func TestEnableDefaultOnFeatureIsViolation(t *testing.T) {
 	}
 }
 
-func TestControlsAreOffByDefault(t *testing.T) {
-	// the three controls are default-off: they ride the effective
-	// suppression until the author enables them, and Suppress refuses
-	// them like every default-off feature
-	all := strings.Join(effectiveSuppressedCore(), ",")
-	for _, long := range []string{"disable", "enable", "override"} {
-		if !strings.Contains(all, long) {
-			t.Errorf("%s must be off by default: %v", long, all)
-		}
-	}
-	old := enabledControls
-	t.Cleanup(func() { enabledControls = old })
-	enabledControls = map[CoreFeature]bool{}
-	Enable(FeatureDisable)
-	if strings.Contains(strings.Join(effectiveSuppressedCore(), ","), "disable") {
-		t.Error("an enabled control must leave the suppression")
-	}
-	before := defaultCollector.Len()
-	Suppress(FeatureEnable)
-	if defaultCollector.Len() != before+1 {
-		t.Error("suppressing a default-off control must be a violation")
+func TestControlSuppressTrimsWithTheImport(t *testing.T) {
+	// this test binary imports sxcli.dev/fw/controls, so trimming an
+	// individual control is legal — the plain suppression road
+	old := suppressedCore
+	t.Cleanup(func() { suppressedCore = old })
+	suppressedCore = nil
+	Suppress(FeatureOverride)
+	if !reflect.DeepEqual(suppressedCore, []string{"override"}) {
+		t.Errorf("an imported control must be suppressible: %v", suppressedCore)
 	}
 }
 

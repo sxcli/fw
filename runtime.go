@@ -93,8 +93,8 @@ func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
 // target's primary alias, and the sections ride in composed order,
 // both by construction.
 func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.Result,
-	core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) *engine.Schema {
-	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn),
+	core *engine.Core, ctrl any, kn *upgradeKnobs, ls *listingKnob) *engine.Schema {
+	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn, ls),
 		sections(ca.composedMembers(res)), ca.suppressed, ca.shortPriority)
 }
 
@@ -160,7 +160,7 @@ type runtime struct {
 
 func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *runtime {
 	return &runtime{
-		catalog:   catalog{reg: app.reg, suppressed: effectiveSuppressedCore(), shortPriority: app.shortPriority},
+		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
 		c:         &fail.Collector{},
 		argv:      argv,
 		lookupEnv: os.LookupEnv,

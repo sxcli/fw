@@ -150,7 +150,6 @@ func enforcementWorld(t *testing.T, argv []string, files, env map[string]string)
 }
 
 func TestDomainEnforcedOnArguments(t *testing.T) {
-	enableControls(t)
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-flag", "turbo"}, nil, nil)
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
@@ -168,7 +167,6 @@ func TestDomainEnforcedOnArguments(t *testing.T) {
 }
 
 func TestDomainEnforcedOnEnvironment(t *testing.T) {
-	enableControls(t)
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP__EXTRA_FLAG": "turbo"})
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
@@ -179,7 +177,6 @@ func TestDomainEnforcedOnEnvironment(t *testing.T) {
 }
 
 func TestDomainEnforcedOnFiles(t *testing.T) {
-	enableControls(t)
 	files := map[string]string{"/etc/app/config.json": `{"extra": {"flag": "turbo"}}`}
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, files, nil)
 	if code := w.run(); code != 2 {
@@ -191,7 +188,6 @@ func TestDomainEnforcedOnFiles(t *testing.T) {
 }
 
 func TestSliceDomainEnforced(t *testing.T) {
-	enableControls(t)
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra", "--extra-tag", "a", "--extra-tag", "z"}, nil, nil)
 	if code := w.run(); code != 2 {
 		t.Fatalf("bad slice element must fail: exit %d", code)
@@ -228,7 +224,6 @@ func TestDefaultOutsideDomainFailsTheRun(t *testing.T) {
 }
 
 func TestSliceDomainEnforcedFromFiles(t *testing.T) {
-	enableControls(t)
 	files := map[string]string{"/etc/app/config.json": `{"extra": {"tags": ["a", "z"]}}`}
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, files, nil)
 	if code := w.run(); code != 2 {
@@ -240,7 +235,6 @@ func TestSliceDomainEnforcedFromFiles(t *testing.T) {
 }
 
 func TestSliceDomainEnforcedFromEnvironment(t *testing.T) {
-	enableControls(t)
 	w, _ := enforcementWorld(t, []string{"bin", "--enable", "extra"}, nil, map[string]string{"APP__EXTRA_TAG": "a,z"})
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit = %d, want 2\n%s", code, w.stderr.String())
@@ -332,7 +326,6 @@ func intWorld(t *testing.T, argv []string) (*world, *intService) {
 }
 
 func TestIntDomainEnforcedEndToEnd(t *testing.T) {
-	enableControls(t)
 	w, _ := intWorld(t, []string{"bin", "--enable", "intsvc", "--retries-x", "7"})
 	if code := w.run(); code != 2 {
 		t.Fatalf("out-of-domain int must fail: exit %d\n%s", code, w.stderr.String())
@@ -434,7 +427,6 @@ func TestHintOnNonStringFieldIsViolation(t *testing.T) {
 // The hint travels to ArgInfo, and the core dogfoods the mechanism:
 // its own --config declares HintFile.
 func TestHintFlowsIntoIntrospection(t *testing.T) {
-	enableControls(t)
 	md := &Metadata{Fields: map[string]any{
 		"Flag": FieldMetadata[string]{Hint: HintFile, Doc: "some path"},
 	}}

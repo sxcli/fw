@@ -24,10 +24,10 @@ import (
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
+	"sxcli.dev/fw/internal/ctlhook"
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
 	"sxcli.dev/fw/internal/registry"
-	"sxcli.dev/rules/solver"
 )
 
 // Main is the busybox-compatibility sugar of the composition model:
@@ -150,26 +150,6 @@ func firstLine(s string) string {
 	return s
 }
 
-// resolveRef resolves an operator-supplied service reference — an
-// alias or an id, both legal in every control slot. The vocabularies
-// are disjoint by grammar (an alias never contains '/', an id always
-// does), so the token's shape says which dictionary to open — no tie
-// is expressible. Applets are not services from the operator's seat,
-// the dispatched one included; dormant ones are not even here.
-func (rt *runtime) resolveRef(ref string) (*registry.Descriptor, bool) {
-	var d *registry.Descriptor
-	ok := false
-	if strings.Contains(ref, "/") {
-		d, ok = rt.ws.ByID(ref)
-	} else {
-		d, ok = rt.wsByAlias[ref]
-	}
-	if ok && d.Applet {
-		d, ok = nil, false
-	}
-	return d, ok
-}
-
 // dispatch picks the applet per the spec rules: single-applet mode
 // (only non-System applets count, with the System-selector carve-out),
 // else first-bare-argument selector (Hidden and System applets are
@@ -267,8 +247,9 @@ type invocationPlan struct {
 	src   engine.Sources
 	files *engine.Files
 	core  engine.Core
-	ctrl  coreControls
+	ctrl  any // control knobs from the hook; nil without the import
 	kn    upgradeKnobs
+	ls    listingKnob
 	ctl   graph.Controls
 	res   graph.Result
 	sch   *engine.Schema
@@ -281,24 +262,11 @@ type invocationPlan struct {
 	target   string // --config at peek time, the upgrade target
 }
 
-// coreControls is the framework's contribution to the composite core
-// section: the service controls, riding the same operator surfaces as
-// the engine's own knobs.
-type coreControls struct {
-	Applets  bool     `json:"applets" conf:"applets" env:"-" dump:"-" usage:"list the binary's applets and exit"`
-	Disable  []string `json:"disable" conf:"disable" env:"-" usage:"service ids to remove from the resolved service set"`
-	Enable   []string `json:"enable" conf:"enable" env:"-" usage:"service ids to force into the resolved service set"`
-	Override []string `json:"override" conf:"override" env:"-" usage:"dependency remapping in from=to form"`
+// listingKnob is the --applets argument's schema surface; the scan
+// that serves it reads argv directly, pre-dispatch.
+type listingKnob struct {
+	Applets bool `json:"applets" conf:"applets" env:"-" dump:"-" usage:"list the binary's applets and exit"`
 }
-
-// controlsMeta carries the controls' hints for introspection and
-// completion. Override takes from=to pairs, not plain service ids —
-// no honest hint fits; tooling that understands the pair form can
-// still act on the field by name.
-var controlsMeta = &engine.Meta{Fields: map[string]engine.FieldMeta{
-	"Disable": {Hint: engine.ValueHint(HintServiceID)},
-	"Enable":  {Hint: engine.ValueHint(HintServiceID)},
-}}
 
 // upgradeKnobs is the framework's serving of the --upgrade-config
 // tool flags: run-scoped, argument-only, mirrored from the front
@@ -309,10 +277,53 @@ type upgradeKnobs struct {
 }
 
 // coreContribs assembles the composite core: the engine's knobs
-// first (its short forms win), the framework's controls and tool
-// knobs after.
-func coreContribs(core *engine.Core, ctrl *coreControls, kn *upgradeKnobs) []engine.Contribution {
-	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctrl, Meta: controlsMeta}, {Ptr: kn}}
+// first (its short forms win), then the framework's tool knobs, the
+// listing knob and — only in a binary that imported
+// sxcli.dev/fw/controls — the service controls. A nil contribution
+// pointer contributes nothing, so the absent case needs no branch.
+func coreContribs(core *engine.Core, ctl any, kn *upgradeKnobs, ls *listingKnob) []engine.Contribution {
+	meta := (*engine.Meta)(nil)
+	if ctlhook.Registered != nil {
+		meta = ctlhook.Registered.Meta
+	}
+	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctl, Meta: meta}, {Ptr: kn}, {Ptr: ls}}
+}
+
+// newControlKnobs returns a fresh controls contribution, nil when the
+// binary never imported the controls package.
+func newControlKnobs() any {
+	if ctlhook.Registered != nil {
+		return ctlhook.Registered.New()
+	}
+	return nil
+}
+
+// translateControls hands filled control knobs to the registered
+// implementation; without one the graph gets no controls, ever.
+func (rt *runtime) translateControls(c *fail.Collector, k any) graph.Controls {
+	if ctlhook.Registered == nil || k == nil {
+		return graph.Controls{}
+	}
+	return ctlhook.Registered.Translate(c, wsView{rt}, k)
+}
+
+// wsView adapts the working set to the controls' two-dictionary view.
+type wsView struct{ rt *runtime }
+
+func (v wsView) ByAlias(name string) (ctlhook.Ref, bool) {
+	d, ok := v.rt.wsByAlias[name]
+	if !ok {
+		return ctlhook.Ref{}, false
+	}
+	return ctlhook.Ref{ID: d.ID, Applet: d.Applet, Core: d.Core}, true
+}
+
+func (v wsView) ByID(id string) (ctlhook.Ref, bool) {
+	d, ok := v.rt.ws.ByID(id)
+	if !ok {
+		return ctlhook.Ref{}, false
+	}
+	return ctlhook.Ref{ID: d.ID, Applet: d.Applet, Core: d.Core}, true
 }
 
 // sections maps a resolved service set to config sections: the
@@ -362,9 +373,10 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	// the author's value and an explicit 0 is the operator choosing
 	// UNLIMITED
 	peek.ConfigMaxBytes = rt.configMaxBytes
-	var peekCtrl coreControls
+	peekCtrl := newControlKnobs()
 	var peekKn upgradeKnobs
-	engine.PeekCore(c, alias, p.src, coreContribs(&peek, &peekCtrl, &peekKn))
+	var peekLs listingKnob
+	engine.PeekCore(c, alias, p.src, coreContribs(&peek, peekCtrl, &peekKn, &peekLs))
 	p.help = peek.Help
 	p.validate = peek.ValidateConfig
 	p.target = peek.Config
@@ -380,8 +392,9 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		p.files = engine.LoadFiles(c, p.src, rt.explicitPath(peek))
 	}
 	if c.Len() == before {
-		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, &p.ctrl, &p.kn))
-		p.ctl = rt.controls(c, p.ctrl)
+		p.ctrl = newControlKnobs()
+		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, p.ctrl, &p.kn, &p.ls))
+		p.ctl = rt.translateControls(c, p.ctrl)
 	}
 	if c.Len() == before {
 		root := rt.coreRoot(c, d, rt.providerSeeds(p.files))
@@ -404,7 +417,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = rt.schema(c, d, p.res, &p.core, &p.ctrl, &p.kn)
+		p.sch = rt.schema(c, d, p.res, &p.core, p.ctrl, &p.kn, &p.ls)
 	}
 	return p
 }
@@ -491,14 +504,15 @@ func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine
 	}
 	fallback := &fail.Collector{}
 	var core engine.Core
-	var ctrl coreControls
+	ctrl := newControlKnobs()
 	var kn upgradeKnobs
+	var ls listingKnob
 	root := rt.coreRoot(fallback, d, nil)
 	var res graph.Result
 	if fallback.Len() == 0 {
 		res = graph.Resolve(fallback, rt.reg, root, graph.Controls{})
 	}
-	return rt.schema(fallback, d, res, &core, &ctrl, &kn)
+	return rt.schema(fallback, d, res, &core, ctrl, &kn, &ls)
 }
 
 // upgradeConfig serves --upgrade-config: the schema is built from the
@@ -513,8 +527,9 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	}
 	from, bare := engine.ParseFromVersions(rt.c, p.kn.FromVersion)
 	var core engine.Core
-	var ctrl coreControls
+	ctrl := newControlKnobs()
 	var kn upgradeKnobs
+	var ls listingKnob
 	var all []engine.Section
 	for _, member := range rt.reg.All() {
 		if member.ConfigPtr != nil {
@@ -528,7 +543,7 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	// spec and irrelevant to a file transform (two applets with
 	// disjoint resolved service sets may both say conf:"port"; their
 	// shared file must still upgrade)
-	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, &ctrl, &kn), all, rt.suppressed)
+	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, ctrl, &kn, &ls), all, rt.suppressed)
 	if rt.c.Len() == 0 {
 		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
 	}
@@ -742,77 +757,6 @@ func (rt *runtime) explicitPath(peek engine.Core) string {
 		}
 	}
 	return out
-}
-
-// controls translates the operator's service references into graph
-// identities: disable/enable/override values accept BOTH vocabularies
-// — aliases (what operators speak) and ids (what inject tags and docs
-// say). The graph stays identity-based and ignorant of aliases.
-// Override's from side is special: it matches dependency REFERENCES
-// (tag strings), which may name nothing registered — an unresolvable
-// from stays raw and at worst earns the unused-override warning.
-func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls {
-	ctl := graph.Controls{}
-	for _, ref := range ctrl.Disable {
-		if coreRef(ref) {
-			c.Fail(solver.CoreControlRule, "disable", ref)
-		} else if d, ok := rt.resolveRef(ref); ok {
-			ctl.Disable = append(ctl.Disable, d.ID)
-		} else {
-			c.Fail("disable: unknown service %q", ref)
-		}
-	}
-	for _, ref := range ctrl.Enable {
-		if coreRef(ref) {
-			c.Fail(solver.CoreControlRule, "enable", ref)
-		} else if d, ok := rt.resolveRef(ref); ok {
-			ctl.Enable = append(ctl.Enable, d.ID)
-		} else {
-			c.Fail("enable: unknown service %q", ref)
-		}
-	}
-	for _, entry := range ctrl.Override {
-		from, to, wellFormed := strings.Cut(entry, "=")
-		if wellFormed && from != "" && to != "" {
-			if coreRef(from) || coreRef(to) {
-				offender := from
-				if coreRef(to) {
-					offender = to
-				}
-				c.Fail(solver.CoreControlRule, "override", offender)
-				continue
-			}
-			if ctl.Override == nil {
-				ctl.Override = map[string]string{}
-			}
-			if fromD, ok := rt.resolveRef(from); ok {
-				if fromD.Core {
-					// the solver's core-family verdict is unreachable
-					// when the entry never forms (an unknown to side
-					// would fail first); same act, same words
-					c.Fail(solver.CoreControlRule, "override", from)
-					continue
-				}
-				from = fromD.ID
-			}
-			if toD, ok := rt.resolveRef(to); ok {
-				ctl.Override[from] = toD.ID
-			} else {
-				c.Fail("override: unknown substitute %q for %q", to, from)
-			}
-		} else {
-			c.Fail("override %q: expected from=to", entry)
-		}
-	}
-	return ctl
-}
-
-// coreRef reports whether the reference names the framework core
-// itself — the virtual root is never a registry member, so the
-// solver's core-family verdict cannot reach it; this guard says the
-// same words (solver.CoreControlRule) for the same act.
-func coreRef(ref string) bool {
-	return ref == CoreAlias || ref == CoreID
 }
 
 // providers returns every registered service declaring

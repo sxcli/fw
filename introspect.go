@@ -163,9 +163,10 @@ func (i *Introspector) Arguments(_ []string) []ArgInfo {
 	}
 	c := &fail.Collector{}
 	var core engine.Core
-	var ctrl coreControls
+	ctrl := newControlKnobs()
 	var kn upgradeKnobs
-	sch := i.cat.schema(c, i.target, i.res, &core, &ctrl, &kn)
+	var ls listingKnob
+	sch := i.cat.schema(c, i.target, i.res, &core, ctrl, &kn, &ls)
 	if c.Len() != 0 {
 		// the resolved service set solved at view construction; a
 		// schema violation

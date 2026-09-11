@@ -19,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+	"sxcli.dev/fw/internal/ctlhook"
 	"sxcli.dev/fw/system"
 	"testing"
 
@@ -55,15 +56,6 @@ func (a *appAux) Configured() error {
 
 // appWorld composes an App from a private catalog and wires a
 // runtime with hermetic seams around it.
-// enableControls opts the test's binary into the service controls,
-// restoring the default-off state afterwards.
-func enableControls(t *testing.T) {
-	t.Helper()
-	old := enabledControls
-	t.Cleanup(func() { enabledControls = old })
-	enabledControls = map[CoreFeature]bool{FeatureDisable: true, FeatureEnable: true, FeatureOverride: true}
-}
-
 func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]string, register func(reg *registry.Registry, c *fail.Collector, log *[]string)) (*world, int) {
 	return appWorldWith(t, b, argv, files, env, register, nil)
 }
@@ -86,7 +78,7 @@ func appWorldWith(t *testing.T, b *AppBuilder, argv []string, files, env map[str
 		t.Fatalf("build failed: %v", err)
 	}
 	w.rt = &runtime{
-		catalog:        catalog{reg: app.reg, suppressed: effectiveSuppressedCore(), shortPriority: app.shortPriority},
+		catalog:        catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
 		configMaxBytes: configMaxBytes,
 		c:              w.c,
 		argv:           argv,
@@ -252,7 +244,6 @@ func TestAppletsListing(t *testing.T) {
 }
 
 func TestControlsSpeakBothVocabularies(t *testing.T) {
-	enableControls(t)
 	byAlias := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 		NewBareRegistration("example.com/app/aux", func() *appAux { return &appAux{log: log} }).
@@ -273,7 +264,6 @@ func TestControlsSpeakBothVocabularies(t *testing.T) {
 }
 
 func TestCoreFamilyIsNoControlTarget(t *testing.T) {
-	enableControls(t)
 	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 	}
@@ -419,7 +409,6 @@ func (p *provApplet) Run() int          { return 0 }
 func (p *provApplet) Cat()              {}
 
 func TestDormantAppletsAreUnreachable(t *testing.T) {
-	enableControls(t)
 	twoApplets := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
@@ -506,16 +495,28 @@ func errText2(c *fail.Collector) string {
 	return b.String()
 }
 
-func TestControlsOffByDefault(t *testing.T) {
-	// no Enable call: the binary carries no control surface at all —
-	// the argument is unknown, not refused, not special
+func TestControlsAbsentWithoutTheImport(t *testing.T) {
+	// the test binary imports sxcli.dev/fw/controls, so the absence
+	// is simulated by clearing the hook — the behavioral half of the
+	// contract. The other half (the linker dropping the unlinked
+	// package) is a build-graph fact no in-process test can see.
+	old := ctlhook.Registered
+	t.Cleanup(func() { ctlhook.Registered = old })
+	ctlhook.Registered = nil
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin", "--disable", "srv"}, nil, nil, registerSrv("srv"))
 	if code != 2 || !strings.Contains(w.stderr.String(), "unknown argument --disable") {
-		t.Errorf("controls must be off by default: code=%d\n%s", code, w.stderr.String())
+		t.Errorf("controls must not exist without the import: code=%d\n%s", code, w.stderr.String())
 	}
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "--override", "a=b"}, nil, nil, registerSrv("srv"))
 	if code != 2 || !strings.Contains(w.stderr.String(), "unknown argument --override") {
-		t.Errorf("override must be off by default: code=%d\n%s", code, w.stderr.String())
+		t.Errorf("override must not exist without the import: code=%d\n%s", code, w.stderr.String())
+	}
+	// and Suppress of a control points at the import instead of
+	// silently trimming nothing
+	before := defaultCollector.Len()
+	Suppress(FeatureOverride)
+	if defaultCollector.Len() != before+1 {
+		t.Error("suppressing an absent control must be a violation")
 	}
 }
 

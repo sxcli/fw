@@ -14,7 +14,10 @@
 
 package fw
 
-import "sxcli.dev/conf/engine"
+import (
+	"sxcli.dev/conf/engine"
+	"sxcli.dev/fw/internal/ctlhook"
+)
 
 // CoreFeature identifies one suppressible piece of the framework core's
 // configuration surface.
@@ -28,15 +31,16 @@ const (
 	// FeatureWriteConfig is the --write-config argument.
 	FeatureWriteConfig
 	// FeatureDisable is the --disable service control. The three
-	// controls are OFF by default: reshaping the resolved service
-	// set at invocation time is a deliberate capability, and a
-	// binary that never opted in carries no such surface — the
-	// author turns one on with Enable.
+	// controls exist only in a binary that imported
+	// sxcli.dev/fw/controls — the import is the opt-in, and without
+	// it the code is not in the binary at all. Suppress can trim an
+	// individual control inside an importing binary.
 	FeatureDisable
-	// FeatureEnable is the --enable service control; off by default.
+	// FeatureEnable is the --enable service control; present only by
+	// the controls import.
 	FeatureEnable
-	// FeatureOverride is the --override service control; off by
-	// default.
+	// FeatureOverride is the --override service control; present
+	// only by the controls import.
 	FeatureOverride
 	// FeatureHelp is the --help,-h argument (argument-only: help has
 	// no environment door).
@@ -76,31 +80,18 @@ var coreFeatureLongs = map[CoreFeature]string{
 	FeatureApplets:        "applets",
 }
 
-// suppressedCore holds the long names of explicitly suppressed core
-// fields; effectiveSuppressedCore adds the default-off controls that
-// were never enabled, and Main passes the result into the
-// configuration machinery.
+// suppressedCore holds the long names of suppressed core fields; Main
+// passes it into the configuration machinery.
 var suppressedCore []string
 
-// defaultOffControls are the control features an author must Enable;
-// enabledControls records the opt-ins.
-var defaultOffControls = map[CoreFeature]bool{
+// controlFeatures marks the features that live in the optional
+// controls package: Suppress may trim them only in a binary that
+// imported it — elsewhere there is nothing to suppress, and saying
+// so beats a silent no-op.
+var controlFeatures = map[CoreFeature]bool{
 	FeatureDisable:  true,
 	FeatureEnable:   true,
 	FeatureOverride: true,
-}
-var enabledControls = map[CoreFeature]bool{}
-
-// effectiveSuppressedCore is the schema's view: explicit suppresses
-// plus every control the author never enabled.
-func effectiveSuppressedCore() []string {
-	out := append([]string(nil), suppressedCore...)
-	for feature := range defaultOffControls {
-		if !enabledControls[feature] {
-			out = append(out, coreFeatureLongs[feature])
-		}
-	}
-	return out
 }
 
 // configMaxBytes is the effective config file size cap; Main passes
@@ -123,19 +114,18 @@ func ConfigMaxBytes(limit uint64) {
 // platform layer consults it.
 var scmDebugEnabled bool
 
-// Enable turns on default-off core features: the three service
-// controls (FeatureDisable/FeatureEnable/FeatureOverride) and
-// FeatureSCMDebug. Enabling a default-on feature is a violation
-// (Suppress is the counterpart for those). Enable compiles and runs on
-// every platform — on one where the feature cannot exist it is a
-// harmless no-op — so a shared main() builds everywhere. Like Suppress
-// it is a build-time property: call it before Main.
+// Enable turns on default-off core features; FeatureSCMDebug is
+// currently the only one — the service controls opt in by importing
+// sxcli.dev/fw/controls instead, so the linker can drop their code
+// entirely. Enabling a default-on feature is a violation (Suppress is
+// the counterpart for those). Enable compiles and runs on every
+// platform — on one where the feature cannot exist it is a harmless
+// no-op — so a shared main() builds everywhere. Like Suppress it is a
+// build-time property: call it before Main.
 func Enable(features ...CoreFeature) {
 	for _, feature := range features {
 		if feature == FeatureSCMDebug {
 			scmDebugEnabled = true
-		} else if defaultOffControls[feature] {
-			enabledControls[feature] = true
 		} else {
 			defaultCollector.Fail("Enable: feature %d is not a default-off feature", feature)
 		}
@@ -154,8 +144,10 @@ func Enable(features ...CoreFeature) {
 // configuration.
 func Suppress(features ...CoreFeature) {
 	for _, feature := range features {
-		if feature == FeatureSCMDebug || defaultOffControls[feature] {
-			defaultCollector.Fail("Suppress: feature %d is off by default; Enable is its switch", feature)
+		if feature == FeatureSCMDebug {
+			defaultCollector.Fail("Suppress: FeatureSCMDebug is off by default; Enable is its switch")
+		} else if controlFeatures[feature] && ctlhook.Registered == nil {
+			defaultCollector.Fail("Suppress: the controls are not in this binary — import sxcli.dev/fw/controls")
 		} else if long, known := coreFeatureLongs[feature]; known {
 			dup := false
 			for _, existing := range suppressedCore {

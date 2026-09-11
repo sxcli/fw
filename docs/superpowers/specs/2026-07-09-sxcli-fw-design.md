@@ -437,8 +437,8 @@ Two independent axes, two verbs:
   composed of. An un-accepted catalog entry does not exist for this
   app: no resolution, no dispatch, no introspection, and no `--enable`
   — `Accept` is the developer's composition boundary (linking);
-  `enable`/`disable` remain the operator's runtime controls *within*
-  it.
+  `enable`/`disable`, in a binary that imported the controls, are the
+  operator's runtime knobs *within* it.
 - **`Order(ids...)` — rank among the accepted.** `Order` never admits:
   ordering an un-accepted id is a composition violation (a free typo
   catcher). Ranked beats unranked in single-valued matching; slice
@@ -809,15 +809,21 @@ is today. The core node is the graph-and-injection side only.
 ### Config-driven service control
 
 Part of the core's config struct — argument- and file-settable (the
-environment door is closed, see core-arguments-argv-only) — and OFF
-BY DEFAULT: reshaping the resolved service set at invocation time is
-a deliberate capability, so a binary carries no control surface at
-all unless its author turned one on with
-`fw.Enable(fw.FeatureDisable, ...)`. Without the opt-in the argument
-is unknown, the file key refused, the help line and completion
-candidates absent — the surface does not exist. (Ruled 2026-09-11;
-the database-provider swap is the canonical case FOR enabling them,
-and it is a special case.)
+environment door is closed, see core-arguments-argv-only) — and
+PRESENT ONLY BY IMPORT: reshaping the resolved service set at
+invocation time is a deliberate capability, so the controls live in
+their own package and the import is the opt-in —
+
+	import _ "sxcli.dev/fw/controls"
+
+A binary without it carries none of this code at all (the linker
+drops the unlinked package): the argument is unknown, the file key
+refused, the help line and completion candidates absent, and no code
+path exists for any future bug to reach. Within an importing binary
+all three exist and `Suppress` trims individual ones; without the
+import, `Suppress` of a control is a violation pointing at the
+import. (Ruled 2026-09-11; the database-provider swap is the
+canonical case FOR importing it, and it is a special case.)
 
 - `disable` — service IDs removed from the resolved service set even
   if required.
@@ -1416,8 +1422,8 @@ target) is added as a seed of the resolved service set — it receives
 the normal lifecycle and
 survives ejection, keeping a future value-only config reload able to
 re-read the file. Unused providers stay cold and are ejected. A provider
-wanting an unconditional lifecycle declares a dependency or is forced in
-with `--enable`.
+wanting an unconditional lifecycle declares a dependency (or, in a
+controls-importing binary, is forced in with `--enable`).
 
 ### Argument syntax
 
@@ -1455,10 +1461,10 @@ with `--enable`.
 Built on `log/slog`. A log sink is a service declaring
 `Provides[slog.Handler]()` — console, file, syslog/journald ship as
 subpackages, each with its own config struct. Sink activation falls out of
-the normal machinery (imports, the resolved service set,
-enable/disable): a sink is used
-when it is `--enable`d or pulled by a genuine dependency, and stays cold
-otherwise. No sink is on by default — the framework guarantees a raw
+the normal machinery (imports, the resolved service set, and — where
+the binary imported the controls — enable/disable): a sink is used
+when it is pulled by a genuine dependency or `--enable`d, and stays
+cold otherwise. No sink is on by default — the framework guarantees a raw
 stderr floor instead (below), and the console sink is opt-in like every
 other.
 
