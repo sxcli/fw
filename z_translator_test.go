@@ -135,6 +135,7 @@ func TestTranslatorFailureDegradesQuietly(t *testing.T) {
 }
 
 func TestDisabledTranslatorMeansMsgids(t *testing.T) {
+	enableControls(t)
 	w, _ := translatorWorld(t, []string{"bin", "--disable", "i18n"}, false, map[string]string{"hello": "здравей"})
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())

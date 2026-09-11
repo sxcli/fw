@@ -151,37 +151,23 @@ func firstLine(s string) string {
 }
 
 // resolveRef resolves an operator-supplied service reference — an
-// alias or an id; both vocabularies are legal (aliases are what
-// operators speak, ids are what inject tags and documentation say,
-// and --override's from side inherently speaks id). Convention keeps
-// the two disjoint (ids are path-shaped); the pathological tie — the
-// string naming one service's alias and a DIFFERENT service's id — is
-// a loud violation, never a silent pick.
-func (rt *runtime) resolveRef(c *fail.Collector, ref string) (*registry.Descriptor, bool, bool) {
-	byAlias, aliasHit := rt.wsByAlias[ref]
-	byID, idHit := rt.ws.ByID(ref)
-	if aliasHit && byAlias.Applet {
-		// applets are not services from the operator's seat — the
-		// dispatched one included; dormant ones are not even here
-		aliasHit = false
-	}
-	if idHit && byID.Applet {
-		idHit = false
-	}
-	var out *registry.Descriptor
+// alias or an id, both legal in every control slot. The vocabularies
+// are disjoint by grammar (an alias never contains '/', an id always
+// does), so the token's shape says which dictionary to open — no tie
+// is expressible. Applets are not services from the operator's seat,
+// the dispatched one included; dormant ones are not even here.
+func (rt *runtime) resolveRef(ref string) (*registry.Descriptor, bool) {
+	var d *registry.Descriptor
 	ok := false
-	tied := false
-	if aliasHit && idHit && byAlias != byID {
-		// reported here, in full; a caller adding "unknown service"
-		// would be lying — the ref is over-known, not unknown
-		c.Fail("%q names the alias of %q and the id of %q — say which", ref, byAlias.ID, byID.ID)
-		tied = true
-	} else if aliasHit {
-		out, ok = byAlias, true
-	} else if idHit {
-		out, ok = byID, true
+	if strings.Contains(ref, "/") {
+		d, ok = rt.ws.ByID(ref)
+	} else {
+		d, ok = rt.wsByAlias[ref]
 	}
-	return out, ok, tied
+	if ok && d.Applet {
+		d, ok = nil, false
+	}
+	return d, ok
 }
 
 // dispatch picks the applet per the spec rules: single-applet mode
@@ -464,7 +450,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 			// undeclared non-empty tail in the framework is a
 			// violation — declare it or lose it, loudly
 			if len(loaded.Positionals) > 0 {
-				rt.c.Fail("unexpected positional %q — the applet declares no pos fields", loaded.Positionals[0])
+				rt.c.Fail("unexpected argument %q", loaded.Positionals[0])
 			}
 		}
 		if rt.c.Len() == 0 && p.validate {
@@ -770,18 +756,18 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 	for _, ref := range ctrl.Disable {
 		if coreRef(ref) {
 			c.Fail(solver.CoreControlRule, "disable", ref)
-		} else if d, ok, tied := rt.resolveRef(c, ref); ok {
+		} else if d, ok := rt.resolveRef(ref); ok {
 			ctl.Disable = append(ctl.Disable, d.ID)
-		} else if !tied {
+		} else {
 			c.Fail("disable: unknown service %q", ref)
 		}
 	}
 	for _, ref := range ctrl.Enable {
 		if coreRef(ref) {
 			c.Fail(solver.CoreControlRule, "enable", ref)
-		} else if d, ok, tied := rt.resolveRef(c, ref); ok {
+		} else if d, ok := rt.resolveRef(ref); ok {
 			ctl.Enable = append(ctl.Enable, d.ID)
-		} else if !tied {
+		} else {
 			c.Fail("enable: unknown service %q", ref)
 		}
 	}
@@ -799,7 +785,7 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 			if ctl.Override == nil {
 				ctl.Override = map[string]string{}
 			}
-			if fromD, ok, _ := rt.resolveRef(c, from); ok {
+			if fromD, ok := rt.resolveRef(from); ok {
 				if fromD.Core {
 					// the solver's core-family verdict is unreachable
 					// when the entry never forms (an unknown to side
@@ -809,9 +795,9 @@ func (rt *runtime) controls(c *fail.Collector, ctrl coreControls) graph.Controls
 				}
 				from = fromD.ID
 			}
-			if toD, ok, tied := rt.resolveRef(c, to); ok {
+			if toD, ok := rt.resolveRef(to); ok {
 				ctl.Override[from] = toD.ID
-			} else if !tied {
+			} else {
 				c.Fail("override: unknown substitute %q for %q", to, from)
 			}
 		} else {

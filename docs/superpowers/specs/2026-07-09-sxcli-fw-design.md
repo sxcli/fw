@@ -226,6 +226,14 @@ served six masters and is retired:
   `Builder.Alias`, and a renamed service's registration name is its
   "original alias" — collision messages carry that provenance.
 
+The two vocabularies are DISJOINT BY GRAMMAR, and that is a rule,
+not an accident: an alias never contains `/` or `.`; an id always
+contains at least one `/`. One string is never legal in both. Every
+operator slot that takes a service reference — `--disable`,
+`--enable`, both `--override` sides — accepts either vocabulary, and
+the token's shape says which dictionary answers; no flag needs to
+name the vocabulary and no tie is expressible.
+
 Operator-facing surfaces throughout this spec that historically said
 "service id" — config sections, env prefixes, dispatch selectors,
 control vocabulary, `HintServiceID` completion — mean the **alias**
@@ -800,13 +808,22 @@ is today. The core node is the graph-and-injection side only.
 
 ### Config-driven service control
 
-Part of the core's config struct (settable via args, env, or file like
-everything else):
+Part of the core's config struct — argument- and file-settable (the
+environment door is closed, see core-arguments-argv-only) — and OFF
+BY DEFAULT: reshaping the resolved service set at invocation time is
+a deliberate capability, so a binary carries no control surface at
+all unless its author turned one on with
+`fw.Enable(fw.FeatureDisable, ...)`. Without the opt-in the argument
+is unknown, the file key refused, the help line and completion
+candidates absent — the surface does not exist. (Ruled 2026-09-11;
+the database-provider swap is the canonical case FOR enabling them,
+and it is a special case.)
 
 - `disable` — service IDs removed from the resolved service set even
   if required.
-  Disabling the dispatched applet itself is a startup error, as is
-  listing the same id in both `enable` and `disable`.
+  Applets are not addressable (the dispatched one included — plain
+  "unknown service"); listing the same id in both `enable` and
+  `disable` is a startup error.
 - `enable` — service IDs forced into the resolved service set (with
   their transitive
   dependencies) even if nothing requires them.
@@ -1219,6 +1236,19 @@ breakfast); help renders a positionals block; a positional is
 argument-only BY CATEGORY (implies transient + no-env; explicit
 env/dump tags beside pos are errors, files mentioning the key are
 refused as run-scoped).
+
+Placement (ruled 2026-09-11): bare tokens INTERLEAVE freely with
+arguments — each one not consumed as a pending value fills the next
+unfilled indexed slot, in encounter order, single pass
+(`--arg=10 file --arg2 20` is legal: `file` → `pos:"0"`, `20` →
+`--arg2`'s value). A dash-prefixed token is ALWAYS an argument,
+everywhere on the line, for every slot type — known ones parse,
+unknown ones are the loud error, no slot ever claims one. The single
+escape is a literal `--`: everything after it is positional data
+verbatim, dashes included. The old blanket "positionals must come
+last" rule is gone — it predated declared positionals and survived
+by inertia. Completion follows: argument names stay on offer after
+bare tokens; silence begins at the terminator.
 
 Two deaths: `fw.Positionals()` is DELETED — an applet reads its own
 fields, an undeclared non-empty tail in fw is a violation ("declare

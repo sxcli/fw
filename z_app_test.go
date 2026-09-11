@@ -55,6 +55,15 @@ func (a *appAux) Configured() error {
 
 // appWorld composes an App from a private catalog and wires a
 // runtime with hermetic seams around it.
+// enableControls opts the test's binary into the service controls,
+// restoring the default-off state afterwards.
+func enableControls(t *testing.T) {
+	t.Helper()
+	old := enabledControls
+	t.Cleanup(func() { enabledControls = old })
+	enabledControls = map[CoreFeature]bool{FeatureDisable: true, FeatureEnable: true, FeatureOverride: true}
+}
+
 func appWorld(t *testing.T, b *AppBuilder, argv []string, files, env map[string]string, register func(reg *registry.Registry, c *fail.Collector, log *[]string)) (*world, int) {
 	return appWorldWith(t, b, argv, files, env, register, nil)
 }
@@ -77,7 +86,7 @@ func appWorldWith(t *testing.T, b *AppBuilder, argv []string, files, env map[str
 		t.Fatalf("build failed: %v", err)
 	}
 	w.rt = &runtime{
-		catalog:        catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
+		catalog:        catalog{reg: app.reg, suppressed: effectiveSuppressedCore(), shortPriority: app.shortPriority},
 		configMaxBytes: configMaxBytes,
 		c:              w.c,
 		argv:           argv,
@@ -243,6 +252,7 @@ func TestAppletsListing(t *testing.T) {
 }
 
 func TestControlsSpeakBothVocabularies(t *testing.T) {
+	enableControls(t)
 	byAlias := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 		NewBareRegistration("example.com/app/aux", func() *appAux { return &appAux{log: log} }).
@@ -263,6 +273,7 @@ func TestControlsSpeakBothVocabularies(t *testing.T) {
 }
 
 func TestCoreFamilyIsNoControlTarget(t *testing.T) {
+	enableControls(t)
 	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 	}
@@ -408,6 +419,7 @@ func (p *provApplet) Run() int          { return 0 }
 func (p *provApplet) Cat()              {}
 
 func TestDormantAppletsAreUnreachable(t *testing.T) {
+	enableControls(t)
 	twoApplets := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 		NewBareRegistration("example.com/app/two", func() *appSrv2 { return &appSrv2{log: log} }).
@@ -492,6 +504,19 @@ func errText2(c *fail.Collector) string {
 		b.WriteString("|")
 	}
 	return b.String()
+}
+
+func TestControlsOffByDefault(t *testing.T) {
+	// no Enable call: the binary carries no control surface at all —
+	// the argument is unknown, not refused, not special
+	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin", "--disable", "srv"}, nil, nil, registerSrv("srv"))
+	if code != 2 || !strings.Contains(w.stderr.String(), "unknown argument --disable") {
+		t.Errorf("controls must be off by default: code=%d\n%s", code, w.stderr.String())
+	}
+	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "--override", "a=b"}, nil, nil, registerSrv("srv"))
+	if code != 2 || !strings.Contains(w.stderr.String(), "unknown argument --override") {
+		t.Errorf("override must be off by default: code=%d\n%s", code, w.stderr.String())
+	}
 }
 
 func TestSuperuserGate(t *testing.T) {

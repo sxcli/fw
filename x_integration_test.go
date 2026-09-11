@@ -50,6 +50,9 @@ func TestMain(m *testing.M) {
 	if personality == "single" || personality == "multi" || personality == "hardened" {
 		registerProbe()
 		registerGreeter()
+		// the personalities exercise the controls, so they opt in —
+		// exactly as a real control-using binary would
+		fw.Enable(fw.FeatureDisable, fw.FeatureEnable, fw.FeatureOverride)
 	}
 	if personality == "multi" {
 		registerEcho()

@@ -178,7 +178,7 @@ func TestUndeclaredTailIsViolation(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("an undeclared tail must be a violation: exit %d", code)
 	}
-	if !strings.Contains(w.stderr.String(), `unexpected positional "stray"`) {
+	if !strings.Contains(w.stderr.String(), `unexpected argument "stray"`) {
 		t.Errorf("the surplus token must be named:\n%s", w.stderr.String())
 	}
 }

@@ -26,8 +26,8 @@ func TestSuppressMapsFeaturesToLongNames(t *testing.T) {
 	old := suppressedCore
 	t.Cleanup(func() { suppressedCore = old })
 	suppressedCore = nil
-	Suppress(FeatureConfigFile, FeatureWriteConfig, FeatureDisable, FeatureEnable, FeatureOverride, FeatureHelp)
-	want := []string{"config", "write-config", "disable", "enable", "override", "help"}
+	Suppress(FeatureConfigFile, FeatureWriteConfig, FeatureValidateConfig, FeatureHelp)
+	want := []string{"config", "write-config", "validate-config", "help"}
 	if !reflect.DeepEqual(suppressedCore, want) {
 		t.Errorf("got %v, want %v", suppressedCore, want)
 	}
@@ -37,9 +37,9 @@ func TestSuppressDeduplicates(t *testing.T) {
 	old := suppressedCore
 	t.Cleanup(func() { suppressedCore = old })
 	suppressedCore = nil
-	Suppress(FeatureOverride)
-	Suppress(FeatureOverride, FeatureOverride)
-	if !reflect.DeepEqual(suppressedCore, []string{"override"}) {
+	Suppress(FeatureHelp)
+	Suppress(FeatureHelp, FeatureHelp)
+	if !reflect.DeepEqual(suppressedCore, []string{"help"}) {
 		t.Errorf("repeated suppression must not duplicate: %v", suppressedCore)
 	}
 }
@@ -73,9 +73,33 @@ func TestEnableSCMDebug(t *testing.T) {
 
 func TestEnableDefaultOnFeatureIsViolation(t *testing.T) {
 	before := defaultCollector.Len()
-	Enable(FeatureOverride)
+	Enable(FeatureHelp)
 	if defaultCollector.Len() != before+1 {
 		t.Error("enabling a default-on feature must be a violation")
+	}
+}
+
+func TestControlsAreOffByDefault(t *testing.T) {
+	// the three controls are default-off: they ride the effective
+	// suppression until the author enables them, and Suppress refuses
+	// them like every default-off feature
+	all := strings.Join(effectiveSuppressedCore(), ",")
+	for _, long := range []string{"disable", "enable", "override"} {
+		if !strings.Contains(all, long) {
+			t.Errorf("%s must be off by default: %v", long, all)
+		}
+	}
+	old := enabledControls
+	t.Cleanup(func() { enabledControls = old })
+	enabledControls = map[CoreFeature]bool{}
+	Enable(FeatureDisable)
+	if strings.Contains(strings.Join(effectiveSuppressedCore(), ","), "disable") {
+		t.Error("an enabled control must leave the suppression")
+	}
+	before := defaultCollector.Len()
+	Suppress(FeatureEnable)
+	if defaultCollector.Len() != before+1 {
+		t.Error("suppressing a default-off control must be a violation")
 	}
 }
 

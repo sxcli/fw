@@ -27,11 +27,16 @@ const (
 	FeatureConfigFile CoreFeature = iota
 	// FeatureWriteConfig is the --write-config argument.
 	FeatureWriteConfig
-	// FeatureDisable is the --disable service control.
+	// FeatureDisable is the --disable service control. The three
+	// controls are OFF by default: reshaping the resolved service
+	// set at invocation time is a deliberate capability, and a
+	// binary that never opted in carries no such surface — the
+	// author turns one on with Enable.
 	FeatureDisable
-	// FeatureEnable is the --enable service control.
+	// FeatureEnable is the --enable service control; off by default.
 	FeatureEnable
-	// FeatureOverride is the --override service control.
+	// FeatureOverride is the --override service control; off by
+	// default.
 	FeatureOverride
 	// FeatureHelp is the --help,-h argument (argument-only: help has
 	// no environment door).
@@ -50,9 +55,9 @@ const (
 	// FeatureSCMDebug is the windows-only --scm-debug argument: it runs
 	// the service pipeline under svc/debug outside the service manager,
 	// for testing. It is argument-only (never env or config file,
-	// absent from --help) and the only default-off feature — a binary
-	// exposes it with Enable. On other platforms the token is an
-	// unknown argument.
+	// absent from --help) and off by default — a binary exposes it
+	// with Enable. On other platforms the token is an unknown
+	// argument.
 	FeatureSCMDebug
 )
 
@@ -71,9 +76,32 @@ var coreFeatureLongs = map[CoreFeature]string{
 	FeatureApplets:        "applets",
 }
 
-// suppressedCore holds the long names of suppressed core fields; Main
-// passes it into the configuration machinery.
+// suppressedCore holds the long names of explicitly suppressed core
+// fields; effectiveSuppressedCore adds the default-off controls that
+// were never enabled, and Main passes the result into the
+// configuration machinery.
 var suppressedCore []string
+
+// defaultOffControls are the control features an author must Enable;
+// enabledControls records the opt-ins.
+var defaultOffControls = map[CoreFeature]bool{
+	FeatureDisable:  true,
+	FeatureEnable:   true,
+	FeatureOverride: true,
+}
+var enabledControls = map[CoreFeature]bool{}
+
+// effectiveSuppressedCore is the schema's view: explicit suppresses
+// plus every control the author never enabled.
+func effectiveSuppressedCore() []string {
+	out := append([]string(nil), suppressedCore...)
+	for feature := range defaultOffControls {
+		if !enabledControls[feature] {
+			out = append(out, coreFeatureLongs[feature])
+		}
+	}
+	return out
+}
 
 // configMaxBytes is the effective config file size cap; Main passes
 // it into the configuration machinery. Zero means unlimited, so the
@@ -95,8 +123,9 @@ func ConfigMaxBytes(limit uint64) {
 // platform layer consults it.
 var scmDebugEnabled bool
 
-// Enable turns on default-off core features; FeatureSCMDebug is
-// currently the only one. Enabling a default-on feature is a violation
+// Enable turns on default-off core features: the three service
+// controls (FeatureDisable/FeatureEnable/FeatureOverride) and
+// FeatureSCMDebug. Enabling a default-on feature is a violation
 // (Suppress is the counterpart for those). Enable compiles and runs on
 // every platform — on one where the feature cannot exist it is a
 // harmless no-op — so a shared main() builds everywhere. Like Suppress
@@ -105,6 +134,8 @@ func Enable(features ...CoreFeature) {
 	for _, feature := range features {
 		if feature == FeatureSCMDebug {
 			scmDebugEnabled = true
+		} else if defaultOffControls[feature] {
+			enabledControls[feature] = true
 		} else {
 			defaultCollector.Fail("Enable: feature %d is not a default-off feature", feature)
 		}
@@ -123,8 +154,8 @@ func Enable(features ...CoreFeature) {
 // configuration.
 func Suppress(features ...CoreFeature) {
 	for _, feature := range features {
-		if feature == FeatureSCMDebug {
-			defaultCollector.Fail("Suppress: FeatureSCMDebug is off by default; Enable is its switch")
+		if feature == FeatureSCMDebug || defaultOffControls[feature] {
+			defaultCollector.Fail("Suppress: feature %d is off by default; Enable is its switch", feature)
 		} else if long, known := coreFeatureLongs[feature]; known {
 			dup := false
 			for _, existing := range suppressedCore {

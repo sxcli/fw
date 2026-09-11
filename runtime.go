@@ -160,7 +160,7 @@ type runtime struct {
 
 func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *runtime {
 	return &runtime{
-		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
+		catalog:   catalog{reg: app.reg, suppressed: effectiveSuppressedCore(), shortPriority: app.shortPriority},
 		c:         &fail.Collector{},
 		argv:      argv,
 		lookupEnv: os.LookupEnv,
