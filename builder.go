@@ -136,7 +136,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 	accepted := b.admitted(cat, c)
 	rank := b.ranked(accepted, c)
 	shortPriority := b.shortPriority(cat, c)
-	renamed := b.renamed(cat, accepted, c)
+	renamed := b.renamed(accepted, c)
 	if c.Len() == 0 {
 		b.checkAliases(cat, accepted, renamed, c)
 		b.checkConcrete(cat, accepted, c)
@@ -169,24 +169,19 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 	return app, err
 }
 
-// admitted resolves the accept set against the catalog, in catalog
-// order for AcceptAll plus explicit ids, deduplicated (admission is a
-// set).
+// admitted resolves the accept set against the catalog, deduplicated
+// (admission is a set). The decision itself lives in
+// sxcli.dev/rules/solver.Admit: core members are admitted by the
+// framework, Accept governs user services only — sxcli-vet's mirror
+// makes the same call.
 func (b *AppBuilder) admitted(cat *registry.Registry, c *fail.Collector) map[string]bool {
-	out := map[string]bool{}
+	var members []solver.Member
 	for _, d := range cat.All() {
-		// the framework's own family is admitted by the framework,
-		// not the composition: Accept governs user services only
-		if d.Core || b.acceptAll {
-			out[d.ID] = true
-		}
+		members = append(members, solver.Member{ID: d.ID, Core: d.Core})
 	}
-	for _, id := range b.accepts {
-		if _, known := cat.ByID(id); known {
-			out[id] = true
-		} else {
-			c.Fail(solver.AcceptUnknownRule, id)
-		}
+	out, unknown := solver.Admit(members, b.accepts, b.acceptAll)
+	for _, id := range unknown {
+		c.Fail(solver.AcceptUnknownRule, id)
 	}
 	return out
 }
@@ -242,7 +237,7 @@ func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[str
 // renamed hands the Alias overrides to the shared rules — the
 // verdicts (membership, grammar, reservations, double renames) are
 // the solver's; this side only translates and reports.
-func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c *fail.Collector) map[string]string {
+func (b *AppBuilder) renamed(accepted map[string]bool, c *fail.Collector) map[string]string {
 	renames := make([]solver.Rename, len(b.renames))
 	for i, r := range b.renames {
 		renames[i] = solver.Rename{ID: r.id, Name: r.name}
