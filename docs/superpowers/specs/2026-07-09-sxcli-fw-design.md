@@ -467,10 +467,12 @@ system service today, any future core member — are ordinary
 registrations: fw's own `init()` commits them through the same chain
 every package uses, they sit in the same catalog, and they resolve
 and inject like anything else. The core mark (internal to fw) grants
-the family exactly two properties: the framework admits them (the
-rule above), and the controls cannot touch them — a core service is
-never enabled, disabled or overridden (`solver.CoreControlRule`).
-Everything else about them is plain service behavior.
+the family exactly three properties: the framework admits them (the
+rule above), the controls cannot touch them — a core service is
+never enabled, disabled or overridden (`solver.CoreControlRule`) —
+and their names are immutable: `Builder.Alias` renames user services
+only (`solver.RenameCoreRule`). Everything else about them is plain
+service behavior.
 
 **Ties are never broken silently** — the one rule, everywhere. A bare
 single-valued field with two candidates neither of which is ranked is

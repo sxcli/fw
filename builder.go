@@ -141,7 +141,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 	accepted := b.admitted(cat, c)
 	rank := b.ranked(accepted, c)
 	shortPriority := b.shortPriority(cat, c)
-	renamed := b.renamed(accepted, c)
+	renamed := b.renamed(cat, accepted, c)
 	if c.Len() == 0 {
 		b.checkAliases(cat, accepted, renamed, c)
 		b.checkConcrete(cat, accepted, c)
@@ -242,13 +242,17 @@ func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[str
 // renamed hands the Alias overrides to the shared rules — the
 // verdicts (membership, grammar, reservations, double renames) are
 // the solver's; this side only translates and reports.
-func (b *AppBuilder) renamed(accepted map[string]bool, c *fail.Collector) map[string]string {
+func (b *AppBuilder) renamed(cat *registry.Registry, accepted map[string]bool, c *fail.Collector) map[string]string {
 	renames := make([]solver.Rename, len(b.renames))
 	for i, r := range b.renames {
 		renames[i] = solver.Rename{ID: r.id, Name: r.name}
 	}
 	out, bodies := solver.CheckRenames(renames,
 		func(id string) bool { return accepted[id] },
+		func(id string) bool {
+			d, ok := cat.ByID(id)
+			return ok && d.Core
+		},
 		[]string{CoreAlias, SystemAlias})
 	for _, body := range bodies {
 		c.Fail("%s", body)
