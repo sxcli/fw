@@ -192,7 +192,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	before := c.Len()
 	concrete := reflect.TypeOf((*T)(nil))
 	if r.committed {
-		c.Fail("service %q: registered twice", r.id)
+		c.Fail(registration.IDInUseRule, r.id)
 	}
 	// the chain's declarations are judged by the shared rules — the
 	// same Check sxcli-vet runs; this side only translates and
@@ -220,7 +220,11 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	}
 	violations := registration.Check(chain)
 	for _, v := range violations {
-		c.Fail("service %q: %s", r.id, v.Body)
+		if v.Bare {
+			c.Fail("%s", v.Body)
+		} else {
+			c.Fail("service %q: %s", r.id, v.Body)
+		}
 	}
 	// the flow and the words are the shared rules'; only the reflect
 	// operations are ours (functions at key places)

@@ -16,7 +16,9 @@ package registry
 
 import (
 	"reflect"
+
 	"sxcli.dev/rules/grammar"
+	"sxcli.dev/rules/registration"
 
 	"sxcli.dev/conf/fail"
 )
@@ -73,9 +75,8 @@ func (r *Registry) Commit(d *Descriptor) {
 		// judges this via registration.Chain.IDClaimed
 		// (sxcli.dev/rules/registration.Check), so a duplicate never
 		// reaches Commit through the chain. This branch guards the
-		// map against internal callers only. If the rule ever
-		// changes, change it THERE — and revisit this branch.
-		r.fail("service %q: duplicate id", d.ID)
+		// map against internal callers only, speaking the same rule.
+		r.fail(registration.IDInUseRule, d.ID)
 	}
 }
 

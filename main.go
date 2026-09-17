@@ -28,6 +28,7 @@ import (
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
 	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/rules/grammar"
 )
 
 // Main is the busybox-compatibility sugar of the composition model:
@@ -463,7 +464,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 			// undeclared non-empty tail in the framework is a
 			// violation — declare it or lose it, loudly
 			if len(loaded.Positionals) > 0 {
-				rt.c.Fail("unexpected argument %q", loaded.Positionals[0])
+				rt.c.Fail(grammar.UnexpectedArgRule, loaded.Positionals[0])
 			}
 		}
 		if rt.c.Len() == 0 && p.validate {

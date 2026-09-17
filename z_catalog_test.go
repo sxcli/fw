@@ -183,7 +183,7 @@ func TestDuplicateIDAcrossCommits(t *testing.T) {
 	chain("example.com/x/cat", &built).registerInto(reg, c)
 	NewBareRegistration("example.com/x/cat", func() *catApplet { return &catApplet{} }).
 		Alias("othercat").registerInto(reg, c)
-	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), "duplicate id") {
+	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), `"example.com/x/cat" already in use`) {
 		t.Errorf("two packages claiming one id must fail at the catalog: %v", c.All())
 	}
 }
@@ -194,7 +194,7 @@ func TestDoubleCommitOfOneChain(t *testing.T) {
 	r := chain("example.com/x/cat", &built)
 	r.registerInto(reg, c)
 	r.registerInto(reg, c)
-	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), "registered twice") {
+	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), `"example.com/x/cat" already in use`) {
 		t.Errorf("double commit must be a violation: %v", c.All())
 	}
 }
