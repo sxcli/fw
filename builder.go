@@ -133,6 +133,11 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 			c.Add(err)
 		}
 	}
+	// each verb alone is redundant-or-effective and silent; the pair
+	// is a contradiction, judged here so init order cannot matter
+	if scmDebugEnabled && scmDebugSuppressed {
+		c.Fail("FeatureSCMDebug is both enabled and suppressed")
+	}
 	accepted := b.admitted(cat, c)
 	rank := b.ranked(accepted, c)
 	shortPriority := b.shortPriority(cat, c)

@@ -25,6 +25,7 @@ import (
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
+	"sxcli.dev/fw/controls"
 	"sxcli.dev/fw/internal/registry"
 )
 
@@ -511,12 +512,13 @@ func TestControlsAbsentWithoutTheImport(t *testing.T) {
 	if code != 2 || !strings.Contains(w.stderr.String(), "unknown argument --override") {
 		t.Errorf("override must not exist without the import: code=%d\n%s", code, w.stderr.String())
 	}
-	// and Suppress of a control points at the import instead of
-	// silently trimming nothing
+	// naming a control feature without the import is a compile error
+	// now; the reachable residue is a hand-cast value, which lands on
+	// the unknown-feature violation while the hook is cleared
 	before := defaultCollector.Len()
-	Suppress(FeatureOverride)
+	Suppress(controls.FeatureOverrideService)
 	if defaultCollector.Len() != before+1 {
-		t.Error("suppressing an absent control must be a violation")
+		t.Error("a control feature value without the controls must be unknown")
 	}
 }
 

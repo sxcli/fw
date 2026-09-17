@@ -55,6 +55,10 @@ type Impl struct {
 	// violations: unknown references, the applet guard and the
 	// core-family guards.
 	Translate func(c *fail.Collector, view View, knobs any) graph.Controls
+	// FeatureLongs maps the controls' CoreFeature values (as ints —
+	// the type lives in the root package this seam must not import)
+	// to their long argument names, so Suppress can trim them.
+	FeatureLongs map[int]string
 }
 
 // Registered is nil unless sxcli.dev/fw/controls was imported.

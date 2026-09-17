@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"sxcli.dev/conf/engine"
+	"sxcli.dev/fw/controls"
 )
 
 func TestSuppressMapsFeaturesToLongNames(t *testing.T) {
@@ -71,31 +72,54 @@ func TestEnableSCMDebug(t *testing.T) {
 	}
 }
 
-func TestEnableDefaultOnFeatureIsViolation(t *testing.T) {
-	before := defaultCollector.Len()
-	Enable(FeatureHelp)
-	if defaultCollector.Len() != before+1 {
-		t.Error("enabling a default-on feature must be a violation")
-	}
-}
-
 func TestControlSuppressTrimsWithTheImport(t *testing.T) {
 	// this test binary imports sxcli.dev/fw/controls, so trimming an
 	// individual control is legal — the plain suppression road
 	old := suppressedCore
 	t.Cleanup(func() { suppressedCore = old })
 	suppressedCore = nil
-	Suppress(FeatureOverride)
+	Suppress(controls.FeatureOverrideService)
 	if !reflect.DeepEqual(suppressedCore, []string{"override"}) {
 		t.Errorf("an imported control must be suppressible: %v", suppressedCore)
 	}
 }
 
-func TestSuppressSCMDebugIsViolation(t *testing.T) {
+func TestSuppressSCMDebugIsSilent(t *testing.T) {
+	t.Cleanup(func() { scmDebugSuppressed = false })
 	before := defaultCollector.Len()
 	Suppress(FeatureSCMDebug)
-	if defaultCollector.Len() != before+1 {
-		t.Error("suppressing the default-off feature must be a violation")
+	if defaultCollector.Len() != before {
+		t.Error("suppressing the already-off feature is redundant-true, a no-op")
+	}
+	if !scmDebugSuppressed {
+		t.Error("the suppression must still be recorded for the contradiction check")
+	}
+}
+
+func TestSCMDebugBothVerbsIsContradiction(t *testing.T) {
+	t.Cleanup(func() { scmDebugEnabled, scmDebugSuppressed = false, false })
+	Enable(FeatureSCMDebug)
+	Suppress(FeatureSCMDebug)
+	_, err := Builder().AcceptAll().Build()
+	if err == nil || !strings.Contains(err.Error(), "FeatureSCMDebug is both enabled and suppressed") {
+		t.Errorf("the verb pair must be a build violation: %v", err)
+	}
+}
+
+func TestEnableOfKnownFeatureIsNoOp(t *testing.T) {
+	before := defaultCollector.Len()
+	Enable(FeatureHelp)
+	if defaultCollector.Len() != before {
+		t.Error("enabling an already-on feature is redundant-true, a no-op")
+	}
+}
+
+func TestUnknownFeatureIsLoudOnBothVerbs(t *testing.T) {
+	before := defaultCollector.Len()
+	Suppress(CoreFeature(99))
+	Enable(CoreFeature(99))
+	if defaultCollector.Len() != before+2 {
+		t.Error("an unknown feature must be a violation on either verb")
 	}
 }
 

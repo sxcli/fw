@@ -147,5 +147,10 @@ func init() {
 		New:       func() any { return &knobs{} },
 		Meta:      knobsMeta,
 		Translate: translate,
+		FeatureLongs: map[int]string{
+			FeatureDisableService:  "disable",
+			FeatureEnableService:   "enable",
+			FeatureOverrideService: "override",
+		},
 	}
 }

@@ -1400,9 +1400,15 @@ func main() {
 ```
 
 Suppressible features: `FeatureConfigFile` (`--config,-c`),
-`FeatureWriteConfig`, `FeatureDisable`, `FeatureEnable`,
-`FeatureOverride`, `FeatureHelp` (`--help,-h`; help and write-config
-are argument-only, so suppressing them closes their single door). A suppressed feature vanishes from the core schema
+`FeatureWriteConfig`, `FeatureHelp` (`--help,-h`; help and
+write-config are argument-only, so suppressing them closes their
+single door), and the rest of the core's argument features. The
+three service controls are suppressible too, but their constants
+live in `sxcli.dev/fw/controls` (`FeatureDisableService`,
+`FeatureEnableService`, `FeatureOverrideService`): naming one
+requires the import that puts the controls in the binary, so
+suppressing a control that is not there is a compile error, not a
+runtime verdict. A suppressed feature vanishes from the core schema
 entirely: its argument becomes unknown (strict-pass error), its env var
 is never consulted, and its key appearing in a config file's `core`
 section is a **loud startup error** — operators learn it is not honored
@@ -1411,16 +1417,20 @@ property of the binary (called from `main()`/`init()` before `Main`),
 not runtime configuration.
 
 Noted interaction: with sinks opt-in, a binary that suppresses
-`FeatureEnable` leaves the operator no path to any linked sink — the
+`FeatureEnableService` leaves the operator no path to any linked sink — the
 logging floor is all they get unless the developer wires a sink in as
 a code-level dependency. That is the point of Suppress (the builder's
 deliberate lockdown), stated here so nobody discovers it in
 production.
 
-Misusing the build-time API is itself a collected startup violation,
-never silently ignored: `Suppress` of the default-off
-`FeatureSCMDebug`, `Enable` of a default-on feature, and unknown
-features everywhere. (A negative config size cap is no longer even
+Redundant-true calls are no-ops — enabling a feature that is already
+on, suppressing `FeatureSCMDebug` while it is off — the same ruling
+as naming an id twice in `Accept`: the state asked for holds. What
+stays loud, collected at startup and never silent: unknown features
+on either verb, and the one genuine contradiction — `FeatureSCMDebug`
+both enabled and suppressed in one binary, judged at Build so init
+order cannot matter, the same shape as a service both enabled and
+disabled. (A negative config size cap is no longer even
 representable — the cap is unsigned end to end.)
 
 ### Format providers
