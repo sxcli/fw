@@ -438,10 +438,16 @@ Two independent axes, two verbs:
   app: no resolution, no dispatch, no introspection, and no `--enable`
   — `Accept` is the developer's composition boundary (linking);
   `enable`/`disable`, in a binary that imported the controls, are the
-  operator's runtime knobs *within* it.
-- **`Order(ids...)` — rank among the accepted.** `Order` never admits:
-  ordering an un-accepted id is a composition violation (a free typo
-  catcher). Ranked beats unranked in single-valued matching; slice
+  operator's runtime knobs *within* it. The core family is the one
+  thing admission never touches: a core-marked member is admitted by
+  the framework, not the composition — `Accept` governs user services
+  only. That decision lives once, in `sxcli.dev/rules`
+  (`solver.Admit`); the runtime's Build and sxcli-vet's mirror both
+  call it.
+- **`Order(ids...)` — rank among the admitted.** `Order` never admits:
+  ordering an id outside the admitted set is a composition violation
+  (a free typo catcher; a core id is admitted, so ranking it is
+  legal). Ranked beats unranked in single-valued matching; slice
   fields gather ranked members first in `Order` sequence, then
   unranked **sorted by id**; `Order` also drives listing order (usage,
   `Applets()`, help sections). The ranking is declared once,
@@ -455,6 +461,16 @@ Two independent axes, two verbs:
   pins the aliases it has documented, and no upstream rename — or
   even provider swap — ever touches a deployed config file again.
   Recommended practice for released binaries.
+
+**Core services are services.** The framework's own members — the
+system service today, any future core member — are ordinary
+registrations: fw's own `init()` commits them through the same chain
+every package uses, they sit in the same catalog, and they resolve
+and inject like anything else. The core mark (internal to fw) grants
+the family exactly two properties: the framework admits them (the
+rule above), and the controls cannot touch them — a core service is
+never enabled, disabled or overridden (`solver.CoreControlRule`).
+Everything else about them is plain service behavior.
 
 **Ties are never broken silently** — the one rule, everywhere. A bare
 single-valued field with two candidates neither of which is ranked is
@@ -779,6 +795,12 @@ on a per-invocation virtual root the runtime composes dynamically
 - one field per **format provider in use** this invocation (extension
   matched an actually loaded file or the `--write-config` target), by
   id.
+
+The root's dependency shape is authored once, in `sxcli.dev/rules`
+(`solver.CoreRoot`): sxcli-vet's mirror resolves from that shape
+directly, the runtime keeps its reflect-level construction here, and
+a z-test in fw pins the two renderings equal — the shape cannot
+drift between the runtime and the tooling without a red test.
 
 The registry's own tag machinery collects these dependencies and the
 graph matches and injects them unmodified — the core consumes services
