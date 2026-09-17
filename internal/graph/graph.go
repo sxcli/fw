@@ -38,9 +38,9 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 	// judges with — and maps the verdict back onto descriptors.
 	members := make([]solver.Member, 0, len(reg.All()))
 	for _, d := range reg.All() {
-		members = append(members, renderMember(d))
+		members = append(members, RenderMember(d))
 	}
-	verdict := solver.Solve(members, renderMember(root), solver.Controls(ctl))
+	verdict := solver.Solve(members, RenderMember(root), solver.Controls(ctl))
 	for _, v := range verdict.Violations {
 		body := v.Body
 		if v.Ambiguous {
@@ -79,10 +79,10 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 	return out
 }
 
-// renderMember renders one descriptor into the solver's declared-fact
+// RenderMember renders one descriptor into the solver's declared-fact
 // vocabulary: type identities become opaque strings, exactly the
 // rendering sxcli-vet's go/types side produces.
-func renderMember(d *registry.Descriptor) solver.Member {
+func RenderMember(d *registry.Descriptor) solver.Member {
 	m := solver.Member{
 		ID:       d.ID,
 		Core:     d.Core,
@@ -112,6 +112,9 @@ func renderMember(d *registry.Descriptor) solver.Member {
 func typeID(t reflect.Type) string {
 	if t == nil {
 		return ""
+	}
+	if t.Kind() == reflect.Pointer {
+		return "*" + typeID(t.Elem())
 	}
 	if t.PkgPath() != "" {
 		return t.PkgPath() + "." + t.Name()
