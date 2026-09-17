@@ -22,7 +22,6 @@
 package graph
 
 import (
-	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/registry"
 )
 
@@ -71,16 +70,4 @@ type Result struct {
 	// sorted. Legal (generic configs, unlinked rescue targets) but
 	// worth a warning: a typo here silently changes nothing.
 	UnusedOverrides []string
-}
-
-// resolver carries the working state of one Resolve call.
-type resolver struct {
-	reg                *registry.Registry
-	c                  *fail.Collector
-	root               *registry.Descriptor // the resolution root; a virtual one never appears in reg
-	disabled           map[string]bool
-	override           map[string]string
-	overrideUsed       map[string]bool
-	resolvedServiceSet map[string]bool
-	result             Result
 }

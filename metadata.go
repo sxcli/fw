@@ -140,7 +140,7 @@ func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[stri
 				} else if hint != HintNone && probe.Type.Kind() != reflect.String {
 					errs = append(errs, fmt.Errorf("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, probe.Type))
 				} else {
-					fm := engine.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: engine.ValueHint(hint)}
+					fm := engine.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: hint}
 					for i := 0; i < allowedValues.Len(); i++ {
 						fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
 					}

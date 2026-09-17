@@ -228,7 +228,7 @@ func argInfos(sch *engine.Schema) []ArgInfo {
 				IsSlice: f.IsSlice,
 				Allowed: f.Allowed,
 				Doc:     f.Doc,
-				Hint:    ValueHint(f.Hint),
+				Hint:    f.Hint,
 			})
 		}
 	}
