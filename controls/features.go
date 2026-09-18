@@ -14,14 +14,23 @@
 
 package controls
 
-// The three control features live HERE, not in the root package: to
-// name one you must import this package, and the import is what puts
-// the controls in the binary — suppressing a control that is not
-// there is a compile error, not a runtime verdict. The constants are
-// untyped: the root package's CoreFeature type would cycle through
-// fw's own tests, and untyped they convert at the Suppress call site
-// anyway. Values from 64 up; the root package keeps its own below 64,
-// so the two ranges can never collide.
+// The Suppress identities of the operator's three service controls —
+// --disable, --enable and --override — live here, not in the root
+// package.
+//
+//   - to pass one of these constants to fw.Suppress you must import
+//     this package — and importing it is also what compiles the
+//     control machinery into the binary at all (this package's init
+//     registers it; unimported, the linker drops it — the spec's
+//     Suppress passage). A binary without the import has no
+//     --disable, --enable or --override, and source that tries to
+//     suppress them does not compile: the mistake cannot survive to
+//     runtime
+//   - the constants are untyped: the root package's CoreFeature type
+//     would cycle through fw's own tests, and untyped they convert
+//     at the Suppress call site anyway
+//   - values start at 64; the root package keeps its own below 64,
+//     so the two ranges can never collide
 const (
 	// FeatureDisableService is the --disable service control.
 	FeatureDisableService = 64

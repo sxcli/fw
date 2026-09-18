@@ -98,15 +98,22 @@ func ConfigMaxBytes(limit uint64) {
 var scmDebugEnabled bool
 var scmDebugSuppressed bool
 
-// Enable turns on default-off core features; FeatureSCMDebug is
-// currently the only one — the service controls opt in by importing
-// sxcli.dev/fw/controls instead, so the linker can drop their code
-// entirely. Enabling a feature that is already on is a no-op — the
-// state asked for holds, the same ruling as naming an id twice in
-// Accept — and an unknown feature is a violation. Enable compiles
-// and runs on every platform — on one where the feature cannot exist
-// it is a harmless no-op — so a shared main() builds everywhere.
-// Like Suppress it is a build-time property: call it before Main.
+// Enable turns on core features that ship disabled. FeatureSCMDebug
+// is currently the only such feature.
+//
+//   - enabling a feature that is already on is a no-op, and an
+//     unknown feature is a collected violation (the spec's misuse
+//     paragraph: redundant calls are silent, mistakes are loud)
+//   - the operator's service controls (--disable, --enable,
+//     --override) are NOT enabled here — importing
+//     sxcli.dev/fw/controls is their switch, and a binary without
+//     that import carries none of their code
+//   - Enable compiles and runs on every platform; where a feature
+//     cannot exist (FeatureSCMDebug outside windows) the call is a
+//     harmless no-op, so one shared main() builds everywhere
+//
+// Like Suppress, a build-time property of the binary: call it before
+// Main.
 func Enable(features ...CoreFeature) {
 	for _, feature := range features {
 		if feature == FeatureSCMDebug {
