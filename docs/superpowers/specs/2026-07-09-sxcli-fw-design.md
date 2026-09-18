@@ -921,6 +921,13 @@ type FileSinkConfig struct {
 - `env:"NAME"` — verbatim GLOBAL (no alias prefix — its job is
   matching names you don't own); legal at any depth. `env:"-"` = no
   env at all. Absent → derived.
+- **The core's own arguments are argv-only.** No core field has an
+  environment door, and the run-scoped ones are refused from config
+  files: the environment must never alter a resolved service set,
+  redirect the config source, or trigger a serving surface. The
+  shape is enforced, not promised — every core contribution field
+  must declare `env:"-"` (`tags.ContribEnvRule`), so the rule cannot
+  erode one field at a time.
 - **Derived env names stitch with `__`** at every structural boundary
   — alias to field, section qualifier, path segment to segment — and
   fold with `_` inside a name (camel humps, single hyphens/
@@ -1076,12 +1083,22 @@ engine interprets. The engine stays dumb: it walks a chain.
   ```go
   NewRegistration(ID, newServe, accessor).
       Alias("srv").
-      Upgrade(conf.Step(1, func(old ConfigV1) ConfigV2 { … })).
-      Upgrade(conf.Step(2, func(old ConfigV2) Config { … })).
+      Upgrade(fw.Step(1, func(old *ConfigV1, has *fw.Presence, out *ConfigV2, set *fw.Presence) { … })).
+      Upgrade(fw.Step(2, func(old *ConfigV2, has *fw.Presence, out *Config, set *fw.Presence) { … })).
       Register()
   ```
 
   Generics keep each link fully typed; erasure happens inside `Step`.
+  Presence rides the chain as a first-class dimension: the document's
+  actual keys seed the first `has` (matched by json name exactly — a
+  key that reaches a field only through the decoder's case fold is
+  refused), each converter reads what was really set through `has`
+  and declares what it set through `set`, and the engine allocates
+  `out` and anchors both presences so a converter can never
+  mis-anchor. Misuse is collected per step: declaring presence on a
+  `dump:"-"` field is a violation, and a field assigned but never
+  declared set is absent downstream — the declaration, not the
+  assignment, is what carries a value forward.
   The **commit validates the chain** — contiguous from-versions, each
   link's output type feeding the next link's input, terminating at
   the current config type — type-level work that belongs to the
@@ -1097,18 +1114,19 @@ engine interprets. The engine stays dumb: it walks a chain.
   current → hard error ("config written by a newer version" — the
   binary-older-than-file case gets its own message). Missing →
   current dialect, partial.
-- **Version implies complete.** A section carrying `version` is a
-  complete document, migrated whole; a versionless section is a
-  partial in the current dialect, merged key-by-key. The convention
-  is self-enforcing: the only producer of versioned files is
-  `--write-config`, which writes complete documents, while
-  hand-written partials never include a version key. Typed conversion
-  functions cannot see key *presence* (a partial unmarshaled into an
-  old struct makes absent keys indistinguishable from zero values) —
-  this convention is what dissolves that, and the only combination it
-  declines to support is a *stale-versioned partial*: the file nobody
-  has a reason to write. The completeness rule only bites when
-  `version` < current — a trimmed current-version file still merges
+- **A version marks a whole machine-written document —
+  `--write-config`'s output.** A section carrying `version` is such
+  a document: strict-parsed whole against its own schema and walked
+  through the chain as one instance. A versionless section is a
+  partial in the current dialect, merged key-by-key, never migrated.
+  The convention is self-enforcing: the only producer of versioned
+  files is `--write-config`, which writes complete documents, while
+  hand-written partials never include a version key. Presence rides
+  the chain, so a converter sees exactly what a document really
+  carried; the convention stands on the producer story alone, and a
+  *stale-versioned partial* remains the file nobody has a reason to
+  write — declined, not dissolved. The rule only bites when
+  `version` < current: a trimmed current-version file still merges
   as a partial.
 - **Migrate first, merge second.** The version is a property of a
   section instance in one file, never of the merged result: each
@@ -1150,20 +1168,23 @@ implementation forced:
   the next schema bump and its absent keys migrate as zeros, stomping
   defaults. Nothing in the tooling pushes a partial toward the stamp.
   Errors go to the developer, advice to the operator.
-- A migrated document applies by DIRECT FIELD COPY, not a JSON
+- A migrated document applies through the presence merge, not a JSON
   round-trip: the chain's output (same Go type as the live struct)
-  copies field-by-field through the current schema's field list —
-  zeros included (version-implies-complete at its sharpest), Transient
-  skipped naturally (a round-trip would re-emit run-scoped keys into
-  the refusal the engine rightly makes), domains checked on every
-  written value, Version stamped by the engine before the copy.
+  lands through the current schema's field list, and only leaves the
+  chain declared present are written — what a converter assigned but
+  never declared set does not survive. Transient fields are skipped
+  naturally (a round-trip would re-emit run-scoped keys into the
+  refusal the engine rightly makes), domains are checked on every
+  written value, and the engine stamps Version itself before the
+  merge — as a presence fact, so a conversion that forgot it cannot
+  write 0.
 - Old documents strict-parse with DisallowUnknownFields against their
   OWN version's type; violations name the file and the judging
   version. Chainless sections refuse any version mismatch. Chains may
   start above 1 — older = "no longer supported (oldest supported N)".
 - Placement: `engine.Step`/`NewStep` + `Section.Steps` + validation in
-  `NewSchema`; front door `conf.Step(1, func(old V1) V2)` (the spec's
-  exact spelling) + `.ConfigUpgrade(step)`, single-step multi-call
+  `NewSchema`; front door `conf.Step`, the same has/set signature as
+  `fw.Step` + `.ConfigUpgrade(step)`, single-step multi-call
   (renamed from `.Migrate` 2026-09-11, the section parameter long
   gone since the root-only front door). The fw registration-chain
   method landed at the parity pass (2026-07-19) and was renamed
