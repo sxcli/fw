@@ -20,12 +20,14 @@ import (
 	"sxcli.dev/conf/fail"
 )
 
-type base struct {
+// Base is exported: an unexported embedded member would hide the
+// dep at registration (spec §4), never reaching injection at all.
+type Base struct {
 	W worker `inject:""`
 }
 
 type derived struct {
-	*base
+	*Base
 }
 
 func (d *derived) Work() {}
@@ -104,7 +106,7 @@ func TestInjectWiresCycleBothWays(t *testing.T) {
 
 func TestInjectReportsNilEmbeddedPointer(t *testing.T) {
 	r := newRegistry()
-	reg(r, "t/derived", &derived{}) // base is nil
+	reg(r, "t/derived", &derived{}) // Base is nil
 	reg(r, "t/workera", &workerA{}, workerType)
 	res := mustResolve(t, r, "t/derived", Controls{})
 	c := &fail.Collector{}

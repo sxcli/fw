@@ -555,7 +555,11 @@ Items).
 
 ### Dependency declaration
 
-A struct tag on exported fields of the registered *instance*:
+A struct tag on exported fields of the registered *instance*. Fields
+promoted from embedded members count, with one visibility rule: only
+exported members are visible — an unexported embedded field hides
+its whole subtree, and an inject tag under one is a startup
+violation, never a silent drop.
 
 ```go
 type MyService struct {

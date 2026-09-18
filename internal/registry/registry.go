@@ -135,9 +135,14 @@ func (r *Registry) Retain(keep map[string]bool) {
 }
 
 func collectDeps(d *Descriptor, c *fail.Collector) {
-	for _, f := range reflect.VisibleFields(d.Concrete.Elem()) {
+	root := d.Concrete.Elem()
+	for _, f := range reflect.VisibleFields(root) {
 		if tag, tagged := f.Tag.Lookup("inject"); tagged {
-			if f.IsExported() {
+			if hop, hidden := unexportedHop(root, f.Index); hidden {
+				// spec §4: only exported members are visible to
+				// injection — a tag under an unexported one is refused
+				c.Fail("service %q field %s: "+registration.InjectHiddenRule, d.ID, f.Name, hop)
+			} else if f.IsExported() {
 				if ids, optional, err := grammar.ParseInjectTag(tag); err == nil {
 					dep := DepField{Index: f.Index, Name: f.Name, IDs: ids, Optional: optional}
 					if f.Type.Kind() == reflect.Slice {
@@ -146,24 +151,42 @@ func collectDeps(d *Descriptor, c *fail.Collector) {
 							dep.Type = f.Type.Elem()
 							d.Deps = append(d.Deps, dep)
 						} else {
-							c.Fail("service %q field %s: inject slices carry interfaces only (concrete types are unique)", d.ID, f.Name)
+							c.Fail("service %q field %s: "+registration.InjectSliceRule, d.ID, f.Name)
 						}
 					} else if f.Type.Kind() == reflect.Interface || f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
 						if len(ids) <= 1 {
 							dep.Type = f.Type
 							d.Deps = append(d.Deps, dep)
 						} else {
-							c.Fail("service %q field %s: a single-valued inject field may name at most one id", d.ID, f.Name)
+							c.Fail("service %q field %s: "+registration.InjectOneIDRule, d.ID, f.Name)
 						}
 					} else {
-						c.Fail("service %q field %s: inject fields must be an interface, a pointer to struct, or a slice of interface", d.ID, f.Name)
+						c.Fail("service %q field %s: "+registration.InjectShapeRule, d.ID, f.Name)
 					}
 				} else {
 					c.Fail("service %q field %s: %v", d.ID, f.Name, err)
 				}
 			} else {
-				c.Fail("service %q field %s: inject tag on unexported field", d.ID, f.Name)
+				c.Fail("service %q field %s: "+registration.InjectUnexportedRule, d.ID, f.Name)
 			}
 		}
 	}
+}
+
+// unexportedHop reports the first unexported embedded field on the
+// index path, if any — everything under an unexported member is
+// invisible to injection (spec §4).
+func unexportedHop(root reflect.Type, index []int) (string, bool) {
+	t := root
+	for i := 0; i < len(index)-1; i++ {
+		sf := t.Field(index[i])
+		if !sf.IsExported() {
+			return sf.Name, true
+		}
+		t = sf.Type
+		if t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+	}
+	return "", false
 }
