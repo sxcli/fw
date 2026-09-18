@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"sxcli.dev/rules/registration"
 	"sxcli.dev/rules/solver"
+	"sxcli.dev/rules/tags"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -231,8 +232,8 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	providesBodies := solver.CheckProvides(r.provides,
 		func(it reflect.Type) bool { return it != nil && it.Kind() == reflect.Interface },
 		func(it reflect.Type) bool { return concrete.Implements(it) },
-		func(it reflect.Type) string { return it.String() },
-		concrete.String())
+		func(it reflect.Type) string { return tags.TypeID(it) },
+		tags.TypeID(concrete))
 	for _, body := range providesBodies {
 		c.Fail("service %q: %s", r.id, body)
 	}

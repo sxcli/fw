@@ -20,6 +20,7 @@ import (
 	"sxcli.dev/conf/fail"
 	"sxcli.dev/fw/internal/registry"
 	"sxcli.dev/rules/solver"
+	"sxcli.dev/rules/tags"
 )
 
 // Resolve computes the composition of one invocation: seed the
@@ -79,24 +80,24 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 	return out
 }
 
-// RenderMember renders one descriptor into the solver's declared-fact
-// vocabulary: type identities become opaque strings, exactly the
-// rendering sxcli-vet's go/types side produces.
+// RenderMember translates one descriptor into the solver's
+// declared-fact vocabulary: type identities become opaque strings
+// (tags.TypeID — the same names sxcli-vet's go/types side produces).
 func RenderMember(d *registry.Descriptor) solver.Member {
 	m := solver.Member{
 		ID:       d.ID,
 		Core:     d.Core,
-		Concrete: typeID(d.Concrete),
+		Concrete: tags.TypeID(d.Concrete),
 		Alias:    d.Alias,
 		Ranked:   d.Ranked,
 	}
 	for _, it := range d.Provides {
-		m.Provides = append(m.Provides, typeID(it))
+		m.Provides = append(m.Provides, tags.TypeID(it))
 	}
 	for _, dep := range d.Deps {
 		m.Deps = append(m.Deps, solver.Dep{
 			Name:     dep.Name,
-			TypeID:   typeID(dep.Type),
+			TypeID:   tags.TypeID(dep.Type),
 			IsIface:  dep.Type.Kind() == reflect.Interface,
 			IDs:      dep.IDs,
 			Optional: dep.Optional,
@@ -106,21 +107,6 @@ func RenderMember(d *registry.Descriptor) solver.Member {
 	return m
 }
 
-// typeID renders unambiguous type identity: String() can collide
-// across packages, pkgpath-qualified names cannot — one rendering
-// rule for every rules-module consumer.
-func typeID(t reflect.Type) string {
-	if t == nil {
-		return ""
-	}
-	if t.Kind() == reflect.Pointer {
-		return "*" + typeID(t.Elem())
-	}
-	if t.PkgPath() != "" {
-		return t.PkgPath() + "." + t.Name()
-	}
-	return t.String()
-}
 
 // Subtree returns the sub-result reachable from the member named id
 // through its resolved bindings — the member itself included, the main
