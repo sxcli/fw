@@ -161,13 +161,24 @@ token is rejected as an unknown argument, as it is on non-windows
 platforms.
 
 1. reports start-pending status immediately so the SCM does not kill the
-   service during initialization (documented on `SCMApplet.Execute`),
+   Windows service during initialization (documented on
+   `SCMApplet.Execute`),
 2. receives the argument vector in its `Execute` — this is where args come
-   from in service mode,
+   from in Windows service mode,
 3. runs the standard pipeline (parse → resolve → configure → start),
 4. delegates to the applet's `SCMApplet.Execute`, forwarding the SCM
-   request/status channels so stop/shutdown/interrogate reach the applet,
+   request/status channels; the applet MUST handle
+   stop/shutdown/interrogate itself — the framework answers no SCM
+   request,
 5. after it returns: reverse-order `Stop`, final status to the SCM.
+
+From the moment `SCMApplet.Execute` is invoked the applet owns the
+Windows service state. The handler has reported start-pending and the
+framework never reports Running — the applet performs that transition,
+with the accepted-commands mask it wants, once it is ready to serve.
+Before returning, `Execute` MUST report stop-pending, so the SCM keeps
+waiting while the framework runs the reverse-order `Stop` before the
+process exits.
 
 A dispatched applet that does not implement `SCMApplet` while running
 under the SCM is a logged error, exit code 2.

@@ -59,13 +59,15 @@ func platformMain(app *App) int {
 	return code
 }
 
-// scmHandler is the framework's svc.Handler: it reports start-pending
-// immediately — so the SCM does not kill the service during
-// initialization — receives the argument vector in Execute, runs the
-// standard pipeline and delegates to the applet's SCMApplet.Execute,
-// forwarding the SCM channels. The applet owns the transition to
-// Running. After it returns, the pipeline's reverse Stop runs and the
-// final status goes to the SCM.
+// scmHandler is the framework's svc.Handler for Windows service
+// mode: report start-pending to the SCM, receive the argument
+// vector in Execute, run the standard pipeline, delegate to the
+// applet's SCMApplet.Execute, and after that returns run the
+// pipeline's reverse Stop and report the final status to the SCM.
+// The applet's side of the contract owns the Windows service state
+// from its Execute's invocation, answers every SCM request itself,
+// and MUST report stop-pending before returning; this is documented
+// on SCMApplet.
 type scmHandler struct {
 	app      *App
 	argv     []string // preset by the --scm-debug path; the SCM path uses Execute's vector
@@ -85,7 +87,7 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 			h.specific, h.code = scmApplet.Execute(argv, req, status)
 			out = int(h.code)
 		} else {
-			slog.Error("applet does not implement SCMApplet and cannot run as a service")
+			slog.Error("applet does not implement SCMApplet and cannot run as a Windows service")
 			h.code = 2
 			out = 2
 		}
@@ -94,7 +96,7 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 	if code := run(rt); h.code == 0 && code != 0 {
 		h.code = uint32(code)
 	}
-	status <- svc.Status{State: svc.StopPending}
+	status <- svc.Status{State: svc.Stopped}
 	return h.specific, h.code
 }
 

@@ -16,27 +16,38 @@ package fw
 
 import "golang.org/x/sys/windows/svc"
 
-// SCMApplet is an applet that can run under the Windows Service Control
-// Manager. It extends Applet, so the same applet serves both launch
-// modes: started as a normal process the framework drives Run as usual;
-// under the SCM it drives Execute instead.
+// SCMApplet is an applet built to run as a Windows service under
+// the Service Control Manager. It extends Applet, so the same
+// registration still runs as a plain console process when launched
+// that way; Main asks Windows which mode the process is in. A
+// Windows service process drives Execute; a normal process drives
+// Run as usual.
 //
-// In service mode Main calls svc.Run with a framework-owned handler; that
-// handler reports a start-pending status to the SCM immediately — so the
-// service is not killed for slow startup — receives the argument vector
-// in its Execute call, runs the standard pipeline (parse, resolve,
-// configure, start), and only then delegates to the applet's Execute,
-// forwarding the SCM request/status channels so stop, shutdown and
-// interrogate requests reach the applet directly.
+// In Windows service mode Main calls svc.Run with a framework-owned
+// svc.Handler. That handler:
 //
-// When Execute is invoked the service state reported to the SCM is
-// still start-pending: the framework never reports Running — the applet
-// owns that transition and performs it itself (with the
-// accepted-commands mask it wants) once it is ready to serve.
+//   - reports start-pending to the SCM immediately, so the Windows
+//     service is not killed for a slow startup
+//   - receives the argument vector in its own Execute call — that
+//     is where args come from in Windows service mode
+//   - runs the standard pipeline (parse, resolve, configure, start)
+//   - delegates to the applet's Execute, forwarding the SCM
+//     request/status channels: the applet MUST handle stop,
+//     shutdown and interrogate itself — the framework answers no
+//     SCM request
+//   - after the applet's Execute returns, stops every started
+//     service in reverse order and reports the final status to
+//     the SCM
 //
-// When Execute returns, the framework stops every started service in
-// reverse order and reports the final status to the SCM. The signature
-// mirrors svc.Handler's Execute.
+// When the applet's Execute is invoked the Windows service state is
+// start-pending. From that point the applet's Execute owns the
+// Windows service state: it reports Running, with the
+// accepted-commands mask it wants, once it is ready to serve — the
+// framework never does. Before returning it MUST report
+// stop-pending, so the SCM keeps waiting while the framework runs
+// its own stop procedure — the reverse-order Stop of every started
+// service — before the process exits. Execute's signature is
+// svc.Handler's, so the channels carry the SCM's own types.
 type SCMApplet interface {
 	Applet
 	Execute(args []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (svcSpecificEC bool, exitCode uint32)
