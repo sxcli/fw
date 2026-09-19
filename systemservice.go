@@ -36,7 +36,8 @@ var _ system.System = (*systemService)(nil)
 
 // Introspector returns the target-scoped introspection view for the
 // applet the dispatch NAME names (never an id); "" is the binary
-// view; an unknown name — or a name that is not an applet — is nil.
+// view; an unknown name, a name that is not an applet, or a System
+// applet is nil.
 // Every view is built from the catalog snapshot and NOTHING else: no
 // config files, no location search, no environment — a completion
 // query runs per keystroke inside the operator's interactive shell,

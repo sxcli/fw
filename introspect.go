@@ -238,16 +238,27 @@ func argInfos(sch *engine.Schema) []ArgInfo {
 // the concrete Introspector IS the system vocabulary's interface.
 var _ system.Introspector = (*Introspector)(nil)
 
-// introspector builds the view for one dispatch name against this
-// catalog: "" is the binary view; an unknown name, a non-applet, or
-// a target that cannot resolve is nil. The one construction path —
-// the system service delegates here, and so do tests.
+// introspector builds the target-scoped introspection view for one
+// dispatch name against this catalog. It is the one construction
+// path: the system service delegates here, and so do tests.
+//
+//   - "" builds the binary view: the applet listing, no target.
+//   - A name that is unknown, or that names a service which is not
+//     an applet, is nil — the caller offers nothing.
+//   - A System applet is nil too. System applets are binary
+//     machinery invoked by generated shell scripts — shell
+//     completion itself is served by them — and are not an operator
+//     surface. Refusing the view here, at the one source of views,
+//     means no completion implementation can offer candidates for a
+//     completion applet's own invocation (spec §4, Introspection).
+//   - A target whose graph cannot resolve against its own catalog
+//     is nil: a startup-checked inconsistency, offer nothing.
 func (ca *catalog) introspector(applet string) *Introspector {
 	if applet == "" {
 		return &Introspector{cat: ca}
 	}
 	d, known := ca.byAlias[applet] // dispatch names only — ids do not resolve here
-	if !known || !d.Concrete.Implements(appletType) {
+	if !known || !d.Concrete.Implements(appletType) || d.System {
 		return nil
 	}
 	c := &fail.Collector{}

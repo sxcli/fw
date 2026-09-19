@@ -172,7 +172,8 @@ func (r *Registration[T]) Hidden() *Registration[T] {
 
 // System marks an applet as machinery of the binary — invoked by
 // tooling, never typed by a human. Implies Hidden; excluded from
-// single-applet counting.
+// single-applet counting and from introspection: a System applet
+// has no target-scoped view (spec §4, Introspection).
 func (r *Registration[T]) System() *Registration[T] {
 	r.system = true
 	return r

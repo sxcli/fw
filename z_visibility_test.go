@@ -17,6 +17,8 @@ package fw
 import (
 	"strings"
 	"testing"
+
+	"sxcli.dev/conf/fail"
 )
 
 // System applets must not count toward single-applet mode: the main
@@ -142,6 +144,53 @@ func TestIntrospectorAppletsOmitHiddenAndSystem(t *testing.T) {
 	i := &Introspector{cat: &catalog{reg: w.rt.reg}}
 	if got := strings.Join(i.Applets(), ","); got != "app" {
 		t.Errorf("Applets() = %q, want %q", got, "app")
+	}
+}
+
+// A System applet is not an introspection target: machinery invoked
+// by generated scripts is not an operator surface, and the one
+// construction path refusing the view keeps every shell adapter
+// from completing a completion invocation (spec §4, Introspection).
+func TestIntrospectorNilForSystemApplet(t *testing.T) {
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("second").System().registerInto(w.cat, w.c)
+	if err := w.build(); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+	c := &fail.Collector{}
+	ca := &catalog{reg: w.rt.reg}
+	ca.index(c)
+	if c.Len() != 0 {
+		t.Fatalf("index failed: %v", c.All())
+	}
+	if v := ca.introspector("second"); v != nil {
+		t.Error("a System applet must have no view")
+	}
+	if v := ca.introspector("app"); v == nil {
+		t.Error("the public applet's view must construct")
+	}
+}
+
+// Hidden is different: hidden from listings, still an operator
+// surface, still a view.
+func TestIntrospectorResolvesHiddenApplet(t *testing.T) {
+	w := newWorld(t, []string{"bin"}, nil, nil)
+	w.applet(0)
+	NewBareRegistration("test/second", func() *secondApplet { return &secondApplet{log: &w.log} }).
+		Alias("second").Hidden().registerInto(w.cat, w.c)
+	if err := w.build(); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+	c := &fail.Collector{}
+	ca := &catalog{reg: w.rt.reg}
+	ca.index(c)
+	if c.Len() != 0 {
+		t.Fatalf("index failed: %v", c.All())
+	}
+	if v := ca.introspector("second"); v == nil {
+		t.Error("a Hidden applet keeps its view")
 	}
 }
 

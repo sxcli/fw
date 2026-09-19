@@ -108,9 +108,10 @@ type System interface {
 	// Introspector returns the target-scoped introspection view for
 	// the applet the dispatch NAME names (never an id). The empty
 	// name is the binary view: applet listing, no resolved service
-	// set. An
-	// unknown name — or a name that is not an applet — returns nil:
-	// a completion caller can do nothing with prose, so nil means
-	// "offer nothing".
+	// set. An unknown name, a name that is not an applet, or a
+	// System applet returns nil: a completion caller can do nothing
+	// with prose, so nil means "offer nothing". System applets have
+	// no view on purpose — machinery invoked by generated shell
+	// scripts is not an operator surface (spec §4, Introspection).
 	Introspector(applet string) Introspector
 }

@@ -517,9 +517,14 @@ The facade hands out target-scoped views:
 dispatch name, never an id. `""` returns the binary view: the applet
 listing and binary-level facts, no dependency graph — and not the
 core's arguments, every target view already carries them. An unknown
-name, a non-applet, or a target that cannot resolve returns nil: a
-completion caller can do nothing with prose, nil means "offer
-nothing".
+name, a non-applet, a System applet, or a target that cannot resolve
+returns nil: a completion caller can do nothing with prose, nil
+means "offer nothing". A System applet has no view at all: it is
+machinery invoked by generated scripts, not an operator surface, and
+the refusal lives at the one source of views so that no completion
+implementation — the bundled shells or a third-party adapter — can
+complete a completion invocation. Hidden applets are operator
+surfaces and keep their views.
 
 Every view answers from a catalog snapshot taken at startup, before
 any ejection. No config files, no location search, no environment:
