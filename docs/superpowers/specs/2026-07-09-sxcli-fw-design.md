@@ -1498,9 +1498,7 @@ extension matched an actually loaded file (or the `--write-config`
 target) is added as a seed of the resolved service set — it receives
 the normal lifecycle and
 survives ejection, keeping a future value-only config reload able to
-re-read the file. Unused providers stay cold and are ejected. A provider
-wanting an unconditional lifecycle declares a dependency (or, in a
-controls-importing binary, is forced in with `--enable`).
+re-read the file. Unused providers stay cold and are ejected.
 
 ### Argument syntax
 

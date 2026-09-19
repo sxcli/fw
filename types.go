@@ -99,26 +99,28 @@ type ConfigurationUpdater interface {
 }
 
 // ConfigFormatProvider is a service that transcodes a configuration
-// format to and from the core's native JSON. The core matches config
-// files to providers by file extension; Extensions returns the supported
-// ones, lowercase and without the leading dot (e.g. "yaml", "yml"). An
-// explicit --config file whose extension no registered provider handles
-// is a startup error; the location search, by construction, only probes
-// the extensions it knows and never sees other files.
+// format to and from the framework's native JSON.
 //
-// ToJSON and FromJSON must be pure stream transforms: the core uses them
-// while discovering and loading config files — before anything is
-// configured or started — so they must not depend on the provider's own
-// configuration or lifecycle state. FromJSON serves configuration file
-// generation (--write-config).
-//
-// Providers are ordinary services: registered cold, discovered by this
-// interface, used statelessly. The provider whose extension matched an
-// actually loaded file (or the --write-config target) is pulled into
-// the resolved service set and receives the normal lifecycle; unused
-// providers stay cold
-// and are ejected. A provider that wants an unconditional lifecycle
-// declares a dependency or is forced in with --enable.
+//   - Extensions returns the file extensions the provider claims,
+//     lowercase, without the leading dot (e.g. "yaml", "yml"); the
+//     framework matches config files to providers by extension.
+//   - An explicit --config file whose extension no registered
+//     provider handles is a startup error. The config location
+//     search builds its candidate file names from the registered
+//     extensions, so it never finds a file nobody can read.
+//   - ToJSON decodes the provider's format into JSON when a config
+//     file with a claimed extension loads.
+//   - FromJSON encodes JSON back into the provider's format when
+//     --write-config emits a file.
+//   - Both are pure stream transforms: they run while config files
+//     are being discovered and loaded, before anything is
+//     configured or started, so they must not depend on the
+//     provider's own configuration or lifecycle state.
+//   - Providers are ordinary services, discovered by this
+//     interface. The provider whose extension matched a loaded file
+//     (or the --write-config target) joins the resolved service set
+//     and receives the normal lifecycle; the rest are never started
+//     and are ejected.
 type ConfigFormatProvider interface {
 	Extensions() []string
 	ToJSON(in io.Reader) (io.Reader, error)
