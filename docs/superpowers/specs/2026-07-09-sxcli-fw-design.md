@@ -952,8 +952,6 @@ type FileSinkConfig struct {
   `env:` (either form), `dump:` and `usage:` on it are errors; the
   engine suppresses its derived env name itself (the env source is by
   definition current-dialect).
-- A leftover `arg:` tag is a loud violation naming the cutover, never
-  a silently ignored unknown.
 - `usage:"…"` — help text; rendered through `Tr()`; doubles as a gettext
   extraction source when translation support lands.
 
@@ -1022,7 +1020,8 @@ Decided:
 - **Derived-name collisions are Build errors** naming both fields —
   underscore joins make distinct paths collidable — with the vet
   nudge; sxcli-vet reports the same collision at compile time (§8).
-- **One operator name.** `arg:` died (cutover landed 2026-07-19);
+- **One operator name.** The `arg:` tag was retired (cutover landed
+  2026-07-19);
   **`conf:"long[,short]"`** names
   the field's whole operator surface: it grants `--long`/`-s` AND
   feeds env derivation — no more env names silently downstream of a
@@ -1773,8 +1772,7 @@ Sequencing constraints: fw's runtime messages already nudge to
 sxcli-vet ("the sxcli-vet tool catches this before it runs"), so an MVP
 covering the nudge-referenced checks rides the release train — or the
 nudges soften until it exists; and the tag-grammar check targets the
-post-cutover grammar (`conf:`/`short:`/unified `env:`), so the
-`arg:`→`conf:` cutover lands before that analyzer is written.
+post-cutover grammar (`conf:`/unified `env:`).
 
 MVP SHIPPED 2026-07-19 (`sxcli.dev/vet`, binary `sxcli-vet`, own repo,
 signed from birth): the **sxreg** analyzer (identity + exported-id +
