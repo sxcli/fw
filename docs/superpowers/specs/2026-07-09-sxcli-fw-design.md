@@ -1146,6 +1146,20 @@ engine interprets. The engine stays dumb: it walks a chain.
   the pipeline moves into conf as a designed thing, not lifted as-is.
 - `--write-config` completes its arc as the **migration normalizer**:
   load old file → migrate → emit a complete current-version document.
+- **Renames are outside the model.** An upgrade chain records how
+  the fields inside one section changed from version to version;
+  the section's own name is not part of that history — no step can
+  express "this section used to be named X" (the earlier "renamed
+  from" metadata idea was superseded by this design). The section
+  name is the service's operator alias, so renaming an alias orphans
+  every deployed file, and the failure is silent: the old-named
+  section reads as a section of some service outside the schema —
+  ignored at load, passed through `--upgrade-config` verbatim as
+  foreign — and the service runs on factory defaults with no error
+  and no warning. A rename therefore means hand-editing every
+  deployed file. The standing defense sits before config entirely:
+  a released binary pins its documented aliases with `Builder.Alias`
+  (§4), and no upstream rename ever reaches a deployed file.
 
 IMPLEMENTED 2026-07-18 (engine + front door), with refinements the
 implementation forced:
