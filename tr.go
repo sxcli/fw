@@ -39,27 +39,33 @@ func translate(msgid string) string {
 	return out
 }
 
-// Tr translates and formats a user-facing message. The format string is
-// the gettext msgid: translation is translate-then-format — the format
-// is looked up in the registered Translator (when one is configured)
-// and the placeholders are substituted into the translation. Without a
-// translator the lookup is the identity — Tr is pure formatting — so
-// write formats as final, translatable English sentences.
+// Tr translates and formats a user-facing message: the format
+// string is the gettext msgid — at once the lookup key and the
+// default English text — so write formats as final, translatable
+// English sentences. Translation is translate-then-format: the
+// format is looked up in the registered Translator (the Translator
+// interface — registered as a service like any other) and the
+// placeholders are substituted into the result; without a
+// translator, or on a lookup miss, the format passes through
+// unchanged and Tr is pure formatting.
 //
 // args are name/value pairs resolving the {name} placeholders:
 //
-//	Tr("valueA: {int} and valueB: {bool}", "bool", false, "int", 100)
-//	// → "valueA: 100 and valueB: false"
+//		Tr("valueA: {int} and valueB: {bool}", "bool", false, "int", 100)
+//		// → "valueA: 100 and valueB: false"
 //
-// Values render with fmt's %v semantics. {{ and }} escape literal
-// braces. A placeholder with no matching name — and any malformed pair
-// (non-string name, trailing odd value) — is left verbatim rather than
-// erroring: a visible {name} in the output is a bug you can see and
-// grep for.
-//
-// The placeholder syntax matches gettext's python-brace-format flag, so
-// the standard tooling (msgfmt --check, Poedit, Weblate) validates
-// placeholders in translations once catalogs exist.
+//	  - Values render with fmt's %v semantics.
+//	  - {{ and }} escape literal braces.
+//	  - A malformed pair — non-string name, trailing odd value —
+//	    binds nothing and is ignored.
+//	  - A placeholder with no bound name stays verbatim in the
+//	    output rather than erroring: a visible {name} is a bug you
+//	    can see and grep for.
+//	  - The placeholder syntax matches gettext's python-brace-format
+//	    flag — bare {name} only: a format-spec suffix like {n:>10}
+//	    is not interpreted and stays verbatim. The standard tooling
+//	    (msgfmt --check, Poedit, Weblate) validates placeholders in
+//	    translations once catalogs exist.
 func Tr(format string, args ...any) string {
 	return trFormat(translate(format), args...)
 }
