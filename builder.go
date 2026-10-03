@@ -313,15 +313,13 @@ func (b *AppBuilder) composedOrder(accepted map[string]bool, rank map[string]int
 
 // defaultsInDomain is the value-level metadata check deferred from the
 // registration commit: with the instance born, a constructor default
-// outside its own declared Allowed domain is a composition violation.
+// outside its own declared Allowed domain is a Build-time violation.
 func defaultsInDomain(d *registry.Descriptor, c *fail.Collector) {
 	if meta, has := d.Metadata.(*engine.Meta); has && d.ConfigPtr != nil {
 		probes := engine.ProbeFields(d.ConfigPtr)
 		for name, fm := range meta.Fields {
 			if probe, known := probes[name]; known && len(fm.Allowed) > 0 {
-				for _, err := range defaultDomainViolations(d.ID, name, fm.Allowed, probe) {
-					c.Add(err)
-				}
+				defaultDomainViolations(c, d.ID, name, fm.Allowed, probe)
 			}
 		}
 	}

@@ -259,11 +259,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	}
 	var meta any
 	if r.metadata != nil {
-		normalized, errs := normalizeMetadata(r.id, r.metadata, r.cfgType != nil, engine.ProbeType(r.cfgType), false)
-		for _, err := range errs {
-			c.Add(err)
-		}
-		meta = normalized
+		meta = normalizeMetadata(c, r.id, r.metadata, r.cfgType != nil, engine.ProbeType(r.cfgType), false)
 	}
 	if c.Len() == before {
 		r.committed = true

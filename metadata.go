@@ -15,11 +15,11 @@
 package fw
 
 import (
-	"fmt"
 	"reflect"
 	"sxcli.dev/fw/system"
 
 	"sxcli.dev/conf/engine"
+	"sxcli.dev/conf/fail"
 )
 
 // Metadata is the optional, declarative description of a service — the
@@ -82,20 +82,18 @@ func (FieldMetadata[T]) fieldMetadata() {}
 // the value the struct holds at registration — is itself inside the
 // declared domain: a default outside its own enum would be the first
 // lie the enforcement catches, so it is caught at registration instead.
-func defaultDomainViolations(serviceID, name string, allowed []any, probe engine.ProbedField) []error {
-	var errs []error
+func defaultDomainViolations(c *fail.Collector, serviceID, name string, allowed []any, probe engine.ProbedField) {
 	if len(allowed) > 0 {
 		if probe.IsSlice {
 			for i := 0; i < probe.Value.Len(); i++ {
 				if !metaHas(allowed, probe.Value.Index(i).Interface()) {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q default element %v is not among the allowed values %v", serviceID, name, probe.Value.Index(i).Interface(), allowed))
+					c.Fail("service %q metadata: %q default element %v is not among the allowed values %v", serviceID, name, probe.Value.Index(i).Interface(), allowed)
 				}
 			}
 		} else if !metaHas(allowed, probe.Value.Interface()) {
-			errs = append(errs, fmt.Errorf("service %q metadata: %q default %v is not among the allowed values %v", serviceID, name, probe.Value.Interface(), allowed))
+			c.Fail("service %q metadata: %q default %v is not among the allowed values %v", serviceID, name, probe.Value.Interface(), allowed)
 		}
 	}
-	return errs
 }
 
 func metaHas(allowed []any, v any) bool {
@@ -111,46 +109,45 @@ func metaHas(allowed []any, v any) bool {
 // representation the schema machinery consumes. The type-level checks
 // always run; the value-level default-in-domain check runs only when
 // withValues (the probes carry real field values — an instance
-// exists). Shared by the old instance-based registry check and the
-// catalog's commit path, which validates against ProbeType with no
-// instance and defers the value check to Build.
-func normalizeMetadata(id string, raw *Metadata, hasConfig bool, probes map[string]engine.ProbedField, withValues bool) (*engine.Meta, []error) {
+// exists). Called from the catalog's commit path, which validates
+// against ProbeType with no instance and defers the value check to
+// Build (defaultsInDomain).
+func normalizeMetadata(c *fail.Collector, id string, raw *Metadata, hasConfig bool, probes map[string]engine.ProbedField, withValues bool) *engine.Meta {
 	meta := &engine.Meta{Description: raw.Description, Fields: map[string]engine.FieldMeta{}}
-	var errs []error
 	if len(raw.Fields) > 0 && !hasConfig {
-		errs = append(errs, fmt.Errorf("service %q: field metadata without a config struct", id))
+		c.Fail("service %q: field metadata without a config struct", id)
 	} else {
 		for name, value := range raw.Fields {
 			probe, known := probes[name]
 			if !known {
-				errs = append(errs, fmt.Errorf("service %q metadata: %q names no config field", id, name))
+				c.Fail("service %q metadata: %q names no config field", id, name)
 			} else if _, isFieldMetadata := value.(fieldMetadataMarker); !isFieldMetadata {
-				errs = append(errs, fmt.Errorf("service %q metadata: %q must be a FieldMetadata value, got %T", id, name, value))
+				c.Fail("service %q metadata: %q must be a FieldMetadata value, got %T", id, name, value)
 			} else {
 				rv := reflect.ValueOf(value)
 				allowedValues := rv.FieldByName("Allowed")
 				elemType := allowedValues.Type().Elem()
 				hint := ValueHint(rv.FieldByName("Hint").Int())
 				if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q allows %s values but the field takes %s", id, name, elemType, probe.Type))
+					c.Fail("service %q metadata: %q allows %s values but the field takes %s", id, name, elemType, probe.Type)
 				} else if hint != HintNone && hint != HintFile && hint != HintDirectory && hint != HintServiceID {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q declares an unknown hint %d", id, name, hint))
+					c.Fail("service %q metadata: %q declares an unknown hint %d", id, name, hint)
 				} else if hint != HintNone && allowedValues.Len() > 0 {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", id, name))
+					c.Fail("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", id, name)
 				} else if hint != HintNone && probe.Type.Kind() != reflect.String {
-					errs = append(errs, fmt.Errorf("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, probe.Type))
+					c.Fail("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, probe.Type)
 				} else {
 					fm := engine.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: hint}
 					for i := 0; i < allowedValues.Len(); i++ {
 						fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
 					}
 					if withValues {
-						errs = append(errs, defaultDomainViolations(id, name, fm.Allowed, probe)...)
+						defaultDomainViolations(c, id, name, fm.Allowed, probe)
 					}
 					meta.Fields[name] = fm
 				}
 			}
 		}
 	}
-	return meta, errs
+	return meta
 }
