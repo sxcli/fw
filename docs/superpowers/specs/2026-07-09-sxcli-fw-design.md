@@ -1532,10 +1532,12 @@ re-read the file. Unused providers stay cold and are ejected.
   (`5s`, `5000ms`, `5000000ns`; bare numbers are rejected), and in JSON
   files a duration must be a *string* — never a number.
 - Name lexicon: long names are lowercase, at least two characters,
-  letter-first, letters/digits/dashes, no trailing dash; short forms are
-  one ascii letter/digit; env names are uppercase letters, digits and
-  underscores, not digit-first. Embedded fields in config structs are
-  not supported (registration error).
+  letter-first, letters/digits/dashes, no trailing dash; short forms
+  are ONE lowercase ascii letter or digit — uppercase and non-ASCII
+  runes are refused by decision, not omission; env names are
+  uppercase letters, digits and underscores, not digit-first.
+  Embedded fields in config structs are not supported (registration
+  error).
 - Duplicate explicit env names across the resolved service set are a
   startup error
   (derived names cannot collide because long names are unique).
