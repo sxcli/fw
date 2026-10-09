@@ -345,3 +345,86 @@ func TestIntrospectionNeverReadsEnvironment(t *testing.T) {
 		t.Errorf("the introspection view read the environment %d times — it must never", calls)
 	}
 }
+
+// Describe answers "" for a member registered without Metadata —
+// an unannotated member describes as nothing, not noise. The core's
+// fixed description in the same view proves the "" is the member's
+// own, not a dead view.
+func TestDescribeUnannotatedMemberIsEmpty(t *testing.T) {
+	var member, core string
+	w := argsWorld(t, nil, func(sys system.System) {
+		view := sys.Introspector("meta")
+		member = view.Describe("meta")
+		core = view.Describe("core")
+	})
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if member != "" {
+		t.Errorf("an unannotated member must describe as empty: %q", member)
+	}
+	if core == "" {
+		t.Error("the core's fixed description must still answer")
+	}
+}
+
+// A non-dispatched target's view shows its whole resolved set even
+// when the live run ejected a member: the snapshot answers, not the
+// working set.
+func TestViewOfTargetWithEjectedMember(t *testing.T) {
+	var services []string
+	w := argsWorld(t, nil, func(sys system.System) {
+		if view := sys.Introspector("app"); view != nil {
+			services = view.Services()
+		}
+	})
+	// make app require the dep so it joins app's resolved set; the
+	// dispatched applet is meta, so the live run ejects it anyway
+	w.cat.All()[0].Deps[0].Optional = false
+	w.dep(false)
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if _, stillThere := w.rt.ws.ByID("test/dep"); stillThere {
+		t.Fatal("the dispatched run must have ejected the dep")
+	}
+	joined := "," + strings.Join(services, ",") + ","
+	if !strings.Contains(joined, ",dep,") {
+		t.Errorf("the ejected member must appear in its target's view: %v", services)
+	}
+}
+
+// zeroerApplet zeroes its own version field in Configured — a
+// mutation after the schema was built and validated.
+type zeroerCfg struct {
+	Version uint32 `json:"version"`
+	Flag    string `json:"flag" conf:"zflag" usage:"a visible argument"`
+}
+
+type zeroerApplet struct{ cfg zeroerCfg }
+
+func (z *zeroerApplet) Configured() error {
+	z.cfg.Version = 0
+	return nil
+}
+
+func (z *zeroerApplet) Run() int { return 0 }
+
+// A service zeroing its own version field at runtime keeps the run
+// clean — and nothing more is promised: views of a mutated config
+// struct are undefined (spec §4, Introspection). Completion is
+// unaffected; its queries run in fresh processes.
+func TestSelfZeroedVersionKeepsTheRunClean(t *testing.T) {
+	w := newWorld(t, []string{"bin", "zeroer"}, nil, nil)
+	w.applet(0)
+	z := &zeroerApplet{cfg: zeroerCfg{Version: 1}}
+	NewRegistration("test/zeroer", func() *zeroerApplet { return z },
+		func(x *zeroerApplet) *zeroerCfg { return &x.cfg }).
+		Alias("zeroer").registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if z.cfg.Version != 0 {
+		t.Fatalf("the mutation must have happened: %d", z.cfg.Version)
+	}
+}

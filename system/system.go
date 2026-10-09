@@ -62,6 +62,10 @@ type PosInfo = engine.PosInfo
 // core. The view is built from the binary's catalog alone — no config
 // files, no location search, no environment — so its answers are
 // input-deterministic: same binary, same target, same answer, always.
+// A view is valid only while the target's config structs hold what
+// loading left there; after a runtime mutation of a config struct,
+// the view's behaviour for that target is undefined (spec §4,
+// Introspection).
 type Introspector interface {
 	// Applets returns the primary aliases of the binary's public
 	// applets, in registration order — a binary-level fact, the same

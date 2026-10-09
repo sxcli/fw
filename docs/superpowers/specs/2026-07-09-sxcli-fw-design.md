@@ -544,6 +544,13 @@ a resolved service set containing the system service ejects like any
 other; the
 snapshot feeds the views, not the live registry.
 
+The snapshot holds the catalog's own config instances, not copies: a
+view is valid only while the target's config structs hold what
+loading left there. After anything mutates a config struct at
+runtime, the views' behaviour for that target is undefined.
+Completion is unaffected — a completion query is its own fresh
+process, where no foreign service's Configured has run.
+
 A target view serves only the target's resolved graph:
 
 - `Services()` — the graph members' aliases, `core` leading

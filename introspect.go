@@ -37,7 +37,10 @@ type PosInfo = system.PosInfo
 // answer, always; ejection cannot shrink the snapshot, so completion
 // keeps its facts while its own resolved service set stays as lean
 // as any other. A nil target is the binary view: applet listing, no
-// resolved service set.
+// resolved service set. A view is valid only while the target's
+// config structs hold what loading left there; after a runtime
+// mutation of a config struct, the view's behaviour for that target
+// is undefined (spec §4, Introspection).
 type Introspector struct {
 	cat    *catalog             // attach-time snapshot; data-plane only
 	target *registry.Descriptor // nil: the binary view
