@@ -1230,6 +1230,56 @@ implementation forced:
   pattern), `fw.Step` mirrors `conf.Step`, and an `Upgrade` on a
   bare registration is a commit violation.
 
+### Typed presence: the converter hands values over (designed 2026-10-10, not implemented)
+
+Requires Go 1.27 — methods with type parameters. Supersedes the
+assign-without-declare vet warning the ledger carried as #25: the
+mistake class leaves the API instead of being policed.
+
+- **The defect pair in the current shape.** A converter mutates its
+  output struct and separately declares what it set. An assignment
+  without the declaration is not even lost immediately — the chain
+  instances are real, so the ghost value rides into every later
+  step's `old` and dies only at the merge boundary. And `has` and
+  `set` share one type: swapping them compiles.
+- **Values reach the document only through the engine's hands.**
+  `Presence` becomes generic — `Presence[T]`, anchored to a `T` —
+  and the converter signature types both sides:
+
+      func(old *V1, has *Presence[V1], out *V2, set *Presence[V2])
+
+  Swapped presences no longer compile. The write door is one method
+  with its own type parameter, writing and declaring in a single
+  act:
+
+      func (p *Presence[T]) Set[V any](field *V, value V)
+
+  The field/value match is the compiler's problem; `Add` leaves the
+  public surface (the internals keep the mark machinery), and the
+  merged document carries exactly what was handed to `Set`.
+- **The instance is an offset oracle.** `out` exists so field
+  pointers mean something: the pointer-identity scheme needs real
+  memory — Go forbids C's null-based offsetof trick, an interior
+  pointer must point into a live object. The authoritative document
+  lives with the engine: `Set` resolves `&out.Field` to a path
+  against the oracle and writes the value into the engine's own
+  instance by that path. A direct `out.X = …` lands in the oracle
+  and is inert by construction — the ghost class dies, and the next
+  step's `old` holds exactly what `Set` carried.
+- **Costs accepted**: one scratch allocation per step, and a
+  reflect write per `Set` call — merge-tier prices.
+- **sxcli-vet's share** shrinks to a courtesy warning: a direct
+  assignment to the oracle is dead code, no longer a silent loss.
+- **The ripple when it lands**: `Step`/`NewStep` and both front
+  doors' converter signatures, the `conf.Presence` and `fw.Presence`
+  aliases become generic aliases, every converter in the tree
+  rewrites, go.mod moves to 1.27 in all five repos, and this
+  section's own examples follow.
+
+Open at implementation: the method's name (Set or Change), and
+whether a struct-typed field write (whole subtree, marked whole) is
+kept or refused.
+
 ### --upgrade-config (designed AND implemented 2026-07-18)
 
 The explicit schema-upgrade tool the chains make possible — and the
