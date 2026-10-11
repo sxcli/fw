@@ -107,7 +107,6 @@ func RenderMember(d *registry.Descriptor) solver.Member {
 	return m
 }
 
-
 // Subtree returns the sub-result reachable from the member named id
 // through its resolved bindings — the member itself included, the main
 // dependency order inherited, no re-resolution: the bindings ARE the

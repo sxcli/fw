@@ -107,9 +107,8 @@ func TestMigrateOnTheRegistrationChain(t *testing.T) {
 	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
-		Upgrade(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
-			out.Greeting = old.Greeting
-			set.Add(&out.Greeting)
+		Upgrade(Step(1, func(old *parityCfgV1, has *Presence[parityCfgV1], out *mainAppletCfg, set *Setter[mainAppletCfg]) {
+			set.Set(&out.Greeting, old.Greeting)
 		})).registerInto(w.cat, w.c)
 	if code := w.run(); code != 0 {
 		t.Fatalf("exit %d\n%s", code, w.stderr.String())
@@ -124,7 +123,7 @@ func TestMigrateOnBareRegistrationIsViolation(t *testing.T) {
 	w.applet(0)
 	NewBareRegistration("test/bare", func() *plainService { return &plainService{} }).
 		Alias("bare").
-		Upgrade(Step(1, func(old *parityCfgV1, has *Presence, out *parityCfgV1, set *Presence) {})).
+		Upgrade(Step(1, func(old *parityCfgV1, has *Presence[parityCfgV1], out *parityCfgV1, set *Setter[parityCfgV1]) {})).
 		registerInto(w.cat, w.c)
 	if w.c.Len() == 0 {
 		t.Fatal("Migrate without a config struct must be a commit violation")
@@ -144,9 +143,8 @@ func TestUpgradeConfigCoversTheWholeCatalog(t *testing.T) {
 	NewRegistration("test/app", func() *mainApplet { return a },
 		func(x *mainApplet) *mainAppletCfg { return &x.cfg }).
 		Alias("app").
-		Upgrade(Step(1, func(old *parityCfgV1, has *Presence, out *mainAppletCfg, set *Presence) {
-			out.Greeting = old.Greeting
-			set.Add(&out.Greeting)
+		Upgrade(Step(1, func(old *parityCfgV1, has *Presence[parityCfgV1], out *mainAppletCfg, set *Setter[mainAppletCfg]) {
+			set.Set(&out.Greeting, old.Greeting)
 		})).registerInto(w.cat, w.c)
 	w.dep(false) // config-less: not part of the schema, so its section is foreign
 	// the transform reads through the runtime's seams: real fs for this test

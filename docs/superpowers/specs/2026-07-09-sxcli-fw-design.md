@@ -1105,8 +1105,8 @@ engine interprets. The engine stays dumb: it walks a chain.
   ```go
   NewRegistration(ID, newServe, accessor).
       Alias("srv").
-      Upgrade(fw.Step(1, func(old *ConfigV1, has *fw.Presence, out *ConfigV2, set *fw.Presence) { … })).
-      Upgrade(fw.Step(2, func(old *ConfigV2, has *fw.Presence, out *Config, set *fw.Presence) { … })).
+      Upgrade(fw.Step(1, func(old *ConfigV1, has *fw.Presence[ConfigV1], out *ConfigV2, set *fw.Setter[ConfigV2]) { … })).
+      Upgrade(fw.Step(2, func(old *ConfigV2, has *fw.Presence[ConfigV2], out *Config, set *fw.Setter[Config]) { … })).
       Register()
   ```
 
@@ -1114,13 +1114,14 @@ engine interprets. The engine stays dumb: it walks a chain.
   Presence rides the chain as a first-class dimension: the document's
   actual keys seed the first `has` (matched by json name exactly — a
   key that reaches a field only through the decoder's case fold is
-  refused), each converter reads what was really set through `has`
-  and declares what it set through `set`, and the engine allocates
-  `out` and anchors both presences so a converter can never
-  mis-anchor. Misuse is collected per step: declaring presence on a
-  `dump:"-"` field is a violation, and a field assigned but never
-  declared set is absent downstream — the declaration, not the
-  assignment, is what carries a value forward.
+  refused), each converter reads what the old document really carried
+  through `has` and hands the new document's values to
+  `set.Set(&out.Field, value)`, which writes the value and records the
+  field as present in one act. `out` exists only so `&out.Field` can
+  name a field: the engine allocates it, and a value stored into it
+  directly never reaches the new document (Typed presence, below).
+  Misuse is collected per step: a `Set` on a `dump:"-"` field is a
+  violation, as is a field pointer that does not point into `out`.
   The **commit validates the chain** — contiguous from-versions, each
   link's output type feeding the next link's input, terminating at
   the current config type — type-level work that belongs to the
@@ -1207,8 +1208,8 @@ implementation forced:
 - A migrated document applies through the presence merge, not a JSON
   round-trip: the chain's output (same Go type as the live struct)
   lands through the current schema's field list, and only leaves the
-  chain declared present are written — what a converter assigned but
-  never declared set does not survive. Transient fields are skipped
+  chain handed to `Set` are written — nothing else can carry a value
+  (Typed presence, below). Transient fields are skipped
   naturally (a round-trip would re-emit run-scoped keys into the
   refusal the engine rightly makes), domains are checked on every
   written value, and the engine stamps Version itself before the
@@ -1230,33 +1231,38 @@ implementation forced:
   pattern), `fw.Step` mirrors `conf.Step`, and an `Upgrade` on a
   bare registration is a commit violation.
 
-### Typed presence: the converter hands values over (designed 2026-10-10, not implemented)
+### Typed presence: the converter hands values over (designed 2026-10-10, implemented 2026-10-11)
 
 Requires Go 1.27 — methods with type parameters. Supersedes the
 assign-without-declare vet warning the ledger carried as #25: the
 mistake class leaves the API instead of being policed.
 
-- **The defect pair in the current shape.** A converter mutates its
-  output struct and separately declares what it set. An assignment
-  without the declaration is not even lost immediately — the chain
-  instances are real, so the ghost value rides into every later
-  step's `old` and dies only at the merge boundary. And `has` and
-  `set` share one type: swapping them compiles.
+- **The defect pair in the previous shape.** A converter mutated its
+  output struct and separately declared what it set. An assignment
+  without the declaration was not even lost immediately — the chain
+  instances were real, so the ghost value rode into every later
+  step's `old` and vanished only at the merge boundary. And `has` and
+  `set` shared one type: swapping them compiled.
 - **Values reach the document only through the engine's hands.**
-  `Presence` becomes generic — `Presence[T]`, anchored to a `T` —
-  and the converter signature types both sides:
+  Each side of a converter gets its own typed face, anchored to its
+  own document type:
 
-      func(old *V1, has *Presence[V1], out *V2, set *Presence[V2])
+      func(old *V1, has *Presence[V1], out *V2, set *Setter[V2])
 
-  Swapped presences no longer compile. The write door is one method
-  with its own type parameter, writing and declaring in a single
-  act:
+  `Presence[T]` is the old document's: `Has(&old.Field)` answers
+  whether the document really carried the field. `Setter[T]` is the
+  new document's, with one method, its own type parameter matching
+  the field to the value:
 
-      func (p *Presence[T]) Set[V any](field *V, value V)
+      func (s *Setter[T]) Set[V any](field *V, value V)
 
-  The field/value match is the compiler's problem; `Add` leaves the
+  `Set` writes the value and records the field as present in a
+  single act, so what changed and what is known to have changed
+  cannot diverge. Swapped faces no longer compile; `Add` left the
   public surface (the internals keep the mark machinery), and the
-  merged document carries exactly what was handed to `Set`.
+  merged document carries exactly what was handed to `Set`. A `Set`
+  on a struct-typed field writes the whole subtree and marks every
+  leaf of it.
 - **The instance is an offset oracle.** `out` exists so field
   pointers mean something: the pointer-identity scheme needs real
   memory — Go forbids C's null-based offsetof trick, an interior
@@ -1264,21 +1270,20 @@ mistake class leaves the API instead of being policed.
   lives with the engine: `Set` resolves `&out.Field` to a path
   against the oracle and writes the value into the engine's own
   instance by that path. A direct `out.X = …` lands in the oracle
-  and is inert by construction — the ghost class dies, and the next
+  and reaches nothing — the ghost class is gone, and the next
   step's `old` holds exactly what `Set` carried.
 - **Costs accepted**: one scratch allocation per step, and a
   reflect write per `Set` call — merge-tier prices.
-- **sxcli-vet's share** shrinks to a courtesy warning: a direct
-  assignment to the oracle is dead code, no longer a silent loss.
-- **The ripple when it lands**: `Step`/`NewStep` and both front
-  doors' converter signatures, the `conf.Presence` and `fw.Presence`
-  aliases become generic aliases, every converter in the tree
-  rewrites, go.mod moves to 1.27 in all five repos, and this
-  section's own examples follow.
-
-Open at implementation: the method's name (Set or Change), and
-whether a struct-typed field write (whole subtree, marked whole) is
-kept or refused.
+- **sxcli-vet's share**: a converter that never uses its `set`
+  parameter is reported — nothing can have reached the new document.
+  A step that really carries nothing over says so by naming the
+  parameter `_`. A store straight into `out` is not policed; `Step`'s
+  documentation says what `out` is.
+- **Landed with it**: `Step`/`NewStep` and both front doors carry
+  the signature above; `conf.Presence`, `fw.Presence`,
+  `conf.Setter` and `fw.Setter` are generic aliases of the engine's
+  types; every converter in the tree is rewritten; go.mod says 1.27
+  in all five repos.
 
 ### --upgrade-config (designed AND implemented 2026-07-18)
 

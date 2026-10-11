@@ -128,23 +128,27 @@ func (r *Registration[T]) Provides(t reflect.Type) *Registration[T] {
 
 // Step declares one link of a config migration chain: the typed
 // conversion from schema version `from` to the next. Old versions
-// live on as plain json-only types. The converter receives what was
-// really set in old (read through has) and declares what it set in
-// out (through set); the engine allocates out and anchors both
-// presences:
+// live on as plain json-only types. The converter reads what the old
+// document really carried through has and hands the new document's
+// values to set.Set, which writes the value and records the field as
+// present in one act. out exists only so &out.Field can name a
+// field: the engine owns the document, and a value stored into out
+// directly never reaches it (spec §6, typed presence):
 //
-//	fw.Step(1, func(old *ConfigV1, has *fw.Presence, out *ConfigV2, set *fw.Presence) {
-//		out.Var2 = old.Key
-//		set.Add(&out.Var2)
+//	fw.Step(1, func(old *ConfigV1, has *fw.Presence[ConfigV1], out *ConfigV2, set *fw.Setter[ConfigV2]) {
+//		set.Set(&out.Var2, old.Key)
 //	})
-func Step[From, To any](from uint32, fn func(old *From, has *Presence, out *To, set *Presence)) engine.Step {
+func Step[From, To any](from uint32, fn func(old *From, has *Presence[From], out *To, set *Setter[To])) engine.Step {
 	return engine.NewStep(from, fn)
 }
 
-// Presence is one config instance's set of present leaves — the
-// dimension migration converters read and declare; see the conf
-// engine.
-type Presence = engine.Presence
+// Presence is the old document's face: what a migration converter
+// reads; see the conf engine.
+type Presence[T any] = engine.Presence[T]
+
+// Setter is the new document's face: where a migration converter
+// hands values; see the conf engine.
+type Setter[T any] = engine.Setter[T]
 
 // Upgrade attaches one link of the service's config upgrade chain,
 // oldest first, one call per step — how a schema evolves without
