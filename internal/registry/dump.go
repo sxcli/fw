@@ -19,6 +19,8 @@ import (
 	"io"
 	"reflect"
 	"strings"
+
+	"sxcli.dev/rules/tags"
 )
 
 // Dump writes a human-readable description of the registry's contents
@@ -26,16 +28,16 @@ import (
 func (r *Registry) Dump(w io.Writer) {
 	fmt.Fprintf(w, "registry: %d service(s), %d error(s)\n", len(r.ordered), r.c.Len())
 	for i, d := range r.ordered {
-		fmt.Fprintf(w, "[%d] %s → %s\n", i+1, d.ID, d.Concrete)
+		fmt.Fprintf(w, "[%d] %s → %s\n", i+1, d.ID, tags.TypeID(d.Concrete))
 		if len(d.Provides) > 0 {
 			names := make([]string, len(d.Provides))
 			for j, it := range d.Provides {
-				names[j] = it.String()
+				names[j] = tags.TypeID(it)
 			}
 			fmt.Fprintf(w, "    provides: %s\n", strings.Join(names, ", "))
 		}
 		if d.ConfigPtr != nil {
-			fmt.Fprintf(w, "    config:   %s\n", reflect.TypeOf(d.ConfigPtr))
+			fmt.Fprintf(w, "    config:   %s\n", tags.TypeID(reflect.TypeOf(d.ConfigPtr)))
 		}
 		if len(d.Deps) > 0 {
 			fmt.Fprintf(w, "    deps:\n")
@@ -58,7 +60,7 @@ func describeDep(dep DepField) string {
 	var b strings.Builder
 	if dep.IsSlice {
 		b.WriteString("[]")
-		b.WriteString(dep.Type.String())
+		b.WriteString(tags.TypeID(dep.Type))
 		if len(dep.IDs) > 0 {
 			b.WriteString(" (ids: ")
 			b.WriteString(strings.Join(dep.IDs, ", "))
@@ -67,7 +69,7 @@ func describeDep(dep DepField) string {
 			b.WriteString(" (all matches)")
 		}
 	} else {
-		b.WriteString(dep.Type.String())
+		b.WriteString(tags.TypeID(dep.Type))
 		if len(dep.IDs) > 0 {
 			b.WriteString(" (id: ")
 			b.WriteString(dep.IDs[0])

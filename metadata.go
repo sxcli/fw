@@ -17,6 +17,7 @@ package fw
 import (
 	"reflect"
 	"sxcli.dev/fw/system"
+	"sxcli.dev/rules/tags"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -129,13 +130,13 @@ func normalizeMetadata(c *fail.Collector, id string, raw *Metadata, hasConfig bo
 				elemType := allowedValues.Type().Elem()
 				hint := ValueHint(rv.FieldByName("Hint").Int())
 				if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
-					c.Fail("service %q metadata: %q allows %s values but the field takes %s", id, name, elemType, probe.Type)
+					c.Fail("service %q metadata: %q allows %s values but the field takes %s", id, name, tags.TypeID(elemType), tags.TypeID(probe.Type))
 				} else if hint != HintNone && hint != HintFile && hint != HintDirectory && hint != HintServiceID {
 					c.Fail("service %q metadata: %q declares an unknown hint %d", id, name, hint)
 				} else if hint != HintNone && allowedValues.Len() > 0 {
 					c.Fail("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", id, name)
 				} else if hint != HintNone && probe.Type.Kind() != reflect.String {
-					c.Fail("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, probe.Type)
+					c.Fail("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, tags.TypeID(probe.Type))
 				} else {
 					fm := engine.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: hint}
 					for i := 0; i < allowedValues.Len(); i++ {

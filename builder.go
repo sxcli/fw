@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 	"sxcli.dev/rules/solver"
+	"sxcli.dev/rules/tags"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/conf/fail"
@@ -284,9 +285,9 @@ func (b *AppBuilder) checkConcrete(cat *registry.Registry, accepted map[string]b
 	byType := map[string]string{}
 	for _, d := range cat.All() {
 		if accepted[d.ID] {
-			key := d.Concrete.String()
+			key := tags.TypeID(d.Concrete)
 			if prev, taken := byType[key]; taken {
-				c.Fail("concrete type %s is accepted as both %q and %q", d.Concrete, prev, d.ID)
+				c.Fail("concrete type %s is accepted as both %q and %q", key, prev, d.ID)
 			} else {
 				byType[key] = d.ID
 			}
