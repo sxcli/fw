@@ -474,16 +474,17 @@ func TestOneAppletBackstop(t *testing.T) {
 		t.Fatalf("the dep on a dormant applet must refuse: code=%d", code)
 	}
 	// force a working set that kept both applets — the door nobody
-	// imagined — and re-plan: resolution now pulls the second applet
-	// in, and the backstop must refuse it
+	// imagined — and re-plan: the solver still keeps the dispatched
+	// applet alone, so the named-id dep stays unresolvable and the
+	// resolved set never holds a second applet
 	w.rt.ws = w.rt.reg.Snapshot()
 	w.rt.wsByAlias = w.rt.byAlias
 	d, _ := w.rt.reg.ByID("example.com/app/main")
 	c := &fail.Collector{}
 	w.rt.plan(c, d, nil)
 	all := errText2(c)
-	if !strings.Contains(all, "exactly one is ever active") {
-		t.Errorf("the backstop must catch a second applet: %v", c.All())
+	if !strings.Contains(all, `unknown service id "example.com/app/two"`) || strings.Contains(all, "exactly one is ever active") {
+		t.Errorf("the dormant applet must be unresolvable even with an uncut working set, before any backstop: %v", c.All())
 	}
 }
 

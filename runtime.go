@@ -38,9 +38,11 @@ type catalog struct {
 
 	// the working set: this invocation's copy of the catalog, built
 	// right after dispatch with every applet except the dispatched
-	// one ejected — resolution and controls run against a registry
-	// holding one applet by construction. The catalog above stays
-	// whole; nothing shrinks it again.
+	// one ejected. The schema and the alias index read it — the
+	// other applets' sections and names do not exist for this
+	// invocation. Resolution does not depend on the cut: the solver
+	// keeps the dispatched applet alone (solver.Solve). The
+	// catalog above stays whole; nothing shrinks it again.
 	ws        *registry.Registry
 	wsByAlias map[string]*registry.Descriptor
 }
@@ -100,7 +102,10 @@ func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.R
 
 // workingSet builds the invocation's working set for the dispatched
 // applet: a catalog snapshot minus every other applet, plus the alias
-// index over what remains.
+// index over what remains. The cut serves the schema and the alias
+// index; the resolution rule itself lives in solver.Solve, the same
+// for the run, the help fallback, every introspection view and
+// sxcli-vet.
 func (ca *catalog) workingSet(dispatched *registry.Descriptor) {
 	ca.ws = ca.reg.Snapshot()
 	keep := map[string]bool{}

@@ -428,3 +428,29 @@ func TestSelfZeroedVersionKeepsTheRunClean(t *testing.T) {
 		t.Fatalf("the mutation must have happened: %d", z.cfg.Version)
 	}
 }
+
+// depApplet is an applet that also provides depIface — a candidate
+// for app's D field only if applets could cross into each other's
+// resolution.
+type depApplet struct{}
+
+func (d *depApplet) Dep()              {}
+func (d *depApplet) Configured() error { return nil }
+func (d *depApplet) Run() int          { return 0 }
+
+func TestViewAdmitsNoOtherApplet(t *testing.T) {
+	var services []string
+	w := argsWorld(t, nil, func(sys system.System) {
+		if view := sys.Introspector("app"); view != nil {
+			services = view.Services()
+		}
+	})
+	NewBareRegistration("test/depapp", func() *depApplet { return &depApplet{} }).
+		Alias("depapp").Provides(Iface[depIface]()).registerInto(w.cat, w.c)
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, w.stderr.String())
+	}
+	if strings.Contains(","+strings.Join(services, ",")+",", ",depapp,") {
+		t.Errorf("another applet satisfied app's dependency in app's view: %v", services)
+	}
+}

@@ -640,14 +640,20 @@ an applet into the graph:
    dispatched one included: any applet reference in
    `--enable`/`--disable`/`--override` reports plain "unknown
    service" — applets are not services from the operator's seat.
-2. **Dependency resolution.** Right after dispatch the invocation
-   gets its WORKING SET: a catalog snapshot with every applet except
-   the dispatched one ejected. Resolution runs against a registry
-   holding one applet by construction, so a dependency naming a
-   dormant applet — by id, interface or concrete type — is simply
-   unresolvable. The catalog itself is immutable after Build;
-   dispatch, introspection and --upgrade-config read it, nothing
-   shrinks it. Cold-service ejection operates on the working set.
+2. **Dependency resolution.** Every resolution starts from a root
+   that names the dispatched applet by id, and the solver
+   (`sxcli.dev/rules/solver`) keeps that applet alone: a dependency
+   naming a dormant applet — by id, interface or concrete type — is
+   simply unresolvable, and a control naming one reports an unknown
+   service. The rule lives in the solver once, so the run, the
+   `--help` fallback, every introspection view and sxcli-vet get it
+   by construction. Right after dispatch the invocation also gets
+   its WORKING SET: a catalog snapshot with every other applet
+   ejected, which the schema and the alias index read — the other
+   applets' sections and names do not exist for this invocation.
+   The catalog itself is immutable after Build; dispatch,
+   introspection and --upgrade-config read it, nothing shrinks it.
+   Cold-service ejection operates on the working set.
 3. **The backstop.** After resolution the resolved service set must
    hold exactly one applet; any other count is an internal error,
    reported loudly — the door nobody imagined.

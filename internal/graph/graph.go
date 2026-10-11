@@ -87,6 +87,7 @@ func RenderMember(d *registry.Descriptor) solver.Member {
 	m := solver.Member{
 		ID:       d.ID,
 		Core:     d.Core,
+		Applet:   d.Applet,
 		Concrete: tags.TypeID(d.Concrete),
 		Alias:    d.Alias,
 		Ranked:   d.Ranked,
