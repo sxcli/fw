@@ -157,7 +157,7 @@ func TestConcreteTypeAcceptedTwice(t *testing.T) {
 		t.Errorf("accepting one of them is fine: %v", err)
 	}
 	_, err := Builder().AcceptAll().buildFrom(reg, nil)
-	if err == nil || !strings.Contains(err.Error(), "accepted as both") {
+	if err == nil || !strings.Contains(err.Error(), `accepted twice — "example.com/x/one" (alias "one") and "example.com/y/one" (alias "uno")`) {
 		t.Errorf("accepting both must fail Build: %v", err)
 	}
 }

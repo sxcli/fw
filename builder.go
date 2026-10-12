@@ -145,7 +145,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 	renamed := b.renamed(cat, accepted, c)
 	if c.Len() == 0 {
 		b.checkAliases(cat, accepted, renamed, c)
-		b.checkConcrete(cat, accepted, c)
+		b.checkConcrete(cat, accepted, renamed, c)
 	}
 	var app *App
 	if c.Len() == 0 {
@@ -280,18 +280,21 @@ func (b *AppBuilder) checkAliases(cat *registry.Registry, accepted map[string]bo
 	}
 }
 
-// checkConcrete rejects the same concrete type accepted twice.
-func (b *AppBuilder) checkConcrete(cat *registry.Registry, accepted map[string]bool, c *fail.Collector) {
-	byType := map[string]string{}
+// checkConcrete hands the accepted members' concrete identities to
+// the shared rules for the accepted-twice verdict.
+func (b *AppBuilder) checkConcrete(cat *registry.Registry, accepted map[string]bool, renamed map[string]string, c *fail.Collector) {
+	var members []solver.Member
 	for _, d := range cat.All() {
 		if accepted[d.ID] {
-			key := tags.TypeID(d.Concrete)
-			if prev, taken := byType[key]; taken {
-				c.Fail("concrete type %s is accepted as both %q and %q", key, prev, d.ID)
-			} else {
-				byType[key] = d.ID
+			m := solver.Member{ID: d.ID, Alias: d.Alias, Concrete: tags.TypeID(d.Concrete)}
+			if name, over := renamed[d.ID]; over {
+				m.Alias = name
 			}
+			members = append(members, m)
 		}
+	}
+	for _, body := range solver.CheckConcretes(members) {
+		c.Fail("%s", body)
 	}
 }
 
