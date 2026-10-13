@@ -472,6 +472,10 @@ Two independent axes, two verbs:
   pins the aliases it has documented, and no upstream rename — or
   even provider swap — ever touches a deployed config file again.
   Recommended practice for released binaries.
+- **`SharedConfigFile(name, ids...)` — one file for a group of
+  applets.** The composition's statement, not the services': which
+  accepted applets read one config file, and what it is called. See
+  Shared config files under §6.
 
 **Core services are services.** The framework's own members — the
 system service today, any future core member — are ordinary
@@ -795,8 +799,11 @@ config to the `--config` target (format chosen by the file extension via a
 format provider) or, with no target, dump JSON to stdout; exit 0 without
 Configured/Start/Run. The target is input *and* output: an existing
 target is loaded as the explicit config first — making `--write-config`
-an easy way to normalize/reformat an existing file — and a missing one
-is only created. **Newly created** files get mode 0600; an existing
+an easy way to normalize/reformat an existing file — its sections the run
+does not own pass through verbatim, and a missing one is only created.
+An applet whose file is shared (Shared config files, §6) has
+`--write-shared-config` in place of `--write-config`. **Newly created**
+files get mode 0600; an existing
 target's permissions are the operator's prior decision and are left
 untouched (format normalization must not silently revoke a
 deliberately granted group read). Empty values — zero scalars, empty
@@ -1427,6 +1434,9 @@ Config files, loaded in order, later overriding earlier field-by-field:
 3. XDG user config location: `<xdg-config>/<applet-id>/config.<ext>` —
    `os.UserConfigDir` per platform (`%AppData%` on Windows)
 
+For an applet in a `SharedConfigFile` group, the group's name stands
+where `<applet-id>` appears above.
+
 **Security — the binary-companion location (1) is pinned:**
 
 - "Next to the binary" means next to the **real** binary: the executable
@@ -1511,6 +1521,87 @@ The `dump:"-"` tag is available to any service's config struct, with
 the same run-scoped semantics: excluded from `--write-config` output
 and refused from config files.
 
+### Shared config files (designed 2026-10-13, not implemented)
+
+A binary's config file is named after the dispatched applet: `shop
+serve` reads `/etc/serve/config.json`, `shop migrate` reads
+`/etc/migrate/config.json`. One binary with three applets is three
+files, and a service two of them use has its section in two of them.
+The composition can instead declare that a group of its applets reads
+one file:
+
+```go
+fw.Builder().
+    Accept(ServeID, MigrateID, BackupID, ReportID, console.ID).
+    SharedConfigFile("shop", ServeID, MigrateID, BackupID).
+    SharedConfigFile("reports", ReportID).
+    Main()
+```
+
+- **The declaration is the composition's**, like `Accept`, `Order`
+  and `Alias`: a service package does not know which binary it will
+  be built into, so a registration never names a file. Each call is
+  one group reading one file; the call repeats for several groups,
+  and with no ids the group is every accepted applet. An applet in no
+  group keeps the file named after its alias.
+- **Build rules**, judged by the shared rules and read by sxcli-vet
+  from the Builder chain: every id names an accepted applet; an
+  applet belongs to at most one group; the name obeys the alias
+  grammar (it becomes a path and an environment word) and is not the
+  alias of an applet outside its group — otherwise that applet's own
+  file and the group's would be one path, shared by accident. Naming
+  a group after one of its members is fine.
+- **What changes for a grouped applet: the file, nothing else.** The
+  group's name replaces the alias in all three locations (`<bin-dir>/
+  shop-config.json`, `/etc/shop/config.json`, `<xdg-config>/shop/
+  config.json`). Inside the file every section keeps its service's
+  alias, so the applets of a group cannot collide; arguments and
+  environment names are unchanged (`--serve-listen`,
+  `SERVE__LISTEN`). A run loads the sections of its resolved service
+  set and ignores the rest as foreign, which is what it does today
+  for any section it does not own. `--upgrade-config` already works
+  on whole files for the whole catalog, every section by its own
+  chain, foreign sections passed through verbatim — it needs nothing.
+- **Writing is the one real difference.** The command line belongs to
+  the dispatched applet, so no run can produce the *effective* state
+  of a sibling: its arguments were never on the line. A grouped
+  applet therefore has no `--write-config` — the argument is unknown
+  to it, absent from its help and completion — and has
+  `--write-shared-config` instead, so that a write touching the whole
+  group is spelled as one. It renders the group's file:
+    - the dispatched applet's sections with full effective state
+      (defaults, files, environment, arguments), as `--write-config`
+      does;
+    - every sibling's sections with effective state **minus the
+      command line** (defaults, files, environment), built the way
+      the introspection views build any applet's schema — fresh
+      instances from the cheap factories, nothing configured or
+      started;
+    - sections of foreign tools verbatim.
+  Without `--config` the whole document goes to stdout; with it the
+  target is read first, like `--write-config`'s target, and written
+  back. A service used by two members is one section, identical from
+  either path. The operator should know the write touches every
+  sibling's section — folding `MIGRATE__…` environment values into the
+  file during a `serve` run — which is why the verb is its own.
+- **Ungrouped applets keep `--write-config`**, and it stops
+  overwriting: an existing target's sections the run does not own
+  pass through verbatim instead of vanishing. That was never promised
+  the other way; it was the one data-losing path left in the engine.
+- **The binary's tier and environment policy** rides the same Builder
+  surface: `fw.Suppress` gains conf's location-tier and environment
+  features (`FeatureCompanionConfig`, `FeatureSystemConfig`,
+  `FeatureUserConfig`, `FeatureEnvironment`) — "this binary reads
+  /etc only — no companion file, no user file, no environment". The
+  engine already implements them for the standalone front door; fw
+  only exposes the constants and wires its sources.
+
+Open at implementation: whether `--write-shared-config` is a core
+feature of its own for `Suppress` (`FeatureWriteSharedConfig`), and
+whether the shared verb should also exist, as an alias of
+`--write-config`, for ungrouped applets so scripts can use one
+spelling.
+
 ### Core feature suppression
 
 A binary may remove pieces of the core's configuration surface — a
@@ -1527,7 +1618,10 @@ func main() {
 Suppressible features: `FeatureConfigFile` (`--config,-c`),
 `FeatureWriteConfig`, `FeatureHelp` (`--help,-h`; help and
 write-config are argument-only, so suppressing them closes their
-single door), and the rest of the core's argument features. The
+single door), and the rest of the core's argument features; the
+location tiers and the environment as sources (`FeatureCompanionConfig`,
+`FeatureSystemConfig`, `FeatureUserConfig`, `FeatureEnvironment`,
+Shared config files §6). The
 three service controls are suppressible too, but their constants
 live in `sxcli.dev/fw/controls` (`FeatureDisableService`,
 `FeatureEnableService`, `FeatureOverrideService`): naming one
