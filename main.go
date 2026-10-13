@@ -28,7 +28,6 @@ import (
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
 	"sxcli.dev/fw/internal/registry"
-	"sxcli.dev/rules/grammar"
 )
 
 // Main is the busybox-compatibility sugar of the composition model:
@@ -458,15 +457,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 		// registry kept
 		// alive on its behalf
 		rt.ws.Retain(keep)
-		loaded := p.sch.Apply(rt.c, p.files, p.src)
-		if rt.c.Len() == 0 {
-			// declared positionals were assigned by Apply; an
-			// undeclared non-empty tail in the framework is a
-			// violation — declare it or lose it, loudly
-			if len(loaded.Positionals) > 0 {
-				rt.c.Fail(grammar.UnexpectedArgRule, loaded.Positionals[0])
-			}
-		}
+		p.sch.Apply(rt.c, p.files, p.src)
 		if rt.c.Len() == 0 && p.validate {
 			// load-but-never-run: every check passed, say nothing —
 			// and NOTHING ran: not even the translator's Configured

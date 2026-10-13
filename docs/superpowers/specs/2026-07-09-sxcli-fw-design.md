@@ -1011,17 +1011,18 @@ lives in `engine` (EXTRACTED 2026-07-19: the pair is its own module,
 `sxcli.dev/conf` + `/engine` + `/fail`, own repo, fw a consumer) (production wiring — locations, hardening
 openers, `ProductionSources` — moved down from fw root) and `conf` is
 the front door: ONE type through all phases — `NewLoader(name)` chain
-→ `Load() (*Loader, served bool)` terminal (returns the receiver) →
-`Result() ([]string, error)` verdict. (The earlier two-type
+→ `Load() (served bool, err error)` terminal. (The earlier two-type
 Builder/Build/Load shape and its `LoaderBuilder` name died in a
 rename pass 2026-07-18 — the slot closed by demolition; `Validate`
 was rejected as the verdict's name because validation happens in
 Load, and a name that lies about timing invites skipping the call.)
-Loading and verdict split so each result means ONE thing: `served` is
-a successfully consumed --help/--write-config/--upgrade-config run
-(never an error; forgotten checks are caught by Result's loud misuse
-errors, including Result-before-Load), Result's error is always
-genuine failure — the log.Fatal reflex is CORRECT. Help is best-effort by
+The two results each mean ONE thing: `served` is a successfully
+consumed --help/--validate-config/--write-config/--upgrade-config run
+(never an error; a forgotten check is sxcli-vet's catch), the error is
+always genuine failure — the log.Fatal reflex is CORRECT. (A separate
+`Result() ([]string, error)` verdict call, with loud misuse errors for
+Result-before-Load and Result-after-served, left on 2026-10-12: with
+no leftovers to carry it only added a call-order trap.) Help is best-effort by
 decree (violations to stderr, the schema still renders); write-config
 refuses a violated merge; the config structs hold their untouched
 defaults unless Load returns nil (snapshot/restore around the
@@ -1403,11 +1404,11 @@ by inertia. Completion follows: argument names stay on offer after
 bare tokens; silence begins at the terminator.
 
 Two deaths: `fw.Positionals()` is DELETED — an applet reads its own
-fields, an undeclared non-empty tail in fw is a violation ("declare
-it or lose it, loudly"). The front door's `Result` leftovers got
-their semantics: declare nothing → the raw tail passes through (the
-poor guy's convenience); declare anything → the schema owns the tail
-entirely and Result carries no leftovers. The completion adapters are
+fields — and the front door's `Result` with it (2026-10-12). An
+undeclared non-empty tail is a violation at BOTH doors, "declare it
+or lose it, loudly", judged once in the engine; the earlier standalone
+convenience (declare nothing → the raw tail passes through) is gone,
+and `Load` returns `(served, err)` and nothing else. The completion adapters are
 the first dogfood: COMP_WORDS rides a declared `pos:"rest"` field
 now.
 
@@ -1590,12 +1591,12 @@ re-read the file. Unused providers stay cold and are ejected.
   flag replaces any file/env-sourced content, repetitions append.
 - Short-flag bundling: `-abc` — every bundled flag must be a bool except
   the last, which may take a value (`-abc=5`, `-abc 5`).
-- A literal `--` ends flag parsing; everything after it is positional.
-- **Positionals:** every bare token after the last flag argument is
-  collected as a positional and does not cause errors; a bare token
-  *followed by* another flag is a strict-parse error ("positionals must
-  come last"). Parsing/routing of positionals is deferred — v1 collects
-  them and exposes them via `fw.Positionals()`, nothing more.
+- A literal `--` ends argument parsing; everything after it is
+  positional data verbatim.
+- **Positionals:** bare tokens interleave with arguments and belong to
+  the active config's `pos` fields (Declared positionals, above); a
+  bare token no field claims is the "unexpected argument" violation,
+  at both doors.
 - Durations are strict in every source: a unit suffix is required
   (`5s`, `5000ms`, `5000000ns`; bare numbers are rejected), and in JSON
   files a duration must be a *string* — never a number.
@@ -1859,8 +1860,8 @@ Checks:
   equals-terminal check reads the common composite-literal case
   (`Config{Version: 3}`) and emits "cannot verify" for computed
   defaults, never silence.
-- **discarded `served`** — `l, _ := conf.New(…)` ignoring Load's
-  second return is the "tool runs after printing help" bug the
+- **discarded `served`** — `_, err := conf.New(…)` ignoring Load's
+  served return is the "tool runs after printing help" bug the
   two-phase front door exists to prevent; the API made the mistake
   checkable, this check makes it caught.
 - **raw `Feature` conversions** — `Feature("…")` naming nothing known;
