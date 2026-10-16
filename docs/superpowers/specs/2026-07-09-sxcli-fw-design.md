@@ -1621,7 +1621,10 @@ write-config are argument-only, so suppressing them closes their
 single door), and the rest of the core's argument features; the
 location tiers and the environment as sources (`FeatureCompanionConfig`,
 `FeatureSystemConfig`, `FeatureUserConfig`, `FeatureEnvironment`,
-Shared config files §6). The
+Shared config files §6). Suppressing `FeatureConfigFile` suppresses
+`--upgrade-config` and `--write-config` with it: without `--config`
+neither has a file to work on. Suppressing all three tiers together
+with it is the spelling for a binary without stored configuration. The
 three service controls are suppressible too, but their constants
 live in `sxcli.dev/fw/controls` (`FeatureDisableService`,
 `FeatureEnableService`, `FeatureOverrideService`): naming one

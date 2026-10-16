@@ -27,8 +27,8 @@ func TestSuppressMapsFeaturesToLongNames(t *testing.T) {
 	old := suppressedCore
 	t.Cleanup(func() { suppressedCore = old })
 	suppressedCore = nil
-	Suppress(FeatureConfigFile, FeatureWriteConfig, FeatureValidateConfig, FeatureHelp)
-	want := []string{"config", "write-config", "validate-config", "help"}
+	Suppress(FeatureWriteConfig, FeatureValidateConfig, FeatureHelp)
+	want := []string{"write-config", "validate-config", "help"}
 	if !reflect.DeepEqual(suppressedCore, want) {
 		t.Errorf("got %v, want %v", suppressedCore, want)
 	}
@@ -144,5 +144,44 @@ func TestSuppressUnknownFeatureIsCollected(t *testing.T) {
 	Suppress(CoreFeature(99))
 	if defaultCollector.Len() != before+1 {
 		t.Error("an unknown feature must be recorded as a startup violation")
+	}
+}
+
+func TestSuppressSourcesLeaveTheArgumentListAlone(t *testing.T) {
+	oldCore, oldSources := suppressedCore, suppressedSources
+	t.Cleanup(func() { suppressedCore, suppressedSources = oldCore, oldSources })
+	suppressedCore, suppressedSources = nil, map[CoreFeature]bool{}
+	Suppress(FeatureCompanionConfig, FeatureUserConfig, FeatureEnvironment)
+	if len(suppressedCore) != 0 {
+		t.Errorf("source features are not arguments: %v", suppressedCore)
+	}
+	locs := configLocations("mytool")
+	if len(locs) != 1 || !strings.Contains(locs[0].Base, "mytool") || locs[0].Pinned {
+		t.Errorf("only the system tier must remain: %+v", locs)
+	}
+	if environmentLookup() != nil {
+		t.Error("a suppressed environment reads nothing")
+	}
+}
+
+func TestEnableOfASourceFeatureIsANoOp(t *testing.T) {
+	before := defaultCollector.Len()
+	Enable(FeatureSystemConfig, FeatureEnvironment)
+	if defaultCollector.Len() != before {
+		t.Errorf("a source feature is on by default; enabling it is silent: %v", defaultCollector.All())
+	}
+}
+
+// Suppressing --config takes --upgrade-config and --write-config with
+// it; an explicit repeat of either does not duplicate.
+func TestSuppressConfigFileImpliesTheFileVerbs(t *testing.T) {
+	old := suppressedCore
+	t.Cleanup(func() { suppressedCore = old })
+	suppressedCore = nil
+	Suppress(FeatureConfigFile)
+	Suppress(FeatureWriteConfig)
+	want := []string{"config", "upgrade-config", "from-version", "write-config"}
+	if !reflect.DeepEqual(suppressedCore, want) {
+		t.Errorf("got %v, want %v", suppressedCore, want)
 	}
 }

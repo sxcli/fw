@@ -168,10 +168,10 @@ func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *ru
 		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
 		c:         &fail.Collector{},
 		argv:      argv,
-		lookupEnv: os.LookupEnv,
+		lookupEnv: environmentLookup(),
 		stdout:    os.Stdout,
 		stderr:    os.Stderr,
-		locations: engine.ProductionLocations,
+		locations: configLocations,
 		stat:      engine.StatRegular,
 		superuser: isSuperuser,
 		lstat: func(path string) error {

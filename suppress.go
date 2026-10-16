@@ -15,6 +15,8 @@
 package fw
 
 import (
+	"os"
+
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/fw/internal/ctlhook"
 )
@@ -51,6 +53,20 @@ const (
 	// with Enable. On other platforms the token is an unknown
 	// argument.
 	FeatureSCMDebug
+	// FeatureCompanionConfig is the first config file tier: the pinned
+	// file beside the real binary. Suppressed, that location is never
+	// searched.
+	FeatureCompanionConfig
+	// FeatureSystemConfig is the system-wide tier (/etc on unix,
+	// %ProgramData% on windows).
+	FeatureSystemConfig
+	// FeatureUserConfig is the per-user tier (the XDG config dir).
+	FeatureUserConfig
+	// FeatureEnvironment is the environment as a source: suppressed, no
+	// variable is read — derived names and explicit env tags alike.
+	// The three tiers and this one are sources, not arguments: they
+	// have no long name and never appear in --help.
+	FeatureEnvironment
 )
 
 // The values above stay below 64. The three service controls are
@@ -74,6 +90,40 @@ var coreFeatureLongs = map[CoreFeature]string{
 // suppressedCore holds the long names of suppressed core fields; Main
 // passes it into the configuration machinery.
 var suppressedCore []string
+
+// sourceFeatures are the features that are sources rather than
+// arguments: the three config file tiers and the environment.
+// Suppressing one removes the source from every run; Main composes
+// the locations and the environment lookup from what remains.
+var sourceFeatures = map[CoreFeature]bool{
+	FeatureCompanionConfig: true,
+	FeatureSystemConfig:    true,
+	FeatureUserConfig:      true,
+	FeatureEnvironment:     true,
+}
+
+// suppressedSources records the suppressed source features.
+var suppressedSources = map[CoreFeature]bool{}
+
+// configLocations is the production location search minus the
+// suppressed tiers.
+func configLocations(name string) []engine.Location {
+	return engine.TierLocations(name,
+		!suppressedSources[FeatureCompanionConfig],
+		!suppressedSources[FeatureSystemConfig],
+		!suppressedSources[FeatureUserConfig])
+}
+
+// environmentLookup is the production environment, or nil when the
+// environment is suppressed — the engine reads nothing through a nil
+// lookup.
+func environmentLookup() func(string) (string, bool) {
+	var lookup func(string) (string, bool)
+	if !suppressedSources[FeatureEnvironment] {
+		lookup = os.LookupEnv
+	}
+	return lookup
+}
 
 // configMaxBytes is the effective config file size cap; Main passes
 // it into the configuration machinery. Zero means unlimited, so the
@@ -118,7 +168,7 @@ func Enable(features ...CoreFeature) {
 	for _, feature := range features {
 		if feature == FeatureSCMDebug {
 			scmDebugEnabled = true
-		} else if _, known := featureLong(feature); !known {
+		} else if _, known := featureLong(feature); !known && !sourceFeatures[feature] {
 			defaultCollector.Fail("Enable: unknown core feature %d", feature)
 		}
 	}
@@ -140,19 +190,18 @@ func featureLong(feature CoreFeature) (string, bool) {
 // argument becomes unknown (an error in the strict pass), its
 // environment variable is never consulted, and its key appearing in a
 // config file's core section is a loud startup error — operators learn
-// it is not honored instead of wondering why it is ignored.
+// it is not honored instead of wondering why it is ignored. Source
+// features (the three config file tiers, the environment) remove a
+// source instead of an argument. Suppressing FeatureConfigFile takes
+// --upgrade-config and --write-config with it: without --config
+// neither has a file to work on.
 //
 // Call Suppress from the consumer's main() or an init() function,
 // before Main; it is a build-time property of the binary, not runtime
 // configuration.
 func Suppress(features ...CoreFeature) {
 	for _, feature := range features {
-		if feature == FeatureSCMDebug {
-			// already off: redundant-true and silent — enabling it
-			// elsewhere in the same binary is the contradiction, and
-			// Build judges that pair loudly
-			scmDebugSuppressed = true
-		} else if long, known := featureLong(feature); known {
+		if long, known := featureLong(feature); known {
 			dup := false
 			for _, existing := range suppressedCore {
 				dup = dup || existing == long
@@ -162,7 +211,20 @@ func Suppress(features ...CoreFeature) {
 				if feature == FeatureUpgradeConfig {
 					suppressedCore = append(suppressedCore, "from-version")
 				}
+				if feature == FeatureConfigFile {
+					// no --config, no file to upgrade or write: the two
+					// verbs leave with it (spec §6, Core feature
+					// suppression)
+					Suppress(FeatureUpgradeConfig, FeatureWriteConfig)
+				}
 			}
+		} else if sourceFeatures[feature] {
+			suppressedSources[feature] = true
+		} else if feature == FeatureSCMDebug {
+			// already off: redundant-true and silent — enabling it
+			// elsewhere in the same binary is the contradiction, and
+			// Build judges that pair loudly
+			scmDebugSuppressed = true
 		} else {
 			defaultCollector.Fail("Suppress: unknown core feature %d", feature)
 		}

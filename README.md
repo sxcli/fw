@@ -200,6 +200,7 @@ The binary author decides which core features exist at all:
 
 ```go
 fw.Suppress(fw.FeatureConfigFile, fw.FeatureOverride) // no --config, no rewiring
+fw.Suppress(fw.FeatureUserConfig, fw.FeatureEnvironment) // /etc and the companion file only, no environment
 fw.ConfigMaxBytes(64 << 10)                           // tighter than the 1 MiB default
 ```
 
