@@ -468,7 +468,7 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 			if p.help {
 				code = rt.help(p.sch)
 			} else if p.core.WriteConfig {
-				code = rt.writeConfig(p.sch, p.core.Config, p.src)
+				code = rt.writeConfig(p.sch, p.core.Config, p.src, p.files)
 			} else {
 				code = rt.lifecycle(buffer, p.res, applet, pre)
 			}
@@ -854,9 +854,9 @@ func (rt *runtime) help(sch *engine.Schema) int {
 
 // writeConfig emits the merged configuration through the engine,
 // recording a failure as a startup violation.
-func (rt *runtime) writeConfig(sch *engine.Schema, target string, src engine.Sources) int {
+func (rt *runtime) writeConfig(sch *engine.Schema, target string, src engine.Sources, files *engine.Files) int {
 	code := 0
-	if err := sch.WriteMerged(rt.stdout, target, src); err != nil {
+	if err := sch.WriteMerged(rt.stdout, target, src, files); err != nil {
 		rt.c.Fail("write-config: %v", err)
 		code = 2
 	}

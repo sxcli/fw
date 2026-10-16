@@ -21,6 +21,8 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sxcli.dev/fw/system"
 	"testing"
@@ -469,5 +471,21 @@ func TestSharedConfigFileNamesTheSearch(t *testing.T) {
 	}
 	if a.cfg.Greeting != "shared" {
 		t.Errorf("a grouped applet reads the group's file: %+v", a.cfg)
+	}
+}
+
+// --write-config into an existing file: the dispatched applet's
+// section is rewritten, a section of someone else is kept.
+func TestWriteConfigKeepsOtherSections(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "config.json")
+	files := map[string]string{target: `{"app": {"version": 1, "greeting": "old"}, "backup": {"version": 1, "out": "/var/backups"}}`}
+	w := newWorld(t, []string{"bin", "--write-config", "--config", target, "--greeting", "new"}, files, nil)
+	w.applet(0)
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d\n%s", code, w.stderr.String())
+	}
+	raw, _ := os.ReadFile(target)
+	if !strings.Contains(string(raw), `"greeting": "new"`) || !strings.Contains(string(raw), `"out": "/var/backups"`) {
+		t.Errorf("own section rewritten, the other kept:\n%s", raw)
 	}
 }

@@ -799,9 +799,10 @@ config to the `--config` target (format chosen by the file extension via a
 format provider) or, with no target, dump JSON to stdout; exit 0 without
 Configured/Start/Run. The target is input *and* output: an existing
 target is loaded as the explicit config first — making `--write-config`
-an easy way to normalize/reformat an existing file — its sections the run
-does not own pass through verbatim, and a missing one is only created.
-An applet whose file is shared (Shared config files, §6) has
+an easy way to normalize/reformat an existing file. Sections of the
+target that belong to no service of this run — another tool's, another
+applet's in a shared file — are written back unchanged; a missing target
+is only created. An applet whose file is shared (Shared config files, §6) has
 `--write-shared-config` in place of `--write-config`. **Newly created**
 files get mode 0600; an existing
 target's permissions are the operator's prior decision and are left
