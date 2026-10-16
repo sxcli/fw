@@ -32,7 +32,8 @@ import (
 // philosophy one layer up.
 type App struct {
 	reg           *registry.Registry
-	shortPriority []string // the composition's contested-short ranking
+	shortPriority []string          // the composition's contested-short ranking
+	sharedFiles   map[string]string // applet id → its shared config file's name; absent = the alias
 }
 
 // Main runs the composed App: dispatch, configuration, resolution,

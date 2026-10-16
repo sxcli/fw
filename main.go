@@ -349,15 +349,16 @@ func sections(ordered []graph.Member) []engine.Section {
 // records violations into c and performs no side effects: nothing is
 // written, ejected, injected, configured or started.
 func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string) *invocationPlan {
-	// the operator surfaces — env prefix, config file names and
-	// sections, help — speak the applet's primary alias; the graph and
-	// the inject vocabulary speak its id
+	// two names per applet: the alias is the operator's word for it
+	// (env prefix, config section, help), the id is code's word (the
+	// graph, inject tags); the config file's name comes from
+	// configName, which owns that rule
 	alias := d.Alias
 	p := &invocationPlan{}
 	p.src = engine.Sources{
 		Args:           args,
 		LookupEnv:      rt.lookupEnv,
-		Locations:      rt.locations(alias),
+		Locations:      rt.locations(rt.configName(d)),
 		Stat:           rt.stat,
 		Lstat:          rt.lstat,
 		Open:           rt.open,

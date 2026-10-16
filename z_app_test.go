@@ -79,7 +79,7 @@ func appWorldWith(t *testing.T, b *AppBuilder, argv []string, files, env map[str
 		t.Fatalf("build failed: %v", err)
 	}
 	w.rt = &runtime{
-		catalog:        catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
+		catalog:        catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority, sharedFiles: app.sharedFiles},
 		configMaxBytes: configMaxBytes,
 		c:              w.c,
 		argv:           argv,

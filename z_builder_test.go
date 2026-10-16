@@ -15,6 +15,7 @@
 package fw
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -225,5 +226,70 @@ func TestCoreFamilyIsFrameworkAdmitted(t *testing.T) {
 	}
 	if _, ok := app.reg.ByID("test/cold"); ok {
 		t.Error("a plain user service must not ride the core admission")
+	}
+}
+
+// sharedWorld catalogs two applets and a plain service for the
+// shared-config-file rules.
+func sharedWorld(t *testing.T) func(*AppBuilder) (*App, error) {
+	t.Helper()
+	reg, c := catalogWorld()
+	var log []string
+	NewRegistration("example.com/shop/serve", func() *mainApplet { return &mainApplet{log: &log, cfg: mainAppletCfg{Version: 1}} },
+		func(a *mainApplet) *mainAppletCfg { return &a.cfg }).Alias("serve").registerInto(reg, c)
+	NewBareRegistration("example.com/shop/migrate", func() *secondApplet { return &secondApplet{log: &log} }).
+		Alias("migrate").registerInto(reg, c)
+	NewBareRegistration("example.com/shop/store", func() *plainService { return &plainService{} }).
+		Alias("store").registerInto(reg, c)
+	if c.Len() != 0 {
+		t.Fatalf("catalog setup failed: %v", c.All())
+	}
+	return func(b *AppBuilder) (*App, error) { return b.buildFrom(reg, nil) }
+}
+
+func TestSharedConfigFileGroups(t *testing.T) {
+	build := sharedWorld(t)
+	want := map[string]string{"example.com/shop/serve": "shop", "example.com/shop/migrate": "shop"}
+	app, err := build(Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve", "example.com/shop/migrate"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(app.sharedFiles, want) {
+		t.Errorf("groups = %v, want %v", app.sharedFiles, want)
+	}
+	// no ids: every accepted applet; the plain service is not one
+	app, err = build(Builder().AcceptAll().SharedConfigFile("shop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(app.sharedFiles, want) {
+		t.Errorf("the no-id group is every applet: %v", app.sharedFiles)
+	}
+}
+
+func TestSharedConfigFileViolations(t *testing.T) {
+	cases := []struct {
+		name string
+		b    *AppBuilder
+		want string
+	}{
+		{"not accepted", Builder().Accept("example.com/shop/serve", "example.com/shop/store").SharedConfigFile("shop", "example.com/shop/migrate"), "is not in Accept"},
+		{"not an applet", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/store"), "is not an applet"},
+		{"two groups", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve").SharedConfigFile("ops", "example.com/shop/serve"), "already in the group"},
+		{"declared twice", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve").SharedConfigFile("shop", "example.com/shop/migrate"), "declared twice"},
+		{"outside alias", Builder().AcceptAll().SharedConfigFile("migrate", "example.com/shop/serve"), "is named migrate too"},
+		{"bad name", Builder().AcceptAll().SharedConfigFile("Shop"), "lowercase letters"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			build := sharedWorld(t)
+			app, err := build(tc.b)
+			if err == nil || app != nil {
+				t.Fatal("expected a composition violation")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("want %q in: %v", tc.want, err)
+			}
+		})
 	}
 }

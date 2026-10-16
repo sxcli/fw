@@ -16,6 +16,7 @@ package fw
 
 import (
 	"io"
+	"maps"
 	"os"
 
 	"sxcli.dev/conf/engine"
@@ -34,7 +35,8 @@ type catalog struct {
 	reg           *registry.Registry
 	byAlias       map[string]*registry.Descriptor // every operator name → its service; built by index
 	suppressed    []string
-	shortPriority []string // the composition's contested-short ranking
+	shortPriority []string          // the composition's contested-short ranking
+	sharedFiles   map[string]string // applet id → shared config file name; absent = the alias
 
 	// the working set: this invocation's copy of the catalog, built
 	// right after dispatch with every applet except the dispatched
@@ -138,7 +140,20 @@ func (ca *catalog) snapshot() *catalog {
 		byAlias:       aliases,
 		suppressed:    append([]string(nil), ca.suppressed...),
 		shortPriority: append([]string(nil), ca.shortPriority...),
+		sharedFiles:   maps.Clone(ca.sharedFiles),
 	}
+}
+
+// configName is the name the dispatched applet's config files carry:
+// its alias, or its group's name when the composition put it in a
+// SharedConfigFile group (spec §6, Shared config files). Sections,
+// arguments and environment names keep the alias either way.
+func (ca *catalog) configName(d *registry.Descriptor) string {
+	name := d.Alias
+	if shared, grouped := ca.sharedFiles[d.ID]; grouped {
+		name = shared
+	}
+	return name
 }
 
 // runtime carries every external dependency of one run, injectable for
@@ -165,7 +180,7 @@ type runtime struct {
 
 func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *runtime {
 	return &runtime{
-		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority},
+		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority, sharedFiles: app.sharedFiles},
 		c:         &fail.Collector{},
 		argv:      argv,
 		lookupEnv: environmentLookup(),

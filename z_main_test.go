@@ -456,3 +456,18 @@ func TestControlsIgnoreEnvironment(t *testing.T) {
 		t.Error("the environment must not reach --disable: dependency was stripped")
 	}
 }
+
+// A grouped applet's file search runs under the group's name; the
+// world maps a name to /etc/<name>/config.
+func TestSharedConfigFileNamesTheSearch(t *testing.T) {
+	files := map[string]string{"/etc/shop/config.json": `{"app": {"version": 1, "greeting": "shared"}}`}
+	w := newWorld(t, []string{"bin"}, files, nil)
+	a := w.applet(0)
+	w.rt.sharedFiles = map[string]string{"test/app": "shop"}
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d\n%s", code, w.stderr.String())
+	}
+	if a.cfg.Greeting != "shared" {
+		t.Errorf("a grouped applet reads the group's file: %+v", a.cfg)
+	}
+}

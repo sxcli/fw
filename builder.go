@@ -38,6 +38,7 @@ type AppBuilder struct {
 	orders    [][]string // every Order call, verbatim — Build judges once-only
 	shortPrio [][]string // every ShortArgPriority call, verbatim — same judgment
 	renames   []rename
+	shared    []solver.SharedFile // every SharedConfigFile call, verbatim — Build judges
 }
 
 type rename struct {
@@ -86,6 +87,18 @@ func (b *AppBuilder) Order(ids ...string) *AppBuilder {
 // declared once, atomically.
 func (b *AppBuilder) ShortArgPriority(ids ...string) *AppBuilder {
 	b.shortPrio = append(b.shortPrio, ids)
+	return b
+}
+
+// SharedConfigFile declares that a group of the binary's applets reads
+// one config file, named name, in place of the files named after
+// their aliases (spec §6, Shared config files). One call per group; no
+// ids means every accepted applet. The rules are the shared ones
+// (solver.CheckSharedConfigFiles): accepted applets only, one group
+// per applet, a name in the alias grammar that is not an outside
+// applet's alias.
+func (b *AppBuilder) SharedConfigFile(name string, ids ...string) *AppBuilder {
+	b.shared = append(b.shared, solver.SharedFile{Name: name, IDs: ids})
 	return b
 }
 
@@ -143,9 +156,12 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 	rank := b.ranked(accepted, c)
 	shortPriority := b.shortPriority(cat, c)
 	renamed := b.renamed(cat, accepted, c)
+	fileOf := map[string]string{}
 	if c.Len() == 0 {
+		members := acceptedMembers(cat, accepted, renamed)
 		b.checkAliases(cat, accepted, renamed, c)
-		b.checkConcrete(cat, accepted, renamed, c)
+		b.checkConcrete(members, c)
+		fileOf = b.sharedConfigFiles(members, c)
 	}
 	var app *App
 	if c.Len() == 0 {
@@ -164,7 +180,7 @@ func (b *AppBuilder) buildFrom(cat *registry.Registry, catalogC *fail.Collector)
 			defaultsInDomain(&member, c)
 		}
 		if c.Len() == 0 {
-			app = &App{reg: reg, shortPriority: shortPriority}
+			app = &App{reg: reg, shortPriority: shortPriority, sharedFiles: fileOf}
 		}
 	}
 	var err error
@@ -280,22 +296,46 @@ func (b *AppBuilder) checkAliases(cat *registry.Registry, accepted map[string]bo
 	}
 }
 
-// checkConcrete hands the accepted members' concrete identities to
-// the shared rules for the accepted-twice verdict.
-func (b *AppBuilder) checkConcrete(cat *registry.Registry, accepted map[string]bool, renamed map[string]string, c *fail.Collector) {
+// acceptedMembers renders the accepted catalog entries as the shared
+// rules' members: id, effective alias (the Build rename applied),
+// concrete identity, applet flag.
+func acceptedMembers(cat *registry.Registry, accepted map[string]bool, renamed map[string]string) []solver.Member {
 	var members []solver.Member
 	for _, d := range cat.All() {
 		if accepted[d.ID] {
-			m := solver.Member{ID: d.ID, Alias: d.Alias, Concrete: tags.TypeID(d.Concrete)}
+			m := solver.Member{ID: d.ID, Alias: d.Alias, Applet: d.Applet, Concrete: tags.TypeID(d.Concrete)}
 			if name, over := renamed[d.ID]; over {
 				m.Alias = name
 			}
 			members = append(members, m)
 		}
 	}
+	return members
+}
+
+// checkConcrete hands the accepted members' concrete identities to
+// the shared rules for the accepted-twice verdict.
+func (b *AppBuilder) checkConcrete(members []solver.Member, c *fail.Collector) {
 	for _, body := range solver.CheckConcretes(members) {
 		c.Fail("%s", body)
 	}
+}
+
+// sharedConfigFiles hands the SharedConfigFile groups and the accepted
+// members to the shared rules and returns the file name each grouped
+// applet reads.
+func (b *AppBuilder) sharedConfigFiles(members []solver.Member, c *fail.Collector) map[string]string {
+	fileOf := map[string]string{}
+	groups, bodies := solver.CheckSharedConfigFiles(b.shared, members)
+	for _, body := range bodies {
+		c.Fail("%s", body)
+	}
+	for i := 0; i < len(groups); i++ {
+		for _, id := range groups[i].IDs {
+			fileOf[id] = groups[i].Name
+		}
+	}
+	return fileOf
 }
 
 // composedOrder returns the accepted ids in composition order: ranked
