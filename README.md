@@ -168,6 +168,30 @@ them against upstream changes); ambiguity is never resolved silently —
 two unranked candidates for one dependency slot fail the build by
 name.
 
+Each applet reads a config file named after itself — `/etc/serve/config.json`
+for `serve`, `/etc/migrate/config.json` for `migrate`. When related
+applets should share one file, the composition says so:
+
+```go
+fw.Builder().
+	Accept(serve.ID, migrate.ID, backup.ID, console.ID).
+	SharedConfigFile("shop", serve.ID, migrate.ID, backup.ID).
+	Main()
+```
+
+The three now read `/etc/shop/config.json` (and the companion and user
+locations under the same name); inside it every applet keeps its own
+section, so nothing collides. Loading is unchanged — a run reads the
+sections of its own service set and ignores the rest. Writing is the one
+thing a shared file changes: an applet in a group has no `--write-config`
+but `--write-shared-config`, which writes the whole group's file — its own
+sections from this run's command line, environment and files, every
+other member's from the file and environment (their arguments were never
+on this line), and any section nobody in the group owns exactly as it
+found it. Name the group after one of its applets if you like; naming it
+after an applet outside the group is a build error, since that applet's
+own file would be the same path.
+
 ## Logging
 
 Logging always works: with no sink enabled, records land on stderr

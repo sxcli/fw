@@ -1522,7 +1522,7 @@ The `dump:"-"` tag is available to any service's config struct, with
 the same run-scoped semantics: excluded from `--write-config` output
 and refused from config files.
 
-### Shared config files (designed 2026-10-13, not implemented)
+### Shared config files (designed 2026-10-13, implemented 2026-10-17)
 
 A binary's config file is named after the dispatched applet: `shop
 serve` reads `/etc/serve/config.json`, `shop migrate` reads
@@ -1597,11 +1597,12 @@ fw.Builder().
   engine already implements them for the standalone front door; fw
   only exposes the constants and wires its sources.
 
-Open at implementation: whether `--write-shared-config` is a core
-feature of its own for `Suppress` (`FeatureWriteSharedConfig`), and
-whether the shared verb should also exist, as an alias of
-`--write-config`, for ungrouped applets so scripts can use one
-spelling.
+Settled at implementation: `--write-shared-config` is a spelling of
+`FeatureWriteConfig`, not a feature of its own — suppressing
+write-config removes whichever verb the applet has, and suppressing
+`--config` removes both through the same implication. The shared verb
+does not exist for ungrouped applets: an applet has exactly one write
+verb, and which one tells the reader whether its file is shared.
 
 ### Core feature suppression
 
