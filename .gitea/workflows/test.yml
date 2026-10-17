@@ -1,0 +1,52 @@
+name: "test"
+
+on:
+  push:
+  workflow_dispatch:
+
+# The five sxcli modules point at each other with `replace ../sxcli-*`
+# in their go.mod files, so one repo's push is tested against all of
+# them: this repo at the pushed ref, the four others at master, side
+# by side as the replace directives expect.
+jobs:
+  test:
+    runs-on: "gentoo-latest"
+    steps:
+      - name: "Go from the binhost"
+        run: emerge -G -q -un dev-lang/go && go version
+      - uses: "actions/checkout@v4"
+        with:
+          path: "sxcli-fw"
+      - uses: "actions/checkout@v4"
+        with:
+          repository: "sxcli/rules"
+          ref: "master"
+          path: "sxcli-rules"
+      - uses: "actions/checkout@v4"
+        with:
+          repository: "sxcli/conf"
+          ref: "master"
+          path: "sxcli-conf"
+      - uses: "actions/checkout@v4"
+        with:
+          repository: "sxcli/vet"
+          ref: "master"
+          path: "sxcli-vet"
+      - uses: "actions/checkout@v4"
+        with:
+          repository: "sxcli/completion"
+          ref: "master"
+          path: "sxcli-completion"
+      - name: "Format, vet and test every module"
+        run: |
+          set -e
+          for m in sxcli-rules sxcli-conf sxcli-fw sxcli-vet sxcli-completion; do
+            echo "== $m"
+            cd "$m"
+            test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: files above are not formatted"; exit 1; }
+            # the structtag check is off: conf's shadow tests and the
+            # conformance corpus carry deliberate duplicate json tags
+            go vet -structtag=false ./...
+            go test ./...
+            cd ..
+          done
