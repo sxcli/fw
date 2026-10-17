@@ -29,6 +29,8 @@ import (
 	"sxcli.dev/fw/internal/graph"
 	"sxcli.dev/fw/internal/logging"
 	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/rules/solver"
+	"sxcli.dev/rules/tags"
 )
 
 // Main is the busybox-compatibility sugar of the composition model:
@@ -55,16 +57,19 @@ func run(rt *runtime) int {
 	slog.SetDefault(slog.New(buffer))
 
 	// the core's translator dependency: exactly one service may
-	// provide it (spec §7); two catalog systems in one binary is a
-	// developer error, reported like every other violation
+	// provide the translation interface (spec §7) — two message
+	// catalogs in one binary is a developer error, judged by the
+	// shared rules like every other composition fact. The id of the
+	// one provider is kept for the core root's dependency.
+	var members []solver.Member
 	for _, d := range rt.reg.All() {
-		if providesType(d, translatorType) {
-			if rt.translatorID == "" {
-				rt.translatorID = d.ID
-			} else {
-				rt.c.Fail("services %q and %q both provide Translator; a binary has exactly one", rt.translatorID, d.ID)
-			}
+		members = append(members, graph.RenderMember(d))
+		if rt.translatorID == "" && providesType(d, translatorType) {
+			rt.translatorID = d.ID
 		}
+	}
+	for _, body := range solver.CheckTranslators(members, tags.TypeID(translatorType)) {
+		rt.c.Fail("%s", body)
 	}
 
 	// the operator-name index: every alias resolves to its service.
