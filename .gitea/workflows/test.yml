@@ -40,6 +40,13 @@ jobs:
       - name: "Format, vet and test every module"
         run: |
           set -e
+          # the runner executes the job as root, and fw's integration
+          # binaries refuse to run as root by design: the suites run
+          # as an unprivileged user that owns the checkouts
+          useradd -m ci
+          chown -R ci .
+          cat > /tmp/suites.sh <<'EOF'
+          set -e
           for m in sxcli-rules sxcli-conf sxcli-fw sxcli-vet sxcli-completion; do
             echo "== $m"
             cd "$m"
@@ -50,3 +57,5 @@ jobs:
             go test ./...
             cd ..
           done
+          EOF
+          su ci -s /bin/bash /tmp/suites.sh
