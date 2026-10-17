@@ -172,7 +172,7 @@ func (i *Introspector) Arguments(_ []string) []ArgInfo {
 	ctrl := newControlKnobs()
 	var kn upgradeKnobs
 	var ls listingKnob
-	sch := i.cat.schema(c, i.target, i.res, &core, ctrl, &kn, &ls)
+	sch := i.cat.schema(c, i.target, i.res, &core, ctrl, &kn, &ls, &sharedKnob{})
 	if c.Len() != 0 {
 		// the resolved service set solved at view construction; a
 		// schema violation
@@ -195,7 +195,7 @@ func (i *Introspector) Positionals() []system.PosInfo {
 	ctrl := newControlKnobs()
 	var kn upgradeKnobs
 	var ls listingKnob
-	sch := i.cat.schema(c, i.target, i.res, &core, ctrl, &kn, &ls)
+	sch := i.cat.schema(c, i.target, i.res, &core, ctrl, &kn, &ls, &sharedKnob{})
 	if c.Len() != 0 {
 		// the same offer-nothing rule as Arguments: a schema
 		// violation here is a startup-checked inconsistency

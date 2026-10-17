@@ -489,3 +489,81 @@ func TestWriteConfigKeepsOtherSections(t *testing.T) {
 		t.Errorf("own section rewritten, the other kept:\n%s", raw)
 	}
 }
+
+// groupApplet is a second applet for the shared-file write: its own
+// config section, an environment door, and a required positional the
+// dispatched run's command line cannot supply.
+type groupCfg struct {
+	Version uint32 `json:"version"`
+	Out     string `json:"out" conf:"out" usage:"destination"`
+	Name    string `json:"name" pos:"0" usage:"a required word"`
+}
+
+type groupApplet struct{ cfg groupCfg }
+
+func (g *groupApplet) Configured() error { return nil }
+func (g *groupApplet) Run() int          { return 0 }
+
+func (w *world) other() {
+	NewRegistration("test/other", func() *groupApplet { return &groupApplet{cfg: groupCfg{Version: 1, Out: "default"}} },
+		func(x *groupApplet) *groupCfg { return &x.cfg }).
+		Alias("other").registerInto(w.cat, w.c)
+}
+
+// --write-shared-config renders the whole group: the dispatched
+// applet from its command line, the sibling from the file and the
+// environment (its positional is not missed), a stranger kept.
+func TestWriteSharedConfigRendersTheGroup(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "config.json")
+	files := map[string]string{target: `{"other": {"version": 1, "out": "old"}, "stranger": {"keep": true}}`}
+	env := map[string]string{"OTHER__OUT": "fromenv"}
+	w := newWorld(t, []string{"bin", "app", "--write-shared-config", "--config", target, "--greeting", "new"}, files, env)
+	w.applet(0)
+	w.other()
+	w.rt.sharedFiles = map[string]string{"test/app": "shop", "test/other": "shop"}
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d\n%s", code, w.stderr.String())
+	}
+	raw, _ := os.ReadFile(target)
+	out := string(raw)
+	for _, want := range []string{`"greeting": "new"`, `"out": "fromenv"`, `"keep": true`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in the group document:\n%s", want, out)
+		}
+	}
+	if strings.Contains(strings.Join(w.log, ","), "applet.run") {
+		t.Errorf("a served write must not run the applet: %v", w.log)
+	}
+}
+
+// A grouped applet has no --write-config; an ungrouped one has no
+// --write-shared-config.
+func TestWriteVerbsFollowTheGroup(t *testing.T) {
+	w := newWorld(t, []string{"bin", "app", "--write-config"}, nil, nil)
+	w.applet(0)
+	w.other()
+	w.rt.sharedFiles = map[string]string{"test/app": "shop", "test/other": "shop"}
+	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "write-config") {
+		t.Errorf("--write-config must be unknown to a grouped applet: code=%d\n%s", code, w.stderr.String())
+	}
+	w = newWorld(t, []string{"bin", "--write-shared-config"}, nil, nil)
+	w.applet(0)
+	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "write-shared-config") {
+		t.Errorf("--write-shared-config must be unknown to an ungrouped applet: code=%d\n%s", code, w.stderr.String())
+	}
+}
+
+// The help page of a grouped applet offers the shared verb only.
+func TestHelpOfAGroupedAppletShowsTheSharedVerb(t *testing.T) {
+	w := newWorld(t, []string{"bin", "app", "--help"}, nil, nil)
+	w.applet(0)
+	w.other()
+	w.rt.sharedFiles = map[string]string{"test/app": "shop", "test/other": "shop"}
+	if code := w.run(); code != 0 {
+		t.Fatalf("exit %d\n%s", code, w.stderr.String())
+	}
+	out := w.stdout.String()
+	if !strings.Contains(out, "--write-shared-config") || strings.Contains(out, "--write-config") {
+		t.Errorf("help must list --write-shared-config and not --write-config:\n%s", out)
+	}
+}

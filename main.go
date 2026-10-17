@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"sort"
 	"strings"
 
 	"sxcli.dev/fw/system"
@@ -250,6 +251,7 @@ type invocationPlan struct {
 	ctrl  any // control knobs from the hook; nil without the import
 	kn    upgradeKnobs
 	ls    listingKnob
+	sk    sharedKnob
 	ctl   graph.Controls
 	res   graph.Result
 	sch   *engine.Schema
@@ -276,17 +278,31 @@ type upgradeKnobs struct {
 	FromVersion   []string `json:"fromVersion" conf:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
 }
 
+// sharedKnob is the --write-shared-config verb: present only for an
+// applet whose config file is shared with other applets, where it
+// takes --write-config's place (spec §6, Shared config files). It
+// writes the whole group's document — this applet effective, every
+// sibling effective minus the command line.
+type sharedKnob struct {
+	WriteSharedConfig bool `json:"writeSharedConfig" conf:"write-shared-config" dump:"-" env:"-" usage:"write the merged configuration of every applet sharing this config file to the --config target (or stdout) and exit"`
+}
+
 // coreContribs assembles the composite core: the engine's knobs
 // first (its short forms win), then the framework's tool knobs, the
-// listing knob and — only in a binary that imported
-// sxcli.dev/fw/controls — the service controls. A nil contribution
-// pointer contributes nothing, so the absent case needs no branch.
-func coreContribs(core *engine.Core, ctl any, kn *upgradeKnobs, ls *listingKnob) []engine.Contribution {
+// listing knob, the shared-file verb when the applet has one, and —
+// only in a binary that imported sxcli.dev/fw/controls — the service
+// controls. A nil contribution pointer contributes nothing, so the
+// absent cases need no branch.
+func coreContribs(core *engine.Core, ctl any, kn *upgradeKnobs, ls *listingKnob, sk *sharedKnob) []engine.Contribution {
 	meta := (*engine.Meta)(nil)
 	if ctlhook.Registered != nil {
 		meta = ctlhook.Registered.Meta
 	}
-	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctl, Meta: meta}, {Ptr: kn}, {Ptr: ls}}
+	var shared any
+	if sk != nil {
+		shared = sk
+	}
+	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctl, Meta: meta}, {Ptr: kn}, {Ptr: ls}, {Ptr: shared}}
 }
 
 // newControlKnobs returns a fresh controls contribution, nil when the
@@ -364,7 +380,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		Open:           rt.open,
 		OpenPinned:     rt.openPinned,
 		Providers:      rt.providers(),
-		SuppressCore:   rt.suppressed,
+		SuppressCore:   rt.coreSuppress(d),
 		ConfigMaxBytes: rt.configMaxBytes,
 	}
 	before := c.Len()
@@ -377,7 +393,8 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	peekCtrl := newControlKnobs()
 	var peekKn upgradeKnobs
 	var peekLs listingKnob
-	engine.PeekCore(c, alias, p.src, coreContribs(&peek, peekCtrl, &peekKn, &peekLs))
+	var peekSk sharedKnob
+	engine.PeekCore(c, alias, p.src, coreContribs(&peek, peekCtrl, &peekKn, &peekLs, rt.sharedKnobFor(d, &peekSk)))
 	p.help = peek.Help
 	p.validate = peek.ValidateConfig
 	p.target = peek.Config
@@ -390,11 +407,11 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		return p
 	}
 	if c.Len() == before {
-		p.files = engine.LoadFiles(c, p.src, rt.explicitPath(peek))
+		p.files = engine.LoadFiles(c, p.src, rt.explicitPath(peek, peekSk.WriteSharedConfig))
 	}
 	if c.Len() == before {
 		p.ctrl = newControlKnobs()
-		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, p.ctrl, &p.kn, &p.ls))
+		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, p.ctrl, &p.kn, &p.ls, rt.sharedKnobFor(d, &p.sk)))
 		p.ctl = rt.translateControls(c, p.ctrl)
 	}
 	if c.Len() == before {
@@ -418,7 +435,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		}
 	}
 	if c.Len() == before {
-		p.sch = rt.schema(c, d, p.res, &p.core, p.ctrl, &p.kn, &p.ls)
+		p.sch = rt.schema(c, d, p.res, &p.core, p.ctrl, &p.kn, &p.ls, &p.sk)
 	}
 	return p
 }
@@ -469,6 +486,8 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 				code = rt.help(p.sch)
 			} else if p.core.WriteConfig {
 				code = rt.writeConfig(p.sch, p.core.Config, p.src, p.files)
+			} else if p.sk.WriteSharedConfig {
+				code = rt.writeSharedConfig(d, p)
 			} else {
 				code = rt.lifecycle(buffer, p.res, applet, pre)
 			}
@@ -505,7 +524,7 @@ func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine
 	if fallback.Len() == 0 {
 		res = graph.Resolve(fallback, rt.reg, root, graph.Controls{})
 	}
-	return rt.schema(fallback, d, res, &core, ctrl, &kn, &ls)
+	return rt.schema(fallback, d, res, &core, ctrl, &kn, &ls, &sharedKnob{})
 }
 
 // upgradeConfig serves --upgrade-config: the schema is built from the
@@ -536,7 +555,7 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	// spec and irrelevant to a file transform (two applets with
 	// disjoint resolved service sets may both say conf:"port"; their
 	// shared file must still upgrade)
-	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, ctrl, &kn, &ls), all, rt.suppressed)
+	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, ctrl, &kn, &ls, nil), all, rt.suppressed)
 	if rt.c.Len() == 0 {
 		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
 	}
@@ -742,9 +761,9 @@ func (rt *runtime) report(buffer *logging.Buffer) int {
 // explicitPath resolves the --config path of this run. In write-config
 // mode the target is input and output both: an existing target is
 // loaded (normalizing an existing file), a missing one is only created.
-func (rt *runtime) explicitPath(peek engine.Core) string {
+func (rt *runtime) explicitPath(peek engine.Core, writeShared bool) string {
 	out := peek.Config
-	if peek.WriteConfig && out != "" {
+	if (peek.WriteConfig || writeShared) && out != "" {
 		if _, err := rt.stat(out); err != nil {
 			out = ""
 		}
@@ -861,6 +880,86 @@ func (rt *runtime) writeConfig(sch *engine.Schema, target string, src engine.Sou
 		code = 2
 	}
 	return code
+}
+
+// writeSharedConfig serves --write-shared-config: the whole document
+// of the dispatched applet's config file group (spec §6, Shared
+// config files) — this run's sections effective, every sibling's
+// effective minus the command line, a section no member owns kept as
+// the file has it. A sibling that cannot be rendered fails the write;
+// a half-written group file is never the answer.
+func (rt *runtime) writeSharedConfig(d *registry.Descriptor, p *invocationPlan) int {
+	code := 0
+	doc := p.sch.Merged()
+	name := rt.sharedFiles[d.ID]
+	var siblings []string
+	for id, file := range rt.sharedFiles {
+		if file == name && id != d.ID {
+			siblings = append(siblings, id)
+		}
+	}
+	sort.Strings(siblings)
+	for i := 0; i < len(siblings) && rt.c.Len() == 0; i++ {
+		sib, _ := rt.reg.ByID(siblings[i])
+		if sch := rt.siblingSchema(rt.c, sib, p); sch != nil {
+			// a service two members share is one section; the
+			// dispatched run's rendering, the effective one, stands
+			for key, section := range sch.Merged() {
+				if _, taken := doc[key]; !taken {
+					doc[key] = section
+				}
+			}
+		}
+	}
+	if rt.c.Len() == 0 {
+		if existing, present := p.files.Document(p.core.Config); present && p.core.Config != "" {
+			for key, raw := range existing {
+				if _, taken := doc[key]; !taken {
+					doc[key] = raw
+				}
+			}
+		}
+		if err := engine.WriteDocument(rt.stdout, p.core.Config, p.src, doc); err != nil {
+			rt.c.Fail("write-shared-config: %v", err)
+		}
+	}
+	if rt.c.Len() > 0 {
+		code = 2
+	}
+	return code
+}
+
+// siblingSchema builds the schema of another applet of the dispatched
+// applet's config file group over fresh instances from the cheap
+// factories: its resolved service set, its sections, nothing
+// configured or started. The shared file and the environment apply;
+// the command line is the dispatched applet's and stays out.
+func (rt *runtime) siblingSchema(c *fail.Collector, sib *registry.Descriptor, p *invocationPlan) *engine.Schema {
+	var sch *engine.Schema
+	reg := registry.New(c)
+	for _, m := range rt.reg.All() {
+		if !m.Applet || m.ID == sib.ID {
+			cp := *m
+			cp.Instance, cp.ConfigPtr = cp.Make()
+			reg.Commit(&cp)
+		}
+	}
+	root := rt.coreRoot(c, sib, rt.providerSeeds(p.files))
+	if c.Len() == 0 {
+		res := graph.Resolve(c, reg, root, graph.Controls{})
+		if c.Len() == 0 {
+			var core engine.Core
+			var kn upgradeKnobs
+			var ls listingKnob
+			var sk sharedKnob
+			sch = engine.NewSchema(c, sib.Alias, coreContribs(&core, newControlKnobs(), &kn, &ls, &sk),
+				sections(composedMembers(reg, res)), rt.coreSuppress(sib), rt.shortPriority)
+			if c.Len() == 0 {
+				sch.ApplyStored(c, p.files, rt.lookupEnv)
+			}
+		}
+	}
+	return sch
 }
 
 func providesType(d *registry.Descriptor, t reflect.Type) bool {

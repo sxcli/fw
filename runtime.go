@@ -76,12 +76,19 @@ func (ca *catalog) index(c *fail.Collector) {
 // (review 2026-07-29, D1). The virtual root is never stored, so it
 // cannot appear.
 func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
+	return composedMembers(ca.reg, res)
+}
+
+// composedMembers is the catalog method over an explicit registry —
+// the shared-file write renders a sibling applet over a registry of
+// fresh instances.
+func composedMembers(reg *registry.Registry, res graph.Result) []graph.Member {
 	keep := map[string]bool{}
 	for _, m := range res.Ordered {
 		keep[m.Desc.ID] = true
 	}
 	var members []graph.Member
-	for _, d := range ca.reg.All() {
+	for _, d := range reg.All() {
 		if keep[d.ID] {
 			members = append(members, graph.Member{Desc: d})
 		}
@@ -97,9 +104,38 @@ func (ca *catalog) composedMembers(res graph.Result) []graph.Member {
 // target's primary alias, and the sections ride in composed order,
 // both by construction.
 func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.Result,
-	core *engine.Core, ctrl any, kn *upgradeKnobs, ls *listingKnob) *engine.Schema {
-	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn, ls),
-		sections(ca.composedMembers(res)), ca.suppressed, ca.shortPriority)
+	core *engine.Core, ctrl any, kn *upgradeKnobs, ls *listingKnob, sk *sharedKnob) *engine.Schema {
+	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn, ls, ca.sharedKnobFor(d, sk)),
+		sections(ca.composedMembers(res)), ca.coreSuppress(d), ca.shortPriority)
+}
+
+// sharedKnobFor hands back the --write-shared-config knob for an
+// applet whose config file is shared, nil for one reading its own
+// file — the verb exists only where there is a group to write.
+func (ca *catalog) sharedKnobFor(d *registry.Descriptor, sk *sharedKnob) *sharedKnob {
+	var out *sharedKnob
+	if _, grouped := ca.sharedFiles[d.ID]; grouped {
+		out = sk
+	}
+	return out
+}
+
+// coreSuppress is the core's suppressed argument list for one applet:
+// the binary's Suppress calls, plus --write-config for an applet whose
+// file is shared — --write-shared-config takes its place — and, when
+// the binary suppressed --write-config itself, the shared verb too
+// (FeatureWriteConfig covers both spellings).
+func (ca *catalog) coreSuppress(d *registry.Descriptor) []string {
+	out := ca.suppressed
+	if _, grouped := ca.sharedFiles[d.ID]; grouped {
+		out = append([]string(nil), ca.suppressed...)
+		if contains(out, "write-config") {
+			out = append(out, "write-shared-config")
+		} else {
+			out = append(out, "write-config")
+		}
+	}
+	return out
 }
 
 // workingSet builds the invocation's working set for the dispatched
