@@ -17,6 +17,7 @@ package fw
 import (
 	"reflect"
 	"sxcli.dev/fw/system"
+	"sxcli.dev/rules/registration"
 	"sxcli.dev/rules/tags"
 
 	"sxcli.dev/conf/engine"
@@ -106,49 +107,70 @@ func metaHas(allowed []any, v any) bool {
 }
 
 // normalizeMetadata validates a registration's Metadata against the
-// probed config fields and converts it into the internal
-// representation the schema machinery consumes. The type-level checks
-// always run; the value-level default-in-domain check runs only when
-// withValues (the probes carry real field values — an instance
-// exists). Called from the catalog's commit path, which validates
-// against ProbeType with no instance and defers the value check to
-// Build (defaultsInDomain).
+// probed config fields — the verdicts are the shared rules'
+// (registration.CheckMetadata), this side reads the values and
+// answers the type questions — and converts the clean entries into
+// the internal representation the schema machinery consumes. The
+// type-level checks always run; the value-level default-in-domain
+// check runs only when withValues (the probes carry real field values
+// — an instance exists). Called from the catalog's commit path, which
+// validates against ProbeType with no instance and defers the value
+// check to Build (defaultsInDomain).
 func normalizeMetadata(c *fail.Collector, id string, raw *Metadata, hasConfig bool, probes map[string]engine.ProbedField, withValues bool) *engine.Meta {
 	meta := &engine.Meta{Description: raw.Description, Fields: map[string]engine.FieldMeta{}}
-	if len(raw.Fields) > 0 && !hasConfig {
-		c.Fail("service %q: field metadata without a config struct", id)
-	} else {
-		for name, value := range raw.Fields {
-			probe, known := probes[name]
-			if !known {
-				c.Fail("service %q metadata: %q names no config field", id, name)
-			} else if _, isFieldMetadata := value.(fieldMetadataMarker); !isFieldMetadata {
-				c.Fail("service %q metadata: %q must be a FieldMetadata value, got %T", id, name, value)
-			} else {
-				rv := reflect.ValueOf(value)
-				allowedValues := rv.FieldByName("Allowed")
-				elemType := allowedValues.Type().Elem()
-				hint := ValueHint(rv.FieldByName("Hint").Int())
-				if allowedValues.Len() > 0 && (elemType.Kind() != probe.Type.Kind() || !elemType.ConvertibleTo(probe.Type)) {
-					c.Fail("service %q metadata: %q allows %s values but the field takes %s", id, name, tags.TypeID(elemType), tags.TypeID(probe.Type))
-				} else if hint != HintNone && hint != HintFile && hint != HintDirectory && hint != HintServiceID {
-					c.Fail("service %q metadata: %q declares an unknown hint %d", id, name, hint)
-				} else if hint != HintNone && allowedValues.Len() > 0 {
-					c.Fail("service %q metadata: %q declares both a hint and an Allowed domain — a closed enum and a hint contradict each other", id, name)
-				} else if hint != HintNone && probe.Type.Kind() != reflect.String {
-					c.Fail("service %q metadata: %q declares a hint but the field takes %s, not a string", id, name, tags.TypeID(probe.Type))
-				} else {
-					fm := engine.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: hint}
-					for i := 0; i < allowedValues.Len(); i++ {
-						fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probe.Type).Interface())
-					}
-					if withValues {
-						defaultDomainViolations(c, id, name, fm.Allowed, probe)
-					}
-					meta.Fields[name] = fm
-				}
+	var fields []registration.MetaField
+	values := map[string]reflect.Value{} // the FieldMetadata values by key
+	for name, value := range raw.Fields {
+		f := registration.MetaField{Name: name}
+		if _, isFieldMetadata := value.(fieldMetadataMarker); isFieldMetadata {
+			rv := reflect.ValueOf(value)
+			values[name] = rv
+			f.IsField = true
+			f.Allowed = rv.FieldByName("Allowed").Len()
+			f.AllowedT = tags.TypeID(rv.FieldByName("Allowed").Type().Elem())
+			f.Hint = int(rv.FieldByName("Hint").Int())
+		} else {
+			f.Got = reflect.TypeOf(value).String()
+		}
+		fields = append(fields, f)
+	}
+	probe := func(f registration.MetaField) (registration.MetaProbe, bool) {
+		var p registration.MetaProbe
+		probed, known := probes[f.Name]
+		if known {
+			p.Type = tags.TypeID(probed.Type)
+			p.String = probed.Type.Kind() == reflect.String
+			if rv, isField := values[f.Name]; isField {
+				elemType := rv.FieldByName("Allowed").Type().Elem()
+				p.Fits = elemType.Kind() == probed.Type.Kind() && elemType.ConvertibleTo(probed.Type)
 			}
 		}
+		return p, known
+	}
+	knownHint := func(h int) bool {
+		hint := ValueHint(h)
+		return hint == HintNone || hint == HintFile || hint == HintDirectory || hint == HintServiceID
+	}
+	clean, bodies := registration.CheckMetadata(hasConfig, fields, probe, knownHint)
+	for _, body := range bodies {
+		if body == registration.MetaNoConfigRule {
+			c.Fail("service %q: %s", id, body)
+		} else {
+			c.Fail("service %q %s", id, body)
+		}
+	}
+	for _, name := range clean {
+		rv := values[name]
+		probed := probes[name]
+		allowedValues := rv.FieldByName("Allowed")
+		fm := engine.FieldMeta{Doc: rv.FieldByName("Doc").String(), Hint: ValueHint(rv.FieldByName("Hint").Int())}
+		for i := 0; i < allowedValues.Len(); i++ {
+			fm.Allowed = append(fm.Allowed, allowedValues.Index(i).Convert(probed.Type).Interface())
+		}
+		if withValues {
+			defaultDomainViolations(c, id, name, fm.Allowed, probed)
+		}
+		meta.Fields[name] = fm
 	}
 	return meta
 }
