@@ -681,7 +681,7 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 		}
 		if configured {
 			for _, cycle := range res.Cycles {
-				slog.Warn("dependency cycle detected: the start-order promise is weakened inside it", "cycle", cycle)
+				slog.Warn(solver.CycleRule, "cycle", cycle)
 			}
 			for _, from := range res.UnusedOverrides {
 				slog.Warn("override matched no dependency", "from", from)
