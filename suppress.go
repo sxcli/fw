@@ -46,12 +46,11 @@ const (
 	// FeatureUpgradeConfig is the --upgrade-config tool, its
 	// --from-version companion included (inert alone).
 	FeatureUpgradeConfig
-	// FeatureSCMDebug is the windows-only --scm-debug argument: it runs
-	// the service pipeline under svc/debug outside the service manager,
-	// for testing. It is argument-only (never env or config file,
-	// absent from --help) and off by default — a binary exposes it
-	// with Enable. On other platforms the token is an unknown
-	// argument.
+	// FeatureSCMDebug is the --scm-debug argument of Windows builds:
+	// it runs the service pipeline under svc/debug outside the service
+	// manager, for testing. Argument-only, like the other tool knobs.
+	// On other platforms the knob does not exist — the token is an
+	// unknown argument and suppressing the feature is a silent no-op.
 	FeatureSCMDebug
 	// FeatureCompanionConfig is the first config file tier: the pinned
 	// file beside the real binary. Suppressed, that location is never
@@ -141,44 +140,15 @@ func ConfigMaxBytes(limit uint64) {
 	configMaxBytes = limit
 }
 
-// scmDebugEnabled and scmDebugSuppressed record the two verbs'
-// FeatureSCMDebug calls; each alone is redundant-or-effective and
-// silent, the pair together is a startup contradiction judged at
-// Build. The windows platform layer consults the enable side.
-var scmDebugEnabled bool
-var scmDebugSuppressed bool
-
-// Enable turns on core features that ship disabled. FeatureSCMDebug
-// is currently the only such feature.
-//
-//   - enabling a feature that is already on is a no-op, and an
-//     unknown feature is a collected violation (the spec's misuse
-//     paragraph: redundant calls are silent, mistakes are loud)
-//   - the operator's service controls (--disable, --enable,
-//     --override) are NOT enabled here — importing
-//     sxcli.dev/fw/controls is their switch, and a binary without
-//     that import carries none of their code
-//   - Enable compiles and runs on every platform; where a feature
-//     cannot exist (FeatureSCMDebug outside windows) the call is a
-//     harmless no-op, so one shared main() builds everywhere
-//
-// Like Suppress, a build-time property of the binary: call it before
-// Main.
-func Enable(features ...CoreFeature) {
-	for _, feature := range features {
-		if feature == FeatureSCMDebug {
-			scmDebugEnabled = true
-		} else if _, known := featureLong(feature); !known && !sourceFeatures[feature] {
-			defaultCollector.Fail("Enable: unknown core feature %d", feature)
-		}
-	}
-}
-
 // featureLong resolves a feature's long argument name: the core's
-// own table first, then the controls' registered features (present
-// only by the sxcli.dev/fw/controls import).
+// own table first, then the platform's knobs, then the controls'
+// registered features (present only by the sxcli.dev/fw/controls
+// import).
 func featureLong(feature CoreFeature) (string, bool) {
 	long, known := coreFeatureLongs[feature]
+	if !known {
+		long, known = platformFeatureLongs[feature]
+	}
 	if !known && ctlhook.Registered != nil {
 		long, known = ctlhook.Registered.FeatureLongs[int(feature)]
 	}
@@ -221,10 +191,8 @@ func Suppress(features ...CoreFeature) {
 		} else if sourceFeatures[feature] {
 			suppressedSources[feature] = true
 		} else if feature == FeatureSCMDebug {
-			// already off: redundant-true and silent — enabling it
-			// elsewhere in the same binary is the contradiction, and
-			// Build judges that pair loudly
-			scmDebugSuppressed = true
+			// a Windows-only knob on another platform: nothing to
+			// remove, the state asked for already holds
 		} else {
 			defaultCollector.Fail("Suppress: unknown core feature %d", feature)
 		}

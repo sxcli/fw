@@ -152,13 +152,13 @@ type SCMApplet interface {
 so it calls `svc.Run` with a core-owned handler. The handler:
 
 For testing, the same handler can run **outside** the service manager:
-the `--scm-debug` argument (windows-only) enters `svc/debug` — console
-process, Ctrl+C/Break translated to Stop/Shutdown requests. It is
-argument-only by construction (a platform-level pre-scan, never a
-config/env value, absent from `--help`) and **default-off**: a binary
-exposes it with `fw.Enable(fw.FeatureSCMDebug)`; without the opt-in the
-token is rejected as an unknown argument, as it is on non-windows
-platforms.
+the `--scm-debug` argument enters `svc/debug` — console process,
+Ctrl+C/Break translated to Stop/Shutdown requests. It is an ordinary
+core argument of Windows builds: argument-only like the other tool
+knobs, listed by `--help`, read by the lenient core peek (the run moves
+under `svc/debug` on its word), suppressible as `FeatureSCMDebug`. On
+other platforms the knob does not exist: the token is rejected as an
+unknown argument and suppressing the feature is a silent no-op.
 
 1. reports start-pending status immediately so the SCM does not kill the
    Windows service during initialization (documented on
@@ -1620,7 +1620,8 @@ func main() {
 Suppressible features: `FeatureConfigFile` (`--config,-c`),
 `FeatureWriteConfig`, `FeatureHelp` (`--help,-h`; help and
 write-config are argument-only, so suppressing them closes their
-single door), and the rest of the core's argument features; the
+single door), and the rest of the core's argument features, the
+Windows builds' `FeatureSCMDebug` among them; the
 location tiers and the environment as sources (`FeatureCompanionConfig`,
 `FeatureSystemConfig`, `FeatureUserConfig`, `FeatureEnvironment`,
 Shared config files §6). Suppressing `FeatureConfigFile` suppresses
@@ -1647,14 +1648,11 @@ a code-level dependency. That is the point of Suppress (the builder's
 deliberate lockdown), stated here so nobody discovers it in
 production.
 
-Redundant-true calls are no-ops — enabling a feature that is already
-on, suppressing `FeatureSCMDebug` while it is off — the same ruling
-as naming an id twice in `Accept`: the state asked for holds. What
-stays loud, collected at startup and never silent: unknown features
-on either verb, and the one genuine contradiction — `FeatureSCMDebug`
-both enabled and suppressed in one binary, judged at Build so init
-order cannot matter, the same shape as a service both enabled and
-disabled. (A negative config size cap is no longer even
+Redundant-true calls are no-ops — suppressing a feature twice,
+suppressing `FeatureSCMDebug` on a platform without the knob — the
+same ruling as naming an id twice in `Accept`: the state asked for
+holds. What stays loud, collected at startup and never silent: an
+unknown feature. (A negative config size cap is no longer even
 representable — the cap is unsigned end to end.)
 
 ### Format providers

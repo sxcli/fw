@@ -105,7 +105,8 @@ func composedMembers(reg *registry.Registry, res graph.Result) []graph.Member {
 // both by construction.
 func (ca *catalog) schema(c *fail.Collector, d *registry.Descriptor, res graph.Result,
 	core *engine.Core, ctrl any, kn *upgradeKnobs, ls *listingKnob, sk *sharedKnob) *engine.Schema {
-	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn, ls, ca.sharedKnobFor(d, sk)),
+	var sd scmDebugKnob
+	return engine.NewSchema(c, d.Alias, coreContribs(core, ctrl, kn, ls, ca.sharedKnobFor(d, sk), &sd),
 		sections(ca.composedMembers(res)), ca.coreSuppress(d), ca.shortPriority)
 }
 
@@ -207,9 +208,10 @@ type runtime struct {
 	lstat          func(string) error
 	open           func(string) (io.ReadCloser, error)
 	openPinned     func(string) (io.ReadCloser, error)
-	configMaxBytes uint64           // effective config file size cap in bytes; 0 = unlimited
-	execApplet     func(Applet) int // nil → applet.Run(); the SCM handler overrides
-	superuser      func() bool      // platform truth: id 0 on unix, elevated token on Windows
+	configMaxBytes uint64             // effective config file size cap in bytes; 0 = unlimited
+	execApplet     func(Applet) int   // nil → applet.Run(); the SCM handler overrides
+	serviceDebug   func([]string) int // Windows builds: runs the vector under svc/debug when --scm-debug asks; nil elsewhere and inside the handler
+	superuser      func() bool        // platform truth: id 0 on unix, elevated token on Windows
 	reported       bool
 	translatorID   string // id of the sole Translator-providing service, "" = none
 }

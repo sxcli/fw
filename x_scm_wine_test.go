@@ -129,12 +129,25 @@ func TestWineConsoleModeUsesRun(t *testing.T) {
 	}
 }
 
-func TestWineSCMDebugOffIsUnknownArgument(t *testing.T) {
-	r := winebox(t, map[string]string{"SCMBOX_DEBUG_OFF": "1"}, "--scm-debug")
+func TestWineSCMDebugSuppressedIsUnknownArgument(t *testing.T) {
+	r := winebox(t, map[string]string{"SCMBOX_SUPPRESS_SCM_DEBUG": "1"}, "--scm-debug")
 	if r.code != 2 {
 		t.Fatalf("exit = %d, want 2\nstdout:\n%s\nstderr:\n%s", r.code, r.stdout, r.stderr)
 	}
 	if !strings.Contains(r.stderr, "unknown argument --scm-debug") {
-		t.Errorf("un-enabled --scm-debug must be an unknown argument:\n%s", r.stderr)
+		t.Errorf("a suppressed --scm-debug must be an unknown argument:\n%s", r.stderr)
+	}
+}
+
+func TestWineHelpListsSCMDebug(t *testing.T) {
+	r := winebox(t, nil, "--help")
+	if r.code != 0 {
+		t.Fatalf("exit = %d\nstdout:\n%s\nstderr:\n%s", r.code, r.stdout, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "--scm-debug") {
+		t.Errorf("the knob is an ordinary core argument, help lists it:\n%s", r.stdout)
+	}
+	if strings.Contains(r.stdout, "service execute") {
+		t.Errorf("--help must not enter the service path:\n%s", r.stdout)
 	}
 }

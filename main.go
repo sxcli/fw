@@ -257,16 +257,18 @@ type invocationPlan struct {
 	kn    upgradeKnobs
 	ls    listingKnob
 	sk    sharedKnob
+	sd    scmDebugKnob
 	ctl   graph.Controls
 	res   graph.Result
 	sch   *engine.Schema
 
 	// peek-authoritative serve requests: all argument-only, so the
 	// lenient peek is their source of truth even when later stages die
-	help     bool
-	validate bool
-	upgrade  bool
-	target   string // --config at peek time, the upgrade target
+	help         bool
+	validate     bool
+	upgrade      bool
+	serviceDebug bool   // --scm-debug: the run moves under svc/debug (Windows builds)
+	target       string // --config at peek time, the upgrade target
 }
 
 // listingKnob is the --applets argument's schema surface; the scan
@@ -283,6 +285,14 @@ type upgradeKnobs struct {
 	FromVersion   []string `json:"fromVersion" conf:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
 }
 
+// scmDebugKnob is the --scm-debug argument: it runs the Windows
+// service path in the console, under svc/debug, for testing. The
+// knob is contributed in Windows builds only (windowsServiceKnob);
+// elsewhere the token stays an unknown argument.
+type scmDebugKnob struct {
+	SCMDebug bool `json:"scmDebug" conf:"scm-debug" dump:"-" env:"-" usage:"run the Windows service path in this console (svc/debug), for testing"`
+}
+
 // sharedKnob is the --write-shared-config verb: present only for an
 // applet whose config file is shared with other applets, where it
 // takes --write-config's place (spec §6, Shared config files). It
@@ -294,11 +304,12 @@ type sharedKnob struct {
 
 // coreContribs assembles the composite core: the engine's knobs
 // first (its short forms win), then the framework's tool knobs, the
-// listing knob, the shared-file verb when the applet has one, and —
-// only in a binary that imported sxcli.dev/fw/controls — the service
-// controls. A nil contribution pointer contributes nothing, so the
-// absent cases need no branch.
-func coreContribs(core *engine.Core, ctl any, kn *upgradeKnobs, ls *listingKnob, sk *sharedKnob) []engine.Contribution {
+// listing knob, the shared-file verb when the applet has one, the
+// Windows service debug knob in Windows builds, and — only in a
+// binary that imported sxcli.dev/fw/controls — the service controls.
+// A nil contribution pointer contributes nothing, so the absent cases
+// need no branch.
+func coreContribs(core *engine.Core, ctl any, kn *upgradeKnobs, ls *listingKnob, sk *sharedKnob, sd *scmDebugKnob) []engine.Contribution {
 	meta := (*engine.Meta)(nil)
 	if ctlhook.Registered != nil {
 		meta = ctlhook.Registered.Meta
@@ -307,7 +318,7 @@ func coreContribs(core *engine.Core, ctl any, kn *upgradeKnobs, ls *listingKnob,
 	if sk != nil {
 		shared = sk
 	}
-	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctl, Meta: meta}, {Ptr: kn}, {Ptr: ls}, {Ptr: shared}}
+	return []engine.Contribution{engine.CoreContrib(core), {Ptr: ctl, Meta: meta}, {Ptr: kn}, {Ptr: ls}, {Ptr: shared}, {Ptr: windowsServiceKnob(sd)}}
 }
 
 // newControlKnobs returns a fresh controls contribution, nil when the
@@ -399,9 +410,11 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	var peekKn upgradeKnobs
 	var peekLs listingKnob
 	var peekSk sharedKnob
-	engine.PeekCore(c, alias, p.src, coreContribs(&peek, peekCtrl, &peekKn, &peekLs, rt.sharedKnobFor(d, &peekSk)))
+	var peekSd scmDebugKnob
+	engine.PeekCore(c, alias, p.src, coreContribs(&peek, peekCtrl, &peekKn, &peekLs, rt.sharedKnobFor(d, &peekSk), &peekSd))
 	p.help = peek.Help
 	p.validate = peek.ValidateConfig
+	p.serviceDebug = peekSd.SCMDebug
 	p.target = peek.Config
 	p.src.ConfigMaxBytes = peek.ConfigMaxBytes
 	if peekKn.UpgradeConfig && c.Len() == before {
@@ -416,7 +429,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 	}
 	if c.Len() == before {
 		p.ctrl = newControlKnobs()
-		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, p.ctrl, &p.kn, &p.ls, rt.sharedKnobFor(d, &p.sk)))
+		p.files.ApplyCore(c, alias, p.src, coreContribs(&p.core, p.ctrl, &p.kn, &p.ls, rt.sharedKnobFor(d, &p.sk), &p.sd))
 		p.ctl = rt.translateControls(c, p.ctrl)
 	}
 	if c.Len() == before {
@@ -451,6 +464,22 @@ func (rt *runtime) execute(buffer *logging.Buffer, d *registry.Descriptor, apple
 	code := 2
 	rt.workingSet(d)
 	p := rt.plan(rt.c, d, args)
+	if p.serviceDebug && rt.serviceDebug != nil {
+		// --scm-debug: the whole run moves under svc/debug, whose
+		// handler runs this pipeline again with the same vector
+		code = rt.serviceDebug(rt.argv)
+	} else {
+		code = rt.serve(buffer, d, applet, args, p)
+	}
+	return code
+}
+
+// serve carries out a planned run: the superuser rule, the
+// --upgrade-config transform, else the strict apply and the one door
+// the arguments asked for — validate, help, a config write, or the
+// lifecycle.
+func (rt *runtime) serve(buffer *logging.Buffer, d *registry.Descriptor, applet Applet, args []string, p *invocationPlan) int {
+	code := 2
 	if rt.isRoot() && !d.AllowsSuperuser {
 		if p.help && !p.upgrade {
 			// help is the one door that still serves — an operator
@@ -560,7 +589,8 @@ func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	// spec and irrelevant to a file transform (two applets with
 	// disjoint resolved service sets may both say conf:"port"; their
 	// shared file must still upgrade)
-	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, ctrl, &kn, &ls, nil), all, rt.suppressed)
+	var sd scmDebugKnob
+	sch := engine.NewFileSchema(rt.c, d.Alias, coreContribs(&core, ctrl, &kn, &ls, nil, &sd), all, rt.suppressed)
 	if rt.c.Len() == 0 {
 		sch.UpgradeFile(rt.c, p.target, from, bare, p.src)
 	}
@@ -957,7 +987,8 @@ func (rt *runtime) siblingSchema(c *fail.Collector, sib *registry.Descriptor, p 
 			var kn upgradeKnobs
 			var ls listingKnob
 			var sk sharedKnob
-			sch = engine.NewSchema(c, sib.Alias, coreContribs(&core, newControlKnobs(), &kn, &ls, &sk),
+			var sd scmDebugKnob
+			sch = engine.NewSchema(c, sib.Alias, coreContribs(&core, newControlKnobs(), &kn, &ls, &sk, &sd),
 				sections(composedMembers(reg, res)), rt.coreSuppress(sib), rt.shortPriority)
 			if c.Len() == 0 {
 				sch.ApplyStored(c, p.files, rt.lookupEnv)
@@ -973,22 +1004,6 @@ func providesType(d *registry.Descriptor, t reflect.Type) bool {
 		out = out || it == t
 	}
 	return out
-}
-
-// stripSCMDebug reports whether the vector carries the --scm-debug
-// token (argv[0] is never a candidate) and returns it without the
-// token.
-func stripSCMDebug(argv []string) ([]string, bool) {
-	var out []string
-	found := false
-	for i, arg := range argv {
-		if i > 0 && arg == "--scm-debug" {
-			found = true
-		} else {
-			out = append(out, arg)
-		}
-	}
-	return out, found
 }
 
 func contains(list []string, want string) bool {

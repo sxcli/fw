@@ -58,8 +58,8 @@ func (p *serviceProbe) Execute(args []string, req <-chan svc.ChangeRequest, stat
 }
 
 func main() {
-	if os.Getenv("SCMBOX_DEBUG_OFF") != "1" {
-		fw.Enable(fw.FeatureSCMDebug)
+	if os.Getenv("SCMBOX_SUPPRESS_SCM_DEBUG") == "1" {
+		fw.Suppress(fw.FeatureSCMDebug)
 	}
 	fw.Solo(fw.NewRegistration("example.com/scmbox/svcprobe",
 		func() *serviceProbe { return &serviceProbe{cfg: probeConfig{Version: 1}} },

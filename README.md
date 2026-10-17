@@ -214,9 +214,10 @@ sinks once they are configured — nothing is lost, even from `init()`.
 
 An applet implementing `SCMApplet` runs under the Service Control
 Manager with the same configuration pipeline, and still works as a
-plain console program. `--scm-debug` (a deliberate build-time opt-in:
-`fw.Enable(fw.FeatureSCMDebug)`) runs the service path in a terminal
-for testing — the framework's own test suite drives it under Wine.
+plain console program. `--scm-debug`, a core argument of Windows
+builds, runs the service path in a terminal for testing — the
+framework's own test suite drives it under Wine;
+`fw.Suppress(fw.FeatureSCMDebug)` removes it.
 
 ## Hardening
 

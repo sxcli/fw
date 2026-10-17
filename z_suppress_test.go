@@ -16,6 +16,7 @@ package fw
 
 import (
 	"reflect"
+	goos "runtime"
 	"strings"
 	"testing"
 
@@ -62,16 +63,6 @@ func TestConfigMaxBytes(t *testing.T) {
 	}
 }
 
-func TestEnableSCMDebug(t *testing.T) {
-	old := scmDebugEnabled
-	t.Cleanup(func() { scmDebugEnabled = old })
-	scmDebugEnabled = false
-	Enable(FeatureSCMDebug)
-	if !scmDebugEnabled {
-		t.Error("Enable(FeatureSCMDebug) must set the opt-in")
-	}
-}
-
 func TestControlSuppressTrimsWithTheImport(t *testing.T) {
 	// this test binary imports sxcli.dev/fw/controls, so trimming an
 	// individual control is legal — the plain suppression road
@@ -84,56 +75,20 @@ func TestControlSuppressTrimsWithTheImport(t *testing.T) {
 	}
 }
 
-func TestSuppressSCMDebugIsSilent(t *testing.T) {
-	t.Cleanup(func() { scmDebugSuppressed = false })
+// --scm-debug is a knob of Windows builds: suppressing it there
+// removes the argument like any other feature; elsewhere there is
+// nothing to remove and the call is silent.
+func TestSuppressSCMDebugFollowsThePlatform(t *testing.T) {
+	old := suppressedCore
+	t.Cleanup(func() { suppressedCore = old })
+	suppressedCore = nil
 	before := defaultCollector.Len()
 	Suppress(FeatureSCMDebug)
 	if defaultCollector.Len() != before {
-		t.Error("suppressing the already-off feature is redundant-true, a no-op")
+		t.Errorf("suppressing the feature is never a violation: %v", defaultCollector.All())
 	}
-	if !scmDebugSuppressed {
-		t.Error("the suppression must still be recorded for the contradiction check")
-	}
-}
-
-func TestSCMDebugBothVerbsIsContradiction(t *testing.T) {
-	t.Cleanup(func() { scmDebugEnabled, scmDebugSuppressed = false, false })
-	Enable(FeatureSCMDebug)
-	Suppress(FeatureSCMDebug)
-	_, err := Builder().AcceptAll().Build()
-	if err == nil || !strings.Contains(err.Error(), "FeatureSCMDebug is both enabled and suppressed") {
-		t.Errorf("the verb pair must be a build violation: %v", err)
-	}
-}
-
-func TestEnableOfKnownFeatureIsNoOp(t *testing.T) {
-	before := defaultCollector.Len()
-	Enable(FeatureHelp)
-	if defaultCollector.Len() != before {
-		t.Error("enabling an already-on feature is redundant-true, a no-op")
-	}
-}
-
-func TestUnknownFeatureIsLoudOnBothVerbs(t *testing.T) {
-	before := defaultCollector.Len()
-	Suppress(CoreFeature(99))
-	Enable(CoreFeature(99))
-	if defaultCollector.Len() != before+2 {
-		t.Error("an unknown feature must be a violation on either verb")
-	}
-}
-
-func TestStripSCMDebug(t *testing.T) {
-	argv, found := stripSCMDebug([]string{"bin", "--verbose", "--scm-debug", "trailing"})
-	if !found || strings.Join(argv, ",") != "bin,--verbose,trailing" {
-		t.Errorf("strip wrong: %v, %v", argv, found)
-	}
-	argv, found = stripSCMDebug([]string{"--scm-debug"})
-	if found || strings.Join(argv, ",") != "--scm-debug" {
-		t.Errorf("argv[0] must never be a candidate: %v, %v", argv, found)
-	}
-	if _, found = stripSCMDebug([]string{"bin", "run"}); found {
-		t.Error("absent token must not be found")
+	if contains(suppressedCore, "scm-debug") != (goos.GOOS == "windows") {
+		t.Errorf("the knob exists in Windows builds only: %v", suppressedCore)
 	}
 }
 
@@ -161,14 +116,6 @@ func TestSuppressSourcesLeaveTheArgumentListAlone(t *testing.T) {
 	}
 	if environmentLookup() != nil {
 		t.Error("a suppressed environment reads nothing")
-	}
-}
-
-func TestEnableOfASourceFeatureIsANoOp(t *testing.T) {
-	before := defaultCollector.Len()
-	Enable(FeatureSystemConfig, FeatureEnvironment)
-	if defaultCollector.Len() != before {
-		t.Errorf("a source feature is on by default; enabling it is silent: %v", defaultCollector.All())
 	}
 }
 

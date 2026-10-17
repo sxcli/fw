@@ -26,16 +26,16 @@ import (
 )
 
 // platformMain detects service mode: under the SCM it hands control to
-// svc.Run with the framework handler; with the enabled --scm-debug
-// argument it runs the same handler under svc/debug outside the service
-// manager (console process, Ctrl+C/Break translated to Stop/Shutdown);
-// started normally it runs the pipeline with the process arguments.
-// An un-enabled --scm-debug falls through to the normal path where the
-// strict parse rejects it as an unknown argument.
+// svc.Run with the framework handler; started normally it runs the
+// pipeline with the process arguments, and when the arguments carry
+// --scm-debug the pipeline moves under svc/debug (serviceDebug): the
+// same handler outside the service manager, a console process with
+// Ctrl+C/Break translated to Stop/Shutdown. With the feature
+// suppressed the knob is gone and the strict parse rejects the token
+// as an unknown argument.
 func platformMain(app *App) int {
 	var code int
 	isService, err := svc.IsWindowsService()
-	debugArgv, debugMode := stripSCMDebug(os.Args)
 	if err == nil && isService {
 		h := &scmHandler{app: app}
 		runErr := svc.Run("", h)
@@ -43,20 +43,36 @@ func platformMain(app *App) int {
 		if runErr != nil && code == 0 {
 			code = 2
 		}
-	} else if debugMode && scmDebugEnabled {
-		// debug.Run reports a non-zero Execute exit code AS an error
-		// (syscall.Errno); the handler holds the real code, so the
-		// error only matters when no code was produced at all
-		h := &scmHandler{app: app, argv: debugArgv}
-		runErr := debug.Run(BinaryBasename(debugArgv[0]), h)
-		code = int(h.code)
-		if runErr != nil && code == 0 {
-			code = 2
-		}
 	} else {
-		code = run(productionRuntime(app, os.Args, nil))
+		rt := productionRuntime(app, os.Args, nil)
+		rt.serviceDebug = func(argv []string) int {
+			// debug.Run reports a non-zero Execute exit code AS an
+			// error (syscall.Errno); the handler holds the real code,
+			// so the error only matters when no code was produced at
+			// all
+			h := &scmHandler{app: app, argv: argv}
+			runErr := debug.Run(BinaryBasename(argv[0]), h)
+			out := int(h.code)
+			if runErr != nil && out == 0 {
+				out = 2
+			}
+			return out
+		}
+		code = run(rt)
 	}
 	return code
+}
+
+// platformFeatureLongs: the Windows service debug knob.
+var platformFeatureLongs = map[CoreFeature]string{FeatureSCMDebug: "scm-debug"}
+
+// windowsServiceKnob contributes the --scm-debug knob to the core.
+func windowsServiceKnob(k *scmDebugKnob) any {
+	var out any
+	if k != nil {
+		out = k
+	}
+	return out
 }
 
 // scmHandler is the framework's svc.Handler for Windows service
