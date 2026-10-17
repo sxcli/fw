@@ -16,9 +16,11 @@ package fw
 
 import (
 	"os"
+	goos "runtime"
 
 	"sxcli.dev/conf/engine"
 	"sxcli.dev/fw/internal/ctlhook"
+	"sxcli.dev/rules/solver"
 )
 
 // CoreFeature identifies one suppressible piece of the framework core's
@@ -74,16 +76,18 @@ const (
 // binary — and that package claims its values from 64 up, so the two
 // ranges can never collide.
 
-// coreFeatureLongs maps features to the long argument names of the
-// core's config fields.
-var coreFeatureLongs = map[CoreFeature]string{
-	FeatureConfigFile:     "config",
-	FeatureWriteConfig:    "write-config",
-	FeatureHelp:           "help",
-	FeatureValidateConfig: "validate-config",
-	FeatureUpgradeConfig:  "upgrade-config",
-	FeatureConfigMaxBytes: "config-max-bytes",
-	FeatureApplets:        "applets",
+// coreFeatureNames are the argument features by the names the shared
+// rules' table of core arguments (solver.Knobs) keys its rows on —
+// the constants' own identifiers.
+var coreFeatureNames = map[CoreFeature]string{
+	FeatureConfigFile:     "FeatureConfigFile",
+	FeatureWriteConfig:    "FeatureWriteConfig",
+	FeatureHelp:           "FeatureHelp",
+	FeatureValidateConfig: "FeatureValidateConfig",
+	FeatureUpgradeConfig:  "FeatureUpgradeConfig",
+	FeatureConfigMaxBytes: "FeatureConfigMaxBytes",
+	FeatureApplets:        "FeatureApplets",
+	FeatureSCMDebug:       "FeatureSCMDebug",
 }
 
 // suppressedCore holds the long names of suppressed core fields; Main
@@ -140,19 +144,31 @@ func ConfigMaxBytes(limit uint64) {
 	configMaxBytes = limit
 }
 
-// featureLong resolves a feature's long argument name: the core's
-// own table first, then the platform's knobs, then the controls'
-// registered features (present only by the sxcli.dev/fw/controls
-// import).
-func featureLong(feature CoreFeature) (string, bool) {
-	long, known := coreFeatureLongs[feature]
-	if !known {
-		long, known = platformFeatureLongs[feature]
+// featureLongs resolves a feature to the long arguments it removes:
+// every knob of the shared table the feature owns or that rides on it
+// (--config takes the file tools with it), a Windows-only knob in
+// Windows builds alone. The shared-file verb is left out: it stands in
+// for --write-config per applet (coreSuppress). The controls' features
+// are registered by their package (present only by the
+// sxcli.dev/fw/controls import).
+func featureLongs(feature CoreFeature) ([]string, bool) {
+	var out []string
+	name, known := coreFeatureNames[feature]
+	if known {
+		for i := 0; i < len(solver.Knobs); i++ {
+			k := solver.Knobs[i]
+			if (k.Feature == name || k.Needs == name) && k.When != solver.KnobSharedFile && (!k.Windows || goos.GOOS == "windows") {
+				out = append(out, k.Long)
+			}
+		}
+	} else if ctlhook.Registered != nil {
+		long, registered := ctlhook.Registered.FeatureLongs[int(feature)]
+		if registered {
+			out = append(out, long)
+			known = true
+		}
 	}
-	if !known && ctlhook.Registered != nil {
-		long, known = ctlhook.Registered.FeatureLongs[int(feature)]
-	}
-	return long, known
+	return out, known
 }
 
 // Suppress removes core configuration features from this binary. A
@@ -171,28 +187,16 @@ func featureLong(feature CoreFeature) (string, bool) {
 // configuration.
 func Suppress(features ...CoreFeature) {
 	for _, feature := range features {
-		if long, known := featureLong(feature); known {
-			dup := false
-			for _, existing := range suppressedCore {
-				dup = dup || existing == long
-			}
-			if !dup {
-				suppressedCore = append(suppressedCore, long)
-				if feature == FeatureUpgradeConfig {
-					suppressedCore = append(suppressedCore, "from-version")
-				}
-				if feature == FeatureConfigFile {
-					// no --config, no file to upgrade or write: the two
-					// verbs leave with it (spec §6, Core feature
-					// suppression)
-					Suppress(FeatureUpgradeConfig, FeatureWriteConfig)
+		if longs, known := featureLongs(feature); known {
+			// a known feature with nothing to remove (--scm-debug
+			// outside Windows) is the state asked for already holding
+			for _, long := range longs {
+				if !contains(suppressedCore, long) {
+					suppressedCore = append(suppressedCore, long)
 				}
 			}
 		} else if sourceFeatures[feature] {
 			suppressedSources[feature] = true
-		} else if feature == FeatureSCMDebug {
-			// a Windows-only knob on another platform: nothing to
-			// remove, the state asked for already holds
 		} else {
 			defaultCollector.Fail("Suppress: unknown core feature %d", feature)
 		}

@@ -127,7 +127,7 @@ func TestSuppressConfigFileImpliesTheFileVerbs(t *testing.T) {
 	suppressedCore = nil
 	Suppress(FeatureConfigFile)
 	Suppress(FeatureWriteConfig)
-	want := []string{"config", "upgrade-config", "from-version", "write-config"}
+	want := []string{"config", "write-config", "upgrade-config", "from-version"}
 	if !reflect.DeepEqual(suppressedCore, want) {
 		t.Errorf("got %v, want %v", suppressedCore, want)
 	}

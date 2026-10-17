@@ -27,9 +27,6 @@ func platformMain(app *App) int {
 	return run(productionRuntime(app, os.Args, nil))
 }
 
-// platformFeatureLongs: this platform adds no core knobs.
-var platformFeatureLongs = map[CoreFeature]string{}
-
 // windowsServiceKnob contributes nothing: --scm-debug exists in
 // Windows builds only.
 func windowsServiceKnob(*scmDebugKnob) any {

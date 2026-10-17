@@ -63,9 +63,6 @@ func platformMain(app *App) int {
 	return code
 }
 
-// platformFeatureLongs: the Windows service debug knob.
-var platformFeatureLongs = map[CoreFeature]string{FeatureSCMDebug: "scm-debug"}
-
 // windowsServiceKnob contributes the --scm-debug knob to the core.
 func windowsServiceKnob(k *scmDebugKnob) any {
 	var out any
