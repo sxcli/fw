@@ -98,6 +98,15 @@ func defaultDomainViolations(c *fail.Collector, serviceID, name string, allowed 
 	}
 }
 
+// metadataFits says whether a FieldMetadata's Allowed element type can
+// annotate a field of the given type (the element type for slices):
+// the same kind, and convertible to it. sxcli-vet answers the same
+// question over go/types; sxcli.dev/rules/conformance holds the two
+// to one matrix.
+func metadataFits(allowed, field reflect.Type) bool {
+	return allowed.Kind() == field.Kind() && allowed.ConvertibleTo(field)
+}
+
 func metaHas(allowed []any, v any) bool {
 	out := false
 	for _, a := range allowed {
@@ -141,8 +150,7 @@ func normalizeMetadata(c *fail.Collector, id string, raw *Metadata, hasConfig bo
 			p.Type = tags.TypeID(probed.Type)
 			p.String = probed.Type.Kind() == reflect.String
 			if rv, isField := values[f.Name]; isField {
-				elemType := rv.FieldByName("Allowed").Type().Elem()
-				p.Fits = elemType.Kind() == probed.Type.Kind() && elemType.ConvertibleTo(probed.Type)
+				p.Fits = metadataFits(rv.FieldByName("Allowed").Type().Elem(), probed.Type)
 			}
 		}
 		return p, known
