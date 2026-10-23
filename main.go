@@ -274,15 +274,15 @@ type invocationPlan struct {
 // listingKnob is the --applets argument's schema surface; the scan
 // that serves it reads argv directly, pre-dispatch.
 type listingKnob struct {
-	Applets bool `json:"applets" conf:"applets" env:"-" dump:"-" usage:"list the binary's applets and exit"`
+	Applets bool `json:"-" conf:"applets" env:"-" usage:"list the binary's applets and exit"`
 }
 
 // upgradeKnobs is the framework's serving of the --upgrade-config
 // tool flags: run-scoped, argument-only, mirrored from the front
 // door's — each door owns its surface.
 type upgradeKnobs struct {
-	UpgradeConfig bool     `json:"upgradeConfig" conf:"upgrade-config" dump:"-" env:"-" usage:"migrate the --config file's sections to their current schema versions and exit"`
-	FromVersion   []string `json:"fromVersion" conf:"from-version" dump:"-" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
+	UpgradeConfig bool     `json:"-" conf:"upgrade-config" env:"-" usage:"migrate the --config file's sections to their current schema versions and exit"`
+	FromVersion   []string `json:"-" conf:"from-version" env:"-" usage:"assert a versionless section's version, section=N (bare N when only one section qualifies)"`
 }
 
 // scmDebugKnob is the --scm-debug argument: it runs the Windows
@@ -290,7 +290,7 @@ type upgradeKnobs struct {
 // knob is contributed in Windows builds only (windowsServiceKnob);
 // elsewhere the token stays an unknown argument.
 type scmDebugKnob struct {
-	SCMDebug bool `json:"scmDebug" conf:"scm-debug" dump:"-" env:"-" usage:"run the Windows service path in this console (svc/debug), for testing"`
+	SCMDebug bool `json:"-" conf:"scm-debug" env:"-" usage:"run the Windows service path in this console (svc/debug), for testing"`
 }
 
 // sharedKnob is the --write-shared-config verb: present only for an
@@ -299,7 +299,7 @@ type scmDebugKnob struct {
 // writes the whole group's document — this applet effective, every
 // sibling effective minus the command line.
 type sharedKnob struct {
-	WriteSharedConfig bool `json:"writeSharedConfig" conf:"write-shared-config" dump:"-" env:"-" usage:"write the merged configuration of every applet sharing this config file to the --config target (or stdout) and exit"`
+	WriteSharedConfig bool `json:"-" conf:"write-shared-config" env:"-" usage:"write the merged configuration of every applet sharing this config file to the --config target (or stdout) and exit"`
 }
 
 // coreContribs assembles the composite core: the engine's knobs
