@@ -51,7 +51,7 @@ func main() {
 
 A registration carries two names: the **id** (import-path-shaped,
 unique by construction — what code says in inject tags and
-compositions) and the **alias** (the short operator name — what humans
+Builder calls) and the **alias** (the short operator name — what humans
 say). `Solo` is the single-applet front door: no subcommands, no
 ceremony — the binary *is* the applet, and all of these set the same
 field:
@@ -84,7 +84,7 @@ Config files are discovered next to the real binary
 (`<dir>/<alias>-config.<ext>`), in `/etc/<alias>/` (or
 `%ProgramData%`), and in the XDG user config directory — merged in that
 order — or replaced wholesale by an explicit `--config path`. JSON is
-native; accepting `sxcli.dev/fw/configfmt/yaml` into the composition
+native; accepting `sxcli.dev/fw/configfmt/yaml` into the binary
 adds `.yaml`/`.yml`, and the format-provider interface is public for
 anything else.
 
@@ -105,8 +105,8 @@ And deliberate strictness, because silent misconfiguration is the worst
 bug class: unknown arguments and unknown config keys are startup
 errors; config files are size-capped and must be regular files (a FIFO
 or device never blocks startup); the binary-companion config refuses
-symlink games entirely; and run-scoped flags like `--help` cannot be
-smuggled in via files or environment.
+symlink games entirely; and argument-only flags like `--help` cannot
+arrive through files or the environment.
 
 ## Services and dependency injection
 
@@ -131,11 +131,11 @@ injects fields, then drives the lifecycle in dependency order:
 reverse. Services never required stay cold — never configured, never
 started, their arguments not even parsed.
 
-Operators can recompose without recompiling: `--disable sqlite
+Operators can rewire without recompiling: `--disable sqlite
 --enable mysql --override sqlite=mysql` remove, force, and remap
-services from the command line, environment, or config file.
+services from the command line or a config file.
 
-## Composition and multi-applet binaries
+## Building the binary and multi-applet binaries
 
 Beyond `Solo` sits the Builder: the binary names what it takes from
 the catalog, and imports are justified by the `ID` constants packages
@@ -157,20 +157,20 @@ func main() {
 }
 ```
 
-(`fw.Main()` is the take-everything shorthand — `AcceptAll` composed
-and run.) Several accepted applets make a busybox-style multi-call
+(`fw.Main()` is the take-everything shorthand — accept everything
+cataloged and run.) Several accepted applets make a busybox-style multi-call
 binary: the framework dispatches by first argument (`mybox serve`) or
 by binary name (`ln -s mybox serve; ./serve`). Each applet pays only
 for its own resolved service set — a five-applet binary running `serve`
 never touches the other four applets' services or arguments.
-`Builder.Alias` renames operator surfaces per composition (and pins
+`Builder.Alias` renames operator surfaces per binary (and pins
 them against upstream changes); ambiguity is never resolved silently —
 two unranked candidates for one dependency slot fail the build by
 name.
 
 Each applet reads a config file named after itself — `/etc/serve/config.json`
 for `serve`, `/etc/migrate/config.json` for `migrate`. When related
-applets should share one file, the composition says so:
+applets should share one file, the binary says so:
 
 ```go
 fw.Builder().
@@ -198,7 +198,7 @@ Logging always works: with no sink enabled, records land on stderr
 through a built-in plain handler — the logging floor. (No silence
 switch either; redirect stderr if you want quiet.) Richer sinks are
 ordinary services implementing `slog.Handler` — accepted into the
-composition like any other service, activated per invocation —
+binary like any other service, activated per invocation —
 console (stderr/stdout, text or json), file, and syslog/journald:
 
 ```console
@@ -224,15 +224,15 @@ framework's own test suite drives it under Wine;
 The binary author decides which core features exist at all:
 
 ```go
-fw.Suppress(fw.FeatureConfigFile, fw.FeatureOverride) // no --config, no rewiring
+fw.Suppress(fw.FeatureConfigFile, controls.FeatureOverrideService) // no --config, no rewiring
 fw.Suppress(fw.FeatureUserConfig, fw.FeatureEnvironment) // /etc and the companion file only, no environment
 fw.ConfigMaxBytes(64 << 10)                           // tighter than the 1 MiB default
 ```
 
 Suppressed features vanish: the argument becomes unknown, the env var
-is never read, and a config file mentioning them fails loudly.
+is never read, and a config file naming them fails as an unknown key.
 
 ## Status
 
 v0: the API is settling and may still move. Module path `sxcli.dev/fw`,
-Go 1.26+. Licensed under Apache-2.0.
+Go 1.27+. Licensed under Apache-2.0.
