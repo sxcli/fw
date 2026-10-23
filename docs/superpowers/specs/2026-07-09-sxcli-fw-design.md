@@ -1709,8 +1709,9 @@ re-read the file. Unused providers stay cold and are ejected.
   files a duration must be a *string* — never a number.
 - Name lexicon: long names are lowercase, at least two characters,
   letter-first, letters/digits/dashes, no trailing dash; short forms
-  are ONE lowercase ascii letter or digit — uppercase and non-ASCII
-  runes are refused by decision, not omission; env names are
+  are ONE ASCII letter, either case, or digit (-v and -V are two
+  arguments; 2026-10-23) — non-ASCII runes are refused by decision,
+  not omission; env names are
   uppercase letters, digits and underscores, not digit-first.
   Embedded fields in config structs are not supported (registration
   error).

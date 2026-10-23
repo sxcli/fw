@@ -66,7 +66,7 @@ type svcSlicePtr struct {
 	Deps []*svcA `inject:""`
 }
 
-type svcBadFlag struct {
+type svcBadOption struct {
 	Dep greeter `inject:";maybe"`
 }
 
@@ -151,7 +151,7 @@ func TestCommitTagViolationsStillStore(t *testing.T) {
 	}{
 		{"inject on unexported field", &svcUnexported{}},
 		{"inject slice of concrete type", &svcSlicePtr{}},
-		{"inject unknown flag", &svcBadFlag{}},
+		{"inject unknown option", &svcBadOption{}},
 		{"inject multiple ids on single field", &svcMultiIDSingle{}},
 		{"inject unsupported field kind", &svcBadKind{}},
 	}
@@ -215,7 +215,7 @@ func TestDumpReadable(t *testing.T) {
 	db := commit(r, "test/svcb", &svcB{})
 	db.ConfigPtr = cfg
 	commit(r, "test/plain", &svcPlain{})
-	commit(r, "test/svca", &svcBadFlag{}) // duplicate id → recorded error
+	commit(r, "test/svca", &svcBadOption{}) // duplicate id → recorded error
 	var b strings.Builder
 	r.Dump(&b)
 	t.Logf("registry dump:\n%s", b.String())

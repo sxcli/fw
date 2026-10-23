@@ -127,7 +127,7 @@ func TestCommitViolations(t *testing.T) {
 		}, "Alias called twice"},
 		{"bad id shape", func() *Registration[catService] {
 			return chain("Example.com//x", &built)
-		}, "package-shaped"},
+		}, "look like an import path"},
 		{"reserved id", func() *Registration[catService] {
 			return chain(CoreID, &built)
 		}, "reserved for the framework core"},
