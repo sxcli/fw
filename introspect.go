@@ -205,11 +205,11 @@ func (i *Introspector) Positionals() []system.PosInfo {
 	indexed, rest := sch.PositionalFields()
 	for k := 0; k < len(indexed); k++ {
 		f := indexed[k]
-		out = append(out, system.PosInfo{Name: f.JSONPath[len(f.JSONPath)-1],
+		out = append(out, system.PosInfo{Name: f.PosName,
 			Usage: f.Usage, Type: f.Type, Allowed: f.Allowed, Hint: f.Hint})
 	}
 	if rest != nil {
-		out = append(out, system.PosInfo{Name: rest.JSONPath[len(rest.JSONPath)-1],
+		out = append(out, system.PosInfo{Name: rest.PosName,
 			Usage: rest.Usage, Type: rest.Type, Allowed: rest.Allowed,
 			Hint: rest.Hint, Rest: true})
 	}

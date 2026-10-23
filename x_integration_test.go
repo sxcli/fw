@@ -74,7 +74,7 @@ type probeConfig struct {
 	Version uint32   `json:"version"`
 	Exit    int      `json:"exit" conf:"exit"`
 	Note    string   `json:"note" conf:"note,n" usage:"a note to print"`
-	Args    []string `json:"args" pos:"rest" usage:"echoed invocation tail"`
+	Args    []string `json:"-" pos:"rest" usage:"echoed invocation tail"`
 }
 
 type probeApplet struct {

@@ -63,7 +63,7 @@ func (d *depService) Stop() error {
 type mainAppletCfg struct {
 	Version  uint32   `json:"version"`
 	Greeting string   `json:"greeting" conf:"greeting,g" usage:"the greeting"`
-	Rest     []string `json:"rest" pos:"rest" usage:"trailing invocation data"`
+	Rest     []string `json:"-" pos:"rest" usage:"trailing invocation data"`
 }
 
 type mainApplet struct {
@@ -496,7 +496,7 @@ func TestWriteConfigKeepsOtherSections(t *testing.T) {
 type groupCfg struct {
 	Version uint32 `json:"version"`
 	Out     string `json:"out" conf:"out" usage:"destination"`
-	Name    string `json:"name" pos:"0" usage:"a required word"`
+	Name    string `json:"-" pos:"0" usage:"a required word"`
 }
 
 type groupApplet struct{ cfg groupCfg }

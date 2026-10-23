@@ -103,8 +103,8 @@ func argsWorld(t *testing.T, files map[string]string, do func(sys system.System)
 // something to report: an optional hinted input and a rest tail.
 type posProbeCfg struct {
 	Version uint32   `json:"version"`
-	Input   string   `json:"input" pos:"0,optional" usage:"input file"`
-	Tail    []string `json:"tail" pos:"rest" usage:"everything else"`
+	Input   string   `json:"-" pos:"0,optional" usage:"input file"`
+	Tail    []string `json:"-" pos:"rest" usage:"everything else"`
 }
 
 type posProbeApplet struct{ cfg posProbeCfg }

@@ -874,14 +874,14 @@ func (rt *runtime) help(sch *engine.Schema) int {
 	if len(indexed) > 0 || rest != nil {
 		fmt.Fprintln(rt.stdout, "positionals:")
 		for _, f := range indexed {
-			line := "  <" + f.JSONPath[len(f.JSONPath)-1] + ">"
+			line := "  <" + f.PosName + ">"
 			fmt.Fprintln(rt.stdout, line)
 			if f.Usage != "" {
 				fmt.Fprintf(rt.stdout, "        %s\n", Tr(f.Usage))
 			}
 		}
 		if rest != nil {
-			fmt.Fprintf(rt.stdout, "  <%s...>\n", rest.JSONPath[len(rest.JSONPath)-1])
+			fmt.Fprintf(rt.stdout, "  <%s...>\n", rest.PosName)
 			if rest.Usage != "" {
 				fmt.Fprintf(rt.stdout, "        %s\n", Tr(rest.Usage))
 			}

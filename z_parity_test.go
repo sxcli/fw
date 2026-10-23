@@ -184,7 +184,7 @@ func TestUndeclaredTailIsViolation(t *testing.T) {
 func TestPositionalsAreAppletOnly(t *testing.T) {
 	type posyCfg struct {
 		Version uint32 `json:"version"`
-		Thing   string `json:"thing" pos:"0"`
+		Thing   string `json:"-" pos:"0"`
 	}
 	w := newWorld(t, []string{"bin"}, nil, nil)
 	w.applet(0)
