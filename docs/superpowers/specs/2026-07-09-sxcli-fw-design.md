@@ -944,9 +944,12 @@ type FileSinkConfig struct {
 }
 ```
 
-- `json:"…"` — **required** on every exported field; the core is JSON-native.
-  File keys nest under the service ID: `{"filesink": {"path": "…"}}`.
-  The core's own config lives under the reserved ID `core`.
+- `json:"…"` — **required** on every exported field: the key under
+  which the field lives in the config file, or `json:"-"` for a field
+  that has no key in the config file and lives on arguments and the
+  environment alone (it then needs a `conf`, `env` or `pos` tag). File
+  keys nest under the service ID: `{"filesink": {"path": "…"}}`. The
+  core's own config lives under the reserved ID `core`.
 - `conf:"long[,short]"` — the ONE operator name: grants `--long`/`-s`
   AND feeds env derivation. Top level only ("mirror the value into a
   top-level field yourself"). Long names MUST be unique per applet's
@@ -1043,12 +1046,14 @@ semantics get a final pass before the module ships.
 
 Decided:
 
-- **Dedicated/total stays the model.** Every exported field
-  participates and carries `json:`; totality — not provenance — is
+- **Dedicated/total stays the model.** Every exported field carries
+  `json:` and every field with a key in the config file participates
+  in the file; totality over the keyed fields — not provenance — is
   the requirement, and it is what keeps unknown-key strictness and
-  `--write-config` completeness honest. (A per-field exclusion tag is
-  the escape hatch if adoption friction ever demands one; adding it
-  later breaks nothing.)
+  `--write-config` completeness honest. The per-field exclusion is
+  `json:"-"` (2026-10-20): the field has no key in the config file at
+  all, so a file naming it hits unknown-key strictness like any other
+  stray key.
 - **No flattening, ever.** An embedded struct is an ordinary nested
   path element. Env derivation generalizes to **paths**: derived name
   = section alias + the field's path segments, joined with
@@ -1077,19 +1082,22 @@ The matrix (every row a real use case, no dead cells):
 ```go
 Listen  string `json:"listen"  conf:"listen,l"`               // file + --listen/-l + ALIAS__LISTEN
 Backups int    `json:"backups"`                               // file + ALIAS__BACKUPS (derived, no flag)
-Token   string `json:"token"   env:"MYAPP_TOKEN" dump:"-"`    // env ONLY — secrets touch neither argv nor files
+Token   string `json:"-"       env:"MYAPP_TOKEN"`             // env ONLY — secrets touch neither argv nor files
 Proxy   string `json:"proxy"   conf:"proxy" env:"HTTP_PROXY"` // --proxy + verbatim global env
-Help    bool   `json:"help"    conf:"help" env:"-" dump:"-"`  // arg-only, run-scoped
+Help    bool   `json:"-"       conf:"help" env:"-"`           // arg-only
 Legacy  string `json:"legacy"  env:"-"`                       // file-only
+Seed    int    `json:"seed"    dump:"-"`                      // read from files, never written by --write-config
 ```
 
-The Token row extends `dump:"-"` beyond run-scoped flags to its
-general meaning — **not file material**: excluded from
-`--write-config` output and refused loudly when a file supplies it.
-Secrets never touch argv (`ps`-visible) and never belong in config
-files (backed up, committed, world-readable more often than not); the
-framework refuses to normalize either. `json:` stays required even
-here — refusal needs the key name to refuse by.
+Two tags keep a field away from files, for two different reasons.
+`json:"-"` means **no key in the config file**: the field exists for
+arguments and the environment only, and a file naming it is an
+unknown key. That is the Token row — secrets never touch argv
+(`ps`-visible) and never belong in config files (backed up,
+committed, world-readable more often than not) — and the Help row,
+whose value a file must never carry. `dump:"-"` means **read, never
+written**: the field has a key in the config file and a file may set
+it, but `--write-config` leaves it out of the file it generates.
 
 Decided since: the composite core (implemented — one namespace, two
 flat structs); the derivation grammar (`__` structural stitch, `_`
@@ -1099,8 +1107,9 @@ in-name fold, separator-run ban — see The config struct above);
 mandate is UNIVERSAL with no opt-outs (2026-07-19: the promise-flag
 is a trap testifying against itself, and the files-suppressed
 carve-out saves one uint32 in a case nobody inhabits — cheapest
-insurance against the one hole proved fatal). Still open: whether a
-dedicated secret marker should replace the `dump:"-"` reuse.
+insurance against the one hole proved fatal). The secret marker
+question closed 2026-10-20: `json:"-"` with an `env` tag is the
+spelling, and `dump:"-"` went back to meaning only "not written".
 
 ### Config schema versioning & migration (decided 2026-07-18)
 
@@ -1135,7 +1144,8 @@ engine interprets. The engine stays dumb: it walks a chain.
   field as present in one act. `out` exists only so `&out.Field` can
   name a field: the engine allocates it, and a value stored into it
   directly never reaches the new document (Typed presence, below).
-  Misuse is collected per step: a `Set` on a `dump:"-"` field is a
+  Misuse is collected per step: a `Set` on a `json:"-"` field (no key
+  in the config file, so no file could have carried it) is a
   violation, as is a field pointer that does not point into `out`.
   The **commit validates the chain** — contiguous from-versions, each
   link's output type feeding the next link's input, terminating at
@@ -1393,10 +1403,11 @@ assignment is ambiguous otherwise), indices contiguous from 0, one
 falls out). Missing required = violation naming `<field>`; surplus
 without rest = violation naming the token. Domains and metadata hints
 apply (a HintFile pos field is the completion module's future
-breakfast); help renders a positionals block; a positional is
-argument-only BY CATEGORY (implies transient + no-env; explicit
-env/dump tags beside pos are errors, files mentioning the key are
-refused as run-scoped).
+breakfast); help renders a positionals block, naming each positional
+after its Go field spelled like a long argument (`InputFile` →
+`<input-file>`); a positional is argument-only BY CATEGORY: it
+declares `json:"-"`, has no environment variable, and explicit env or
+dump tags beside pos are errors.
 
 Placement (ruled 2026-09-11): bare tokens INTERLEAVE freely with
 arguments — each one not consumed as a pending value fills the next
@@ -1507,20 +1518,18 @@ reflects the currently effective configuration, and the target is only
 created (an *existing* target is loaded as the explicit config, per the
 input-and-output rule in §5).
 
-The run-scoped core values are locked down (`dump:"-"`, `env:"-"`):
+The core's arguments are locked down (`json:"-"`, `env:"-"`):
 
-- `help` and `writeConfig` are **argument-only** — a config file or an
+- `help` and `write-config` are **argument-only** — a config file or an
   inherited environment variable setting them would be a persistent
   denial (every run printing help, or writing a config and exiting).
-- `config` is settable by argument or environment (`APPLETID_CONFIG`
-  is a legitimate deployment pattern; the pointed-at file still passes
-  every gate), but never by a config file.
-- All three are excluded from `--write-config` output, and a config
-  file attempting to set any of them is a loud startup error.
+- `config` is argument-only too: the environment never redirects the
+  config source, and a file cannot name the file it lives in.
+- None has a key in the config file, so a config file naming any of
+  them fails unknown-key strictness.
 
-The `dump:"-"` tag is available to any service's config struct, with
-the same run-scoped semantics: excluded from `--write-config` output
-and refused from config files.
+Any service's config struct may use `json:"-"` the same way for its
+own argument-only or environment-only fields.
 
 ### Shared config files (designed 2026-10-13, implemented 2026-10-17)
 

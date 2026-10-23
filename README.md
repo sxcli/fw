@@ -74,11 +74,11 @@ Field tags declare the whole surface:
 
 | Tag | Meaning |
 | --- | --- |
-| `json:"name"` | the config-file key (required on every exported field) |
+| `json:"name"` | the config-file key (required on every exported field); `json:"-"` for a field with no key in the config file — arguments and environment only |
 | `conf:"long[,short]"` | the operator name: grants `--long value`, `--long=value`, `-s value` AND feeds the env name |
 | `env:"NAME"` | explicit env var, verbatim; omitted → derived (`ALIAS__` + name, `__` at path boundaries); `env:"-"` → no env |
 | `usage:"..."` | help text, translation-ready |
-| `dump:"-"` | run-scoped: excluded from generated config files and refused from them |
+| `dump:"-"` | read from config files, never written into generated ones |
 
 Config files are discovered next to the real binary
 (`<dir>/<alias>-config.<ext>`), in `/etc/<alias>/` (or
