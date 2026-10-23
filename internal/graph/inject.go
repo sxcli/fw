@@ -40,18 +40,18 @@ func (res Result) InjectExcept(c *fail.Collector, skip map[string]bool) {
 			v := reflect.ValueOf(m.Desc.Instance).Elem()
 			for _, b := range m.Bindings {
 				if len(b.Targets) > 0 {
-					if f, err := v.FieldByIndexErr(b.Dep.Index); err == nil {
-						if b.Dep.IsSlice {
-							s := reflect.MakeSlice(f.Type(), 0, len(b.Targets))
-							for _, target := range b.Targets {
-								s = reflect.Append(s, reflect.ValueOf(target.Instance))
-							}
-							f.Set(s)
-						} else {
-							f.Set(reflect.ValueOf(b.Targets[0].Instance))
+					// an inject field is one of the service type's own
+					// fields (spec §4), so the index path has one step
+					// and no nil embedded pointer can sit on the way
+					f := v.FieldByIndex(b.Dep.Index)
+					if b.Dep.IsSlice {
+						s := reflect.MakeSlice(f.Type(), 0, len(b.Targets))
+						for _, target := range b.Targets {
+							s = reflect.Append(s, reflect.ValueOf(target.Instance))
 						}
+						f.Set(s)
 					} else {
-						c.Fail("service %q field %s: %v", m.Desc.ID, b.Dep.Name, err)
+						f.Set(reflect.ValueOf(b.Targets[0].Instance))
 					}
 				}
 			}

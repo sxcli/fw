@@ -20,18 +20,6 @@ import (
 	"sxcli.dev/conf/fail"
 )
 
-// Base is exported: an unexported embedded member would hide the
-// dep at registration (spec §4), never reaching injection at all.
-type Base struct {
-	W worker `inject:""`
-}
-
-type derived struct {
-	*Base
-}
-
-func (d *derived) Work() {}
-
 func mustInject(t *testing.T, res Result) {
 	t.Helper()
 	c := &fail.Collector{}
@@ -101,17 +89,5 @@ func TestInjectWiresCycleBothWays(t *testing.T) {
 	mustInject(t, mustResolve(t, r, "t/ping", Controls{}))
 	if p1.Peer != storage(p2) || p2.Peer != worker(p1) {
 		t.Errorf("cycle members not mutually wired: %v, %v", p1.Peer, p2.Peer)
-	}
-}
-
-func TestInjectReportsNilEmbeddedPointer(t *testing.T) {
-	r := newRegistry()
-	reg(r, "t/derived", &derived{}) // Base is nil
-	reg(r, "t/workera", &workerA{}, workerType)
-	res := mustResolve(t, r, "t/derived", Controls{})
-	c := &fail.Collector{}
-	res.Inject(c)
-	if c.Len() != 1 {
-		t.Errorf("expected one nil-embedded-pointer error, got %v", c.All())
 	}
 }

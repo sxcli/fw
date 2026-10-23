@@ -134,17 +134,21 @@ func (r *Registry) Retain(keep map[string]bool) {
 	r.ordered = kept
 }
 
+// collectDeps reads the service type's inject tags: its own fields
+// only (spec §4). An embedded struct carrying an inject tag anywhere
+// under it is a violation — a service declares its own dependencies.
 func collectDeps(d *Descriptor, c *fail.Collector) {
 	root := d.Concrete.Elem()
-	for _, f := range reflect.VisibleFields(root) {
-		if tag, tagged := f.Tag.Lookup("inject"); tagged {
-			if hop, hidden := unexportedHop(root, f.Index); hidden {
-				// spec §4: only exported members are visible to
-				// injection — a tag under an unexported one is refused
-				c.Fail("service %q field %s: "+registration.InjectHiddenRule, d.ID, f.Name, hop)
-			} else if f.IsExported() {
+	for i := 0; i < root.NumField(); i++ {
+		f := root.Field(i)
+		if f.Anonymous {
+			for _, inner := range injectedUnder(f.Type, "") {
+				c.Fail("service %q field %s: "+registration.InjectEmbeddedRule, d.ID, inner, inner, f.Name)
+			}
+		} else if tag, tagged := f.Tag.Lookup("inject"); tagged {
+			if f.IsExported() {
 				if ids, optional, err := grammar.ParseInjectTag(tag); err == nil {
-					dep := DepField{Index: f.Index, Name: f.Name, IDs: ids, Optional: optional}
+					dep := DepField{Index: []int{i}, Name: f.Name, IDs: ids, Optional: optional}
 					if f.Type.Kind() == reflect.Slice {
 						if f.Type.Elem().Kind() == reflect.Interface {
 							dep.IsSlice = true
@@ -173,20 +177,25 @@ func collectDeps(d *Descriptor, c *fail.Collector) {
 	}
 }
 
-// unexportedHop reports the first unexported embedded field on the
-// index path, if any — everything under an unexported member is
-// invisible to injection (spec §4).
-func unexportedHop(root reflect.Type, index []int) (string, bool) {
-	t := root
-	for i := 0; i < len(index)-1; i++ {
-		sf := t.Field(index[i])
-		if !sf.IsExported() {
-			return sf.Name, true
-		}
-		t = sf.Type
-		if t.Kind() == reflect.Pointer {
-			t = t.Elem()
+// injectedUnder lists the inject-tagged fields anywhere inside an
+// embedded struct type (one pointer level looked through), as dotted
+// paths from that struct: the fields a service may not reach by
+// embedding.
+func injectedUnder(t reflect.Type, prefix string) []string {
+	var out []string
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() == reflect.Struct {
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if _, tagged := f.Tag.Lookup("inject"); tagged {
+				out = append(out, prefix+f.Name)
+			}
+			if f.Anonymous {
+				out = append(out, injectedUnder(f.Type, prefix+f.Name+".")...)
+			}
 		}
 	}
-	return "", false
+	return out
 }

@@ -582,11 +582,12 @@ Items).
 
 ### Dependency declaration
 
-A struct tag on exported fields of the registered *instance*. Fields
-promoted from embedded members count, with one visibility rule: only
-exported members are visible — an unexported embedded field hides
-its whole subtree, and an inject tag under one is a startup
-violation, never a silent drop.
+A struct tag on exported fields of the registered *instance*. Only
+the service type's own fields count: an inject tag anywhere under an
+embedded struct is a startup violation naming the field and the
+embedded struct — a service declares its own dependencies, it does
+not inherit them (2026-10-23). Embedding itself stays ordinary Go;
+a tagless embedded helper is fine.
 
 ```go
 type MyService struct {

@@ -1,17 +1,3 @@
-// Copyright 2026 Plamen K. Kosseff
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//	http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package fw
 
 import (
@@ -21,60 +7,77 @@ import (
 
 type embedStore interface{ Probe() string }
 
-// EmbedDepsExported is embedded exported; its inject field promotes
-// into the collected deps.
-type EmbedDepsExported struct {
+// EmbedDeps carries an inject tag; embedding it is not how a service
+// declares a dependency (spec §4), exported or not.
+type EmbedDeps struct {
 	V embedStore `inject:""`
 }
 
-type embedPromoted struct {
-	EmbedDepsExported
+type embedCarrier struct {
+	EmbedDeps
 	N int
 }
 
-func (e *embedPromoted) Configured() error { return nil }
-func (e *embedPromoted) Run() int          { return 0 }
+func (e *embedCarrier) Configured() error { return nil }
+func (e *embedCarrier) Run() int          { return 0 }
 
-// embedHidden buries an inject tag under an unexported embedded
-// member — invisible per spec §4, refused at the catalog.
 type embedHidden struct {
 	H embedStore `inject:""`
 }
 
 type hiddenCarrier struct {
-	embedHidden
+	*embedHidden
 	N int
 }
 
 func (h *hiddenCarrier) Configured() error { return nil }
 func (h *hiddenCarrier) Run() int          { return 0 }
 
-func TestPromotedInjectIsCollected(t *testing.T) {
+// plainHelper has no inject tags: embedding it is ordinary Go.
+type plainHelper struct{ count int }
+
+type helperCarrier struct {
+	plainHelper
+	Dep embedStore `inject:""`
+}
+
+func (h *helperCarrier) Configured() error { return nil }
+func (h *helperCarrier) Run() int          { return 0 }
+
+func TestInjectThroughEmbeddedStructIsViolation(t *testing.T) {
 	reg, c := catalogWorld()
-	NewBareRegistration("embed/promoted", func() *embedPromoted { return &embedPromoted{} }).
-		Alias("promoted").registerInto(reg, c)
-	if c.Len() != 0 {
-		t.Fatalf("a promoted exported dep must register clean: %v", c.All())
+	NewBareRegistration("embed/carrier", func() *embedCarrier { return &embedCarrier{} }).
+		Alias("carrier").registerInto(reg, c)
+	NewBareRegistration("embed/hidden", func() *hiddenCarrier { return &hiddenCarrier{} }).
+		Alias("hidden").registerInto(reg, c)
+	all := ""
+	for _, err := range c.All() {
+		all += err.Error() + "\n"
 	}
-	d, _ := reg.ByID("embed/promoted")
-	if len(d.Deps) != 1 || d.Deps[0].Name != "V" {
-		t.Errorf("the promoted dep must be collected: %+v", d.Deps)
+	for _, want := range []string{
+		`service "embed/carrier" field V: field V is injected through the embedded struct EmbedDeps — declare the dependency on the service itself`,
+		`service "embed/hidden" field H: field H is injected through the embedded struct embedHidden — declare the dependency on the service itself`,
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	for _, id := range []string{"embed/carrier", "embed/hidden"} {
+		if d, registered := reg.ByID(id); registered && len(d.Deps) != 0 {
+			t.Errorf("%s: a dependency reached through embedding must never be collected: %+v", id, d.Deps)
+		}
 	}
 }
 
-func TestHiddenInjectIsViolation(t *testing.T) {
+func TestEmbeddedHelperWithoutTagsIsFine(t *testing.T) {
 	reg, c := catalogWorld()
-	NewBareRegistration("embed/hidden", func() *hiddenCarrier { return &hiddenCarrier{} }).
-		Alias("hidden").registerInto(reg, c)
-	want := `service "embed/hidden" field H: inject tag under the unexported embedded field embedHidden — an unexported member and everything under it is invisible`
-	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), want) {
-		t.Errorf("missing %q in %v", want, c.All())
+	NewBareRegistration("embed/helper", func() *helperCarrier { return &helperCarrier{} }).
+		Alias("helper").registerInto(reg, c)
+	if c.Len() != 0 {
+		t.Fatalf("a tagless embedded helper is ordinary Go: %v", c.All())
 	}
-	if d, registered := reg.ByID("embed/hidden"); registered {
-		for _, dep := range d.Deps {
-			if dep.Name == "H" {
-				t.Error("a hidden dep must never be collected")
-			}
-		}
+	d, _ := reg.ByID("embed/helper")
+	if len(d.Deps) != 1 || d.Deps[0].Name != "Dep" {
+		t.Errorf("the service's own dependency must be collected: %+v", d.Deps)
 	}
 }
