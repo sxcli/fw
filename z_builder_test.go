@@ -106,13 +106,13 @@ func TestCompositionViolations(t *testing.T) {
 		b    *AppBuilder
 		want string
 	}{
-		{"unknown accept", Builder().Accept("example.com/x/ghost"), "unknown service id"},
-		{"order without membership", Builder().Accept("example.com/x/a").Order("example.com/x/b"), "never admits"},
-		{"order twice", Builder().AcceptAll().Order("example.com/x/a", "example.com/x/a"), "ranked twice"},
-		{"order called twice", Builder().AcceptAll().Order("example.com/x/a").Order("example.com/x/b"), "declared once, atomically"},
+		{"unknown accept", Builder().Accept("example.com/x/ghost"), "no service is registered under the id"},
+		{"order without membership", Builder().Accept("example.com/x/a").Order("example.com/x/b"), "is either never registered or registered but not accepted with Accept("},
+		{"order twice", Builder().AcceptAll().Order("example.com/x/a", "example.com/x/a"), "is listed more than one time"},
+		{"order called twice", Builder().AcceptAll().Order("example.com/x/a").Order("example.com/x/b"), "Order invoked more than once"},
 		{"alias without membership", Builder().Accept("example.com/x/a").Alias("example.com/x/b", "bb"), "not accepted"},
-		{"alias reserved", Builder().AcceptAll().Alias("example.com/x/a", "core"), "reserved"},
-		{"alias collision by rename", Builder().AcceptAll().Alias("example.com/x/a", "bravo"), "claimed by both"},
+		{"alias reserved", Builder().AcceptAll().Alias("example.com/x/a", "core"), "Reserved by the framework"},
+		{"alias collision by rename", Builder().AcceptAll().Alias("example.com/x/a", "bravo"), "is used by both"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -135,7 +135,7 @@ func TestRegistrationAliasCollision(t *testing.T) {
 	NewBareRegistration("example.com/x/two", func() *bldB { return &bldB{} }).
 		Alias("same").registerInto(reg, c)
 	_, err := Builder().AcceptAll().buildFrom(reg, nil)
-	if err == nil || !strings.Contains(err.Error(), `alias "same" is claimed by both`) {
+	if err == nil || !strings.Contains(err.Error(), `alias "same" is used by both`) {
 		t.Errorf("colliding registration aliases must fail Build: %v", err)
 	}
 	// and the resolution is a composition rename
@@ -158,7 +158,7 @@ func TestConcreteTypeAcceptedTwice(t *testing.T) {
 		t.Errorf("accepting one of them is fine: %v", err)
 	}
 	_, err := Builder().AcceptAll().buildFrom(reg, nil)
-	if err == nil || !strings.Contains(err.Error(), `accepted twice — "example.com/x/one" (alias "one") and "example.com/y/one" (alias "uno")`) {
+	if err == nil || !strings.Contains(err.Error(), `is accepted twice: as "example.com/x/one" with alias "one" and as "example.com/y/one" with alias "uno"`) {
 		t.Errorf("accepting both must fail Build: %v", err)
 	}
 }
@@ -176,7 +176,7 @@ func TestDefaultOutsideDomainFailsAtBuild(t *testing.T) {
 		t.Fatalf("the commit is type-level only and must pass: %v", c.All())
 	}
 	_, err := Builder().AcceptAll().buildFrom(reg, nil)
-	if err == nil || !strings.Contains(err.Error(), "not among the allowed values") {
+	if err == nil || !strings.Contains(err.Error(), "has an invalid default value") {
 		t.Errorf("the value-level check belongs to Build: %v", err)
 	}
 }
@@ -273,11 +273,11 @@ func TestSharedConfigFileViolations(t *testing.T) {
 		b    *AppBuilder
 		want string
 	}{
-		{"not accepted", Builder().Accept("example.com/shop/serve", "example.com/shop/store").SharedConfigFile("shop", "example.com/shop/migrate"), "is not in Accept"},
+		{"not accepted", Builder().Accept("example.com/shop/serve", "example.com/shop/store").SharedConfigFile("shop", "example.com/shop/migrate"), "is either never registered or registered but not accepted with Accept("},
 		{"not an applet", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/store"), "is not an applet"},
-		{"two groups", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve").SharedConfigFile("ops", "example.com/shop/serve"), "already in the group"},
-		{"declared twice", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve").SharedConfigFile("shop", "example.com/shop/migrate"), "declared twice"},
-		{"outside alias", Builder().AcceptAll().SharedConfigFile("migrate", "example.com/shop/serve"), "is named migrate too"},
+		{"two groups", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve").SharedConfigFile("ops", "example.com/shop/serve"), "can only share one config file"},
+		{"declared twice", Builder().AcceptAll().SharedConfigFile("shop", "example.com/shop/serve").SharedConfigFile("shop", "example.com/shop/migrate"), "is already declared here: SharedConfigFile("},
+		{"outside alias", Builder().AcceptAll().SharedConfigFile("migrate", "example.com/shop/serve"), "the name \"migrate\" is already used by the alias of applet"},
 		{"bad name", Builder().AcceptAll().SharedConfigFile("Shop"), "lowercase letters"},
 	}
 	for _, tc := range cases {

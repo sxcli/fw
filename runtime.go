@@ -58,7 +58,7 @@ func (ca *catalog) index(c *fail.Collector) {
 		{
 			a := d.Alias
 			if prev, taken := ca.byAlias[a]; taken && prev != d {
-				c.Fail("operator name %q resolves to both %q and %q", a, prev.ID, d.ID)
+				c.Fail("internal error: alias %q resolves to both %q and %q. Please report this to the sxcli-fw project", a, prev.ID, d.ID)
 			} else {
 				ca.byAlias[a] = d
 			}

@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"sxcli.dev/rules/solver"
 	"sxcli.dev/rules/tags"
 
@@ -209,7 +208,7 @@ func (b *AppBuilder) admitted(cat *registry.Registry, c *fail.Collector) map[str
 // effective, mirroring Order's once-only semantics.
 func (b *AppBuilder) shortPriority(cat *registry.Registry, c *fail.Collector) []string {
 	if len(b.shortPrio) > 1 {
-		c.Fail(solver.ShortPriorityOnceRule, strings.Join(b.shortPrio[0], ", "), strings.Join(b.shortPrio[1], ", "))
+		c.Fail(solver.ShortPriorityOnceRule, solver.ShortArgPriorityCall(b.shortPrio[1]))
 	}
 	var priority []string
 	if len(b.shortPrio) > 0 {
@@ -233,7 +232,7 @@ func (b *AppBuilder) shortPriority(cat *registry.Registry, c *fail.Collector) []
 func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[string]int {
 	out := map[string]int{}
 	if len(b.orders) > 1 {
-		c.Fail(solver.OrderOnceRule, strings.Join(b.orders[0], ", "), strings.Join(b.orders[1], ", "))
+		c.Fail(solver.OrderOnceRule, solver.OrderCall(b.orders[1]))
 	}
 	var order []string
 	if len(b.orders) > 0 {
@@ -241,9 +240,9 @@ func (b *AppBuilder) ranked(accepted map[string]bool, c *fail.Collector) map[str
 	}
 	for i, id := range order {
 		if !accepted[id] {
-			c.Fail(solver.OrderNotAcceptedRule, id)
+			c.Fail(solver.OrderNotAcceptedRule, solver.OrderCall(order), id, id)
 		} else if _, dup := out[id]; dup {
-			c.Fail(solver.OrderRankedTwiceRule, id)
+			c.Fail(solver.OrderRankedTwiceRule, solver.OrderCall(order), id)
 		} else {
 			out[id] = i
 		}

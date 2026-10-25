@@ -30,7 +30,7 @@ func TestDisablingDispatchedAppletFails(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
-	if !strings.Contains(w.stderr.String(), `disable: unknown service "app"`) {
+	if !strings.Contains(w.stderr.String(), `--disable app: there is no service with ID or alias "app". Applets can't be disabled.`) {
 		t.Errorf("an applet must be unknown to controls:\n%s", w.stderr.String())
 	}
 }

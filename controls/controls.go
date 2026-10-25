@@ -90,20 +90,20 @@ func translate(c *fail.Collector, view ctlhook.View, raw any) graph.Controls {
 	ctl := graph.Controls{}
 	for _, ref := range k.Disable {
 		if coreRef(ref) {
-			c.Fail(solver.CoreControlRule, "disable", ref)
+			c.Fail(solver.CoreControlRule, "disable", ref, ref)
 		} else if r, ok := resolveRef(view, ref); ok {
 			ctl.Disable = append(ctl.Disable, r.ID)
 		} else {
-			c.Fail("disable: unknown service %q", ref)
+			c.Fail("--disable %s: there is no service with ID or alias %q. Applets can't be disabled.", ref, ref)
 		}
 	}
 	for _, ref := range k.Enable {
 		if coreRef(ref) {
-			c.Fail(solver.CoreControlRule, "enable", ref)
+			c.Fail(solver.CoreControlRule, "enable", ref, ref)
 		} else if r, ok := resolveRef(view, ref); ok {
 			ctl.Enable = append(ctl.Enable, r.ID)
 		} else {
-			c.Fail("enable: unknown service %q", ref)
+			c.Fail("--enable %s: there is no service with ID or alias %q. Applets can't be enabled.", ref, ref)
 		}
 	}
 	for _, entry := range k.Override {
@@ -114,7 +114,7 @@ func translate(c *fail.Collector, view ctlhook.View, raw any) graph.Controls {
 				if coreRef(to) {
 					offender = to
 				}
-				c.Fail(solver.CoreControlRule, "override", offender)
+				c.Fail(solver.CoreControlRule, "override", offender, offender)
 				continue
 			}
 			if ctl.Override == nil {
@@ -125,7 +125,7 @@ func translate(c *fail.Collector, view ctlhook.View, raw any) graph.Controls {
 					// the solver's core-family verdict is unreachable
 					// when the entry never forms (an unknown to side
 					// would fail first); same act, same words
-					c.Fail(solver.CoreControlRule, "override", from)
+					c.Fail(solver.CoreControlRule, "override", from, from)
 					continue
 				}
 				from = fromR.ID
@@ -133,10 +133,10 @@ func translate(c *fail.Collector, view ctlhook.View, raw any) graph.Controls {
 			if toR, ok := resolveRef(view, to); ok {
 				ctl.Override[from] = toR.ID
 			} else {
-				c.Fail("override: unknown substitute %q for %q", to, from)
+				c.Fail("--override %s: there is no service with ID or alias %q to substitute for %q. Applets can't be substituted.", entry, to, from)
 			}
 		} else {
-			c.Fail("override %q: expected from=to", entry)
+			c.Fail("--override %s: the value must have the form from=to, for example --override sqlite=mysql", entry)
 		}
 	}
 	return ctl

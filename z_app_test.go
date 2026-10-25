@@ -259,7 +259,7 @@ func TestControlsSpeakBothVocabularies(t *testing.T) {
 		t.Errorf("enable by id failed: code=%d log=%v", code, w.log)
 	}
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "--enable", "ghost"}, nil, nil, byAlias)
-	if code != 2 || !strings.Contains(w.stderr.String(), `enable: unknown service "ghost"`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), `--enable ghost: there is no service with ID or alias "ghost". Applets can't be enabled.`) {
 		t.Errorf("unknown ref must fail with the operator vocabulary: code=%d\n%s", code, w.stderr.String())
 	}
 }
@@ -268,7 +268,7 @@ func TestCoreFamilyIsNoControlTarget(t *testing.T) {
 	register := func(reg *registry.Registry, c *fail.Collector, log *[]string) {
 		registerSrv("srv")(reg, c, log)
 	}
-	want := "is a core service — the core family cannot be enabled, disabled or overridden"
+	want := "is a service of the framework itself and can't be enabled, disabled or overridden."
 	cases := [][]string{
 		{"bin", "--disable", "system"},
 		{"bin", "--enable", "system"},
@@ -363,7 +363,7 @@ func registerShorties(reg *registry.Registry, c *fail.Collector, log *[]string) 
 func TestShortArgPriorityEndToEnd(t *testing.T) {
 	// unresolved contest: startup violation naming both services
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, registerShorties)
-	if code != 2 || !strings.Contains(w.stderr.String(), `short -p is contested by "example.com/app/one" and "example.com/app/two"`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), `the short argument -p is used by "example.com/app/one" and "example.com/app/two"`) {
 		t.Errorf("an unresolved contest must refuse startup: code=%d\n%s", code, w.stderr.String())
 	}
 	// the composition's list resolves it; the loser is long-only
@@ -379,14 +379,14 @@ func TestShortArgPriorityEndToEnd(t *testing.T) {
 	_, err := Builder().AcceptAll().
 		ShortArgPriority("example.com/app/two").
 		ShortArgPriority("example.com/app/one").buildFrom(reg, catalogC)
-	if err == nil || !strings.Contains(err.Error(), "ShortArgPriority called twice") {
+	if err == nil || !strings.Contains(err.Error(), "ShortArgPriority invoked more than once") {
 		t.Errorf("the priority is declared once, atomically: %v", err)
 	}
 	reg, catalogC = catalogWorld()
 	registerShorties(reg, catalogC, &log)
 	_, err = Builder().AcceptAll().
 		ShortArgPriority("example.com/app/ghost").buildFrom(reg, catalogC)
-	if err == nil || !strings.Contains(err.Error(), `short-priority: unknown service id "example.com/app/ghost"`) {
+	if err == nil || !strings.Contains(err.Error(), `no service is registered under the id "example.com/app/ghost"`) {
 		t.Errorf("an unknown id must be a violation: %v", err)
 	}
 }
@@ -417,15 +417,15 @@ func TestDormantAppletsAreUnreachable(t *testing.T) {
 	}
 	// controls cannot name a dormant applet, by alias or id
 	w, code := appWorld(t, Builder().AcceptAll(), []string{"bin", "srv", "--enable", "two"}, nil, nil, twoApplets)
-	if code != 2 || !strings.Contains(w.stderr.String(), `enable: unknown service "two"`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), `--enable two: there is no service with ID or alias "two". Applets can't be enabled.`) {
 		t.Errorf("a dormant applet must be unknown to controls: code=%d\n%s", code, w.stderr.String())
 	}
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "srv", "--enable", "example.com/app/two"}, nil, nil, twoApplets)
-	if code != 2 || !strings.Contains(w.stderr.String(), `enable: unknown service "example.com/app/two"`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), `--enable example.com/app/two: there is no service with ID or alias "example.com/app/two". Applets can't be enabled.`) {
 		t.Errorf("a dormant applet id must be unknown to controls: code=%d\n%s", code, w.stderr.String())
 	}
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "srv", "--override", "example.com/app/srv=two"}, nil, nil, twoApplets)
-	if code != 2 || !strings.Contains(w.stderr.String(), `unknown`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), `there is no service with ID or alias "two" to substitute for`) {
 		t.Errorf("an applet substitute must be unknown: code=%d\n%s", code, w.stderr.String())
 	}
 	// a dependency naming a dormant applet's id is unresolvable
@@ -436,7 +436,7 @@ func TestDormantAppletsAreUnreachable(t *testing.T) {
 			Alias("two").registerInto(reg, c)
 	}
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "main"}, nil, nil, depOnApplet)
-	if code != 2 || !strings.Contains(w.stderr.String(), `unknown service id "example.com/app/two"`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), `the service "example.com/app/two" named by inject:"example.com/app/two" is either never registered`) {
 		t.Errorf("a named-id dep on a dormant applet must be unresolvable: code=%d\n%s", code, w.stderr.String())
 	}
 	// an interface dep never sees a dormant applet as a candidate,
@@ -448,7 +448,7 @@ func TestDormantAppletsAreUnreachable(t *testing.T) {
 			Alias("prov").Provides(Iface[catIface]()).registerInto(reg, c)
 	}
 	w, code = appWorld(t, Builder().AcceptAll(), []string{"bin", "wants"}, nil, nil, ifaceWorld)
-	if code != 2 || !strings.Contains(w.stderr.String(), "no registered service satisfies") {
+	if code != 2 || !strings.Contains(w.stderr.String(), "no accepted service has the type") {
 		t.Errorf("an interface dep must not see a dormant applet: code=%d\n%s", code, w.stderr.String())
 	}
 }
@@ -483,7 +483,7 @@ func TestOneAppletBackstop(t *testing.T) {
 	c := &fail.Collector{}
 	w.rt.plan(c, d, nil)
 	all := errText2(c)
-	if !strings.Contains(all, `unknown service id "example.com/app/two"`) || strings.Contains(all, "exactly one is ever active") {
+	if !strings.Contains(all, `the service "example.com/app/two" named by inject:"example.com/app/two" is either never registered`) || strings.Contains(all, "exactly one is ever active") {
 		t.Errorf("the dormant applet must be unresolvable even with an uncut working set, before any backstop: %v", c.All())
 	}
 }

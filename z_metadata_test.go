@@ -218,7 +218,7 @@ func TestDefaultOutsideDomainFailsTheRun(t *testing.T) {
 	if w.c.Len() != 0 {
 		t.Fatalf("the commit is type-level and must pass: %v", w.c.All())
 	}
-	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "not among the allowed values") {
+	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "has an invalid default value") {
 		t.Errorf("the run must refuse the bad default: code=%d\n%s", code, w.stderr.String())
 	}
 }
@@ -259,7 +259,7 @@ func TestSliceDefaultOutsideDomainFailsTheRun(t *testing.T) {
 		t.Fatalf("the commit is type-level and must pass: %v", w.c.All())
 	}
 	// the value-level default check belongs to Build
-	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "default element") {
+	if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), "It can contain only") {
 		t.Errorf("the run must name the offending default element: code=%d\n%s", code, w.stderr.String())
 	}
 }

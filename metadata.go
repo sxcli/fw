@@ -89,11 +89,11 @@ func defaultDomainViolations(c *fail.Collector, serviceID, name string, allowed 
 		if probe.IsSlice {
 			for i := 0; i < probe.Value.Len(); i++ {
 				if !metaHas(allowed, probe.Value.Index(i).Interface()) {
-					c.Fail("service %q metadata: %q default element %v is not among the allowed values %v", serviceID, name, probe.Value.Index(i).Interface(), allowed)
+					c.Fail("service %q metadata: field %q has an invalid default value: %v. It can contain only: %s", serviceID, name, probe.Value.Index(i).Interface(), tags.AllowedList(allowed))
 				}
 			}
 		} else if !metaHas(allowed, probe.Value.Interface()) {
-			c.Fail("service %q metadata: %q default %v is not among the allowed values %v", serviceID, name, probe.Value.Interface(), allowed)
+			c.Fail("service %q metadata: field %q has an invalid default value: %v. It can be one of: %s", serviceID, name, probe.Value.Interface(), tags.AllowedList(allowed))
 		}
 	}
 }
