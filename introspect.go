@@ -206,11 +206,11 @@ func (i *Introspector) Positionals() []system.PosInfo {
 	for k := 0; k < len(indexed); k++ {
 		f := indexed[k]
 		out = append(out, system.PosInfo{Name: f.PosName,
-			Usage: f.Usage, Type: f.Type, Allowed: f.Allowed, Hint: f.Hint})
+			Usage: f.Usage, Type: f.Type, Allowed: f.Allowed, Min: f.Min, Max: f.Max, Hint: f.Hint})
 	}
 	if rest != nil {
 		out = append(out, system.PosInfo{Name: rest.PosName,
-			Usage: rest.Usage, Type: rest.Type, Allowed: rest.Allowed,
+			Usage: rest.Usage, Type: rest.Type, Allowed: rest.Allowed, Min: rest.Min, Max: rest.Max,
 			Hint: rest.Hint, Rest: true})
 	}
 	return out
@@ -230,6 +230,8 @@ func argInfos(sch *engine.Schema) []ArgInfo {
 				Type:    f.Type,
 				IsSlice: f.IsSlice,
 				Allowed: f.Allowed,
+				Min:     f.Min,
+				Max:     f.Max,
 				Doc:     f.Doc,
 				Hint:    f.Hint,
 			})

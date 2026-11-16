@@ -55,8 +55,8 @@ func TestInjectThroughEmbeddedStructIsViolation(t *testing.T) {
 		all += err.Error() + "\n"
 	}
 	for _, want := range []string{
-		`service "embed/carrier" field V: field V is injected through the embedded struct EmbedDeps — declare the dependency on the service itself`,
-		`service "embed/hidden" field H: field H is injected through the embedded struct embedHidden — declare the dependency on the service itself`,
+		`service carrier(embed/carrier) field V: inject tag is only supported on the service's own fields`,
+		`service hidden(embed/hidden) field H: inject tag is only supported on the service's own fields`,
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in:\n%s", want, all)

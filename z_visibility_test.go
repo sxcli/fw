@@ -111,7 +111,7 @@ func TestHiddenAppletNotMatchedByBasename(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2; log: %v", code, w.log)
 	}
-	if !strings.Contains(w.stderr.String(), "does not name an applet") {
+	if !strings.Contains(w.stderr.String(), "is not an applet of this binary") {
 		t.Errorf("usage dump wrong:\n%s", w.stderr.String())
 	}
 }
@@ -126,7 +126,7 @@ func TestVisibilityOnNonAppletFails(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if !strings.Contains(w.stderr.String(), "apply only to applets") {
+	if !strings.Contains(w.stderr.String(), "Hidden() can be called only for applets") {
 		t.Errorf("violation not reported:\n%s", w.stderr.String())
 	}
 }

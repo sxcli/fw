@@ -18,9 +18,12 @@ package syslog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"log/syslog"
+	"net"
+	"sort"
 	"strings"
 
 	"sxcli.dev/fw"
@@ -38,13 +41,8 @@ func init() {
 				"Level": fw.FieldMetadata[string]{
 					Doc: "any form slog.Level understands: debug, info, warn, error, case-insensitive, offsets like warn+2",
 				},
-				"Format": fw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
-				"Facility": fw.FieldMetadata[string]{Allowed: []string{
-					"kern", "user", "mail", "daemon", "auth", "syslog",
-					"lpr", "news", "uucp", "cron", "authpriv", "ftp",
-					"local0", "local1", "local2", "local3",
-					"local4", "local5", "local6", "local7",
-				}},
+				"Format":   fw.FieldMetadata[string]{Allowed: []string{"text", "json"}},
+				"Facility": fw.FieldMetadata[string]{Allowed: facilityNames()},
 				"Network": fw.FieldMetadata[string]{
 					// open domain: any network syslog.Dial accepts
 					// (udp, tcp, unixgram, ...); empty means the local
@@ -60,6 +58,18 @@ func init() {
 			},
 		}).
 		Register()
+}
+
+// facilityNames lists the facilities map's keys, sorted, for the
+// Facility field's Allowed values: the engine admits exactly the names
+// the map knows.
+func facilityNames() []string {
+	names := make([]string, 0, len(facilities))
+	for name := range facilities {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 var facilities = map[string]syslog.Priority{
@@ -90,15 +100,14 @@ func dropTimeLevel(groups []string, a slog.Attr) slog.Attr {
 func (s *Syslog) Configured() error {
 	var err error
 	var level slog.Level
-	facility, knownFacility := facilities[s.cfg.Facility]
+	// Format and Facility hold one of their Allowed values by the time
+	// this runs: the registration's metadata makes the engine refuse any
+	// other, and the Allowed facilities are the map's own keys.
+	facility := facilities[s.cfg.Facility]
 	if err = level.UnmarshalText([]byte(s.cfg.Level)); err != nil {
-		err = fmt.Errorf("syslog: invalid level %q: %v", s.cfg.Level, err)
-	} else if s.cfg.Format != "text" && s.cfg.Format != "json" {
-		err = fmt.Errorf("syslog: invalid format %q (text or json)", s.cfg.Format)
-	} else if !knownFacility {
-		err = fmt.Errorf("syslog: unknown facility %q", s.cfg.Facility)
+		err = fmt.Errorf("unknown log level %q. Use debug, info, warn or error, optionally with an offset like info+5", s.cfg.Level)
 	} else if (s.cfg.Network == "") != (s.cfg.Address == "") {
-		err = fmt.Errorf("syslog: network and address must be set together")
+		err = fmt.Errorf("--syslog-network and --syslog-address must be set together, or neither")
 	} else {
 		var out *syslog.Writer
 		if out, err = syslog.Dial(s.cfg.Network, s.cfg.Address, facility|syslog.LOG_INFO, s.cfg.Tag); err == nil {
@@ -111,7 +120,17 @@ func (s *Syslog) Configured() error {
 				s.inner = slog.NewTextHandler(&s.buf, opts)
 			}
 		} else {
-			err = fmt.Errorf("syslog: %v", err)
+			// the library's error repeats the dial target; the message
+			// names it in the operator's words and keeps the cause
+			var opErr *net.OpError
+			if errors.As(err, &opErr) && opErr.Err != nil {
+				err = opErr.Err
+			}
+			target := "the local syslog socket"
+			if s.cfg.Network != "" {
+				target = fmt.Sprintf("the syslog server at %s %s", s.cfg.Network, s.cfg.Address)
+			}
+			err = fmt.Errorf("%s could not be reached: %v", target, err)
 		}
 	}
 	return err

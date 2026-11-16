@@ -52,7 +52,7 @@ func Resolve(c *fail.Collector, reg *registry.Registry, root *registry.Descripto
 		if v.Owner == "" {
 			c.Fail("%s", body)
 		} else {
-			c.Fail("service %q field %s: %s", v.Owner, v.Dep, body)
+			c.Fail("service %s field %s: %s", ownerName(reg, root, v.Owner), v.Dep, body)
 		}
 	}
 	var out Result
@@ -142,4 +142,14 @@ func (res Result) Subtree(id string) (Result, bool) {
 		}
 	}
 	return out, ok
+}
+
+// ownerName prints a violation's owner as alias(id), looking the alias
+// up in the registry; the virtual root is not registered and prints
+// as its id.
+func ownerName(reg *registry.Registry, root *registry.Descriptor, id string) string {
+	if d, ok := reg.ByID(id); ok {
+		return solver.ServiceName(d.Alias, id)
+	}
+	return solver.ServiceName(root.Alias, id)
 }

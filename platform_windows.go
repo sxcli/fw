@@ -23,6 +23,9 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
+
+	"sxcli.dev/fw/internal/registry"
+	"sxcli.dev/rules/solver"
 )
 
 // platformMain detects service mode: under the SCM it hands control to
@@ -94,13 +97,13 @@ func (h *scmHandler) Execute(args []string, req <-chan svc.ChangeRequest, status
 		argv = h.argv
 	}
 	status <- svc.Status{State: svc.StartPending}
-	rt := productionRuntime(h.app, argv, func(applet Applet) int {
+	rt := productionRuntime(h.app, argv, func(d *registry.Descriptor, applet Applet) int {
 		var out int
 		if scmApplet, ok := applet.(SCMApplet); ok {
 			h.specific, h.code = scmApplet.Execute(argv, req, status)
 			out = int(h.code)
 		} else {
-			slog.Error("applet does not implement SCMApplet and cannot run as a Windows service")
+			slog.Error(solver.ServiceName(d.Alias, d.ID) + " cannot run as a Windows service: it does not implement fw.SCMApplet")
 			h.code = 2
 			out = 2
 		}

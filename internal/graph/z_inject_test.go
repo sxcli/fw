@@ -16,17 +16,11 @@ package graph
 
 import (
 	"testing"
-
-	"sxcli.dev/conf/fail"
 )
 
 func mustInject(t *testing.T, res Result) {
 	t.Helper()
-	c := &fail.Collector{}
-	res.Inject(c)
-	if c.Len() != 0 {
-		t.Fatalf("unexpected inject errors: %v", c.All())
-	}
+	res.Inject()
 }
 
 func TestInjectWiresInterfaceAndConcreteFields(t *testing.T) {

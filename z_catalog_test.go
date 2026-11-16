@@ -115,31 +115,31 @@ func TestCommitViolations(t *testing.T) {
 			r := chain("example.com/x/cat", &built)
 			r.aliases = nil
 			return r
-		}, "an alias is required"},
+		}, "must declare an alias"},
 		{"bad alias charset", func() *Registration[catService] {
 			return bareChain("example.com/x/cat", &built).Alias("Bad_Name")
 		}, "lowercase letters, digits and hyphens"},
 		{"reserved alias", func() *Registration[catService] {
 			return bareChain("example.com/x/cat", &built).Alias("core")
-		}, "reserved"},
+		}, "Reserved by the framework"},
 		{"alias declared twice", func() *Registration[catService] {
 			return chain("example.com/x/cat", &built).Alias("dos")
-		}, "Alias called twice"},
+		}, "has already been assigned alias"},
 		{"bad id shape", func() *Registration[catService] {
 			return chain("Example.com//x", &built)
 		}, "look like an import path"},
 		{"reserved id", func() *Registration[catService] {
 			return chain(CoreID, &built)
-		}, "reserved for the framework core"},
+		}, "is already in use. Reserved by the framework"},
 		{"provides not implemented", func() *Registration[catService] {
 			return chain("example.com/x/cat", &built).Provides(Iface[Translator]())
-		}, "does not implement"},
+		}, "declares an interface that"},
 		{"non-interface token", func() *Registration[catService] {
 			return chain("example.com/x/cat", &built).Provides(nil)
-		}, "interface tokens"},
+		}, "which is not an interface"},
 		{"visibility on non-applet", func() *Registration[catService] {
 			return chain("example.com/x/cat", &built).Hidden()
-		}, "apply only to applets"},
+		}, "Hidden() can be called only for applets"},
 		{"nil accessor", func() *Registration[catService] {
 			r := NewRegistration[catService, catCfg]("example.com/x/cat", func() *catService { return &catService{} }, nil)
 			return r.Alias("cat")
@@ -147,11 +147,11 @@ func TestCommitViolations(t *testing.T) {
 		{"metadata unknown key", func() *Registration[catService] {
 			return chain("example.com/x/cat", &built).
 				Metadata(&Metadata{Fields: map[string]any{"Nope": FieldMetadata[string]{}}})
-		}, "names no config field"},
+		}, "names no field of the config struct"},
 		{"metadata type mismatch", func() *Registration[catService] {
 			return chain("example.com/x/cat", &built).
 				Metadata(&Metadata{Fields: map[string]any{"Level": FieldMetadata[int]{Allowed: []int{1}}}})
-		}, "allows int values"},
+		}, "has Allowed values of type int"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestDuplicateIDAcrossCommits(t *testing.T) {
 	chain("example.com/x/cat", &built).registerInto(reg, c)
 	NewBareRegistration("example.com/x/cat", func() *catApplet { return &catApplet{} }).
 		Alias("othercat").registerInto(reg, c)
-	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), `"example.com/x/cat" already in use`) {
+	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), `service with id "example.com/x/cat" has already been registered`) {
 		t.Errorf("two packages claiming one id must fail at the catalog: %v", c.All())
 	}
 }
@@ -194,7 +194,7 @@ func TestDoubleCommitOfOneChain(t *testing.T) {
 	r := chain("example.com/x/cat", &built)
 	r.registerInto(reg, c)
 	r.registerInto(reg, c)
-	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), `"example.com/x/cat" already in use`) {
+	if c.Len() == 0 || !strings.Contains(c.All()[0].Error(), `service with id "example.com/x/cat" has already been registered`) {
 		t.Errorf("double commit must be a violation: %v", c.All())
 	}
 }

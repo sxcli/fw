@@ -168,7 +168,7 @@ func TestAliasDeclaredOnce(t *testing.T) {
 	if c.Len() == 0 {
 		t.Fatal("a second Alias call must be a violation")
 	}
-	if !strings.Contains(c.All()[0].Error(), `Alias called twice ("two"; then "dos")`) {
+	if !strings.Contains(c.All()[0].Error(), `Alias("dos"): the service has already been assigned alias: "two"`) {
 		t.Errorf("wrong verdict: %v", c.All())
 	}
 }
@@ -483,7 +483,7 @@ func TestOneAppletBackstop(t *testing.T) {
 	c := &fail.Collector{}
 	w.rt.plan(c, d, nil)
 	all := errText2(c)
-	if !strings.Contains(all, `the service "example.com/app/two" named by inject:"example.com/app/two" is either never registered`) || strings.Contains(all, "exactly one is ever active") {
+	if !strings.Contains(all, `the service "example.com/app/two" named by inject:"example.com/app/two" is either never registered`) || strings.Contains(all, "applets instead of one") {
 		t.Errorf("the dormant applet must be unresolvable even with an uncut working set, before any backstop: %v", c.All())
 	}
 }
@@ -530,12 +530,12 @@ func TestSuperuserGate(t *testing.T) {
 	asRoot := func(w *world) { w.rt.superuser = func() bool { return true } }
 	// execution refuses, naming the applet
 	w, code := appWorldWith(t, Builder().AcceptAll(), []string{"bin"}, nil, nil, register, asRoot)
-	if code != 2 || !strings.Contains(w.stderr.String(), `applet "srv" does not support running as root`) {
+	if code != 2 || !strings.Contains(w.stderr.String(), "this program refuses to run as root") {
 		t.Errorf("root must refuse without the declaration: code=%d\n%s", code, w.stderr.String())
 	}
 	// --help still serves, with the warning
 	w, code = appWorldWith(t, Builder().AcceptAll(), []string{"bin", "--help"}, nil, nil, register, asRoot)
-	if code != 0 || !strings.Contains(w.stderr.String(), "warning: running as root is not supported") {
+	if code != 0 || !strings.Contains(w.stderr.String(), "warning: this program refuses to run as root. Only --help is available") {
 		t.Errorf("help must serve with the warning: code=%d\n%s", code, w.stderr.String())
 	}
 	if !strings.Contains(w.stdout.String(), "--greeting") {
@@ -543,7 +543,7 @@ func TestSuperuserGate(t *testing.T) {
 	}
 	// --applets has no applet to vouch for the run
 	w, code = appWorldWith(t, Builder().AcceptAll(), []string{"bin", "--applets"}, nil, nil, register, asRoot)
-	if code != 2 || !strings.Contains(w.stderr.String(), "--applets: running as root is not supported") {
+	if code != 2 || !strings.Contains(w.stderr.String(), "--applets: this program refuses to run as root") {
 		t.Errorf("the listing must refuse as root: code=%d\n%s", code, w.stderr.String())
 	}
 	// the declaration lets everything through
@@ -568,7 +568,7 @@ func TestBuildSurfacesCommitViolations(t *testing.T) {
 	NewBareRegistration("example.com/app/bad", func() *appAux { return &appAux{} }).
 		registerInto(reg, catalogC) // no alias: a commit violation
 	_, err := Builder().AcceptAll().buildFrom(reg, catalogC)
-	if err == nil || !strings.Contains(err.Error(), "an alias is required") {
+	if err == nil || !strings.Contains(err.Error(), "must declare an alias") {
 		t.Errorf("Build must surface commit violations: %v", err)
 	}
 }

@@ -16,25 +16,23 @@ package graph
 
 import (
 	"reflect"
-
-	"sxcli.dev/conf/fail"
 )
 
 // Inject writes every resolved binding into its owner's inject field.
-// Target types were verified during resolution, so Set cannot mismatch;
-// the one runtime failure mode is an inject field promoted through a nil
-// embedded pointer, which is recorded per field instead of panicking.
+// Target types were verified during resolution, so Set cannot mismatch,
+// and an inject field is one of the service type's own fields, so no
+// nil embedded pointer can sit on the way: injection cannot fail.
 // Fields with no targets (unmatched optional dependencies) are left
 // untouched, so an optional slice stays nil rather than empty.
-func (res Result) Inject(c *fail.Collector) {
-	res.InjectExcept(c, nil)
+func (res Result) Inject() {
+	res.InjectExcept(nil)
 }
 
 // InjectExcept injects every member whose id is not in skip — the
 // members another pass (the translator-first Configured, spec §7)
 // already injected: re-injecting them would silently rewire fields
 // their Configured may have legitimately touched.
-func (res Result) InjectExcept(c *fail.Collector, skip map[string]bool) {
+func (res Result) InjectExcept(skip map[string]bool) {
 	for _, m := range res.Ordered {
 		if !skip[m.Desc.ID] {
 			v := reflect.ValueOf(m.Desc.Instance).Elem()

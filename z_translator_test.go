@@ -113,7 +113,7 @@ func TestTwoTranslatorsAreAViolation(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
-	if !strings.Contains(w.stderr.String(), "both provide Translator") {
+	if !strings.Contains(w.stderr.String(), "both provide fw.Translator") {
 		t.Errorf("violation not reported:\n%s", w.stderr.String())
 	}
 }
@@ -202,7 +202,7 @@ func TestTranslatorDepFailureIsFatalExactlyOnce(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("a failing subtree dependency must be fatal: exit %d", code)
 	}
-	if !strings.Contains(w.stderr.String(), `service "test/faildep": dep broke`) {
+	if !strings.Contains(w.stderr.String(), `service faildep(test/faildep): dep broke`) {
 		t.Errorf("recorded error not surfaced:\n%s", w.stderr.String())
 	}
 	if failing.calls != 1 {

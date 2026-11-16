@@ -208,15 +208,15 @@ type runtime struct {
 	lstat          func(string) error
 	open           func(string) (io.ReadCloser, error)
 	openPinned     func(string) (io.ReadCloser, error)
-	configMaxBytes uint64             // effective config file size cap in bytes; 0 = unlimited
-	execApplet     func(Applet) int   // nil → applet.Run(); the SCM handler overrides
-	serviceDebug   func([]string) int // Windows builds: runs the vector under svc/debug when --scm-debug asks; nil elsewhere and inside the handler
-	superuser      func() bool        // platform truth: id 0 on unix, elevated token on Windows
+	configMaxBytes uint64                                 // effective config file size cap in bytes; 0 = unlimited
+	execApplet     func(*registry.Descriptor, Applet) int // nil → applet.Run(); the Windows service handler overrides
+	serviceDebug   func([]string) int                     // Windows builds: runs the vector under svc/debug when --scm-debug asks; nil elsewhere and inside the handler
+	superuser      func() bool                            // platform truth: id 0 on unix, elevated token on Windows
 	reported       bool
 	translatorID   string // id of the sole Translator-providing service, "" = none
 }
 
-func productionRuntime(app *App, argv []string, execApplet func(Applet) int) *runtime {
+func productionRuntime(app *App, argv []string, execApplet func(*registry.Descriptor, Applet) int) *runtime {
 	return &runtime{
 		catalog:   catalog{reg: app.reg, suppressed: suppressedCore, shortPriority: app.shortPriority, sharedFiles: app.sharedFiles},
 		c:         &fail.Collector{},

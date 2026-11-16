@@ -139,8 +139,6 @@ func TestConfiguredRejections(t *testing.T) {
 		cfg  Config
 	}{
 		{"bad level", Config{Level: "loud", Format: "text", Facility: "daemon"}},
-		{"bad format", Config{Level: "info", Format: "xml", Facility: "daemon"}},
-		{"bad facility", Config{Level: "info", Format: "text", Facility: "kitchen"}},
 		{"network without address", Config{Level: "info", Format: "text", Facility: "daemon", Network: "udp"}},
 		{"undialable", Config{Level: "info", Format: "text", Facility: "daemon", Network: "unixgram", Address: "/nonexistent/sock"}},
 	}

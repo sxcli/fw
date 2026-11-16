@@ -80,6 +80,15 @@ func NewBareRegistration[T any](id string, factory func() *T) *Registration[T] {
 	return &Registration[T]{id: id, factory: factory}
 }
 
+// registeredAlias is the chain's alias when exactly one was declared,
+// "" otherwise; the messages then name the service by its id alone.
+func (r *Registration[T]) registeredAlias() string {
+	if len(r.aliases) == 1 {
+		return r.aliases[0]
+	}
+	return ""
+}
+
 // Iface returns the type token of an interface, for Provides. The one
 // bridge the no-generic-methods rule forces.
 func Iface[I any]() reflect.Type {
@@ -224,12 +233,13 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		IDClaimed:     idClaimed,
 		UpgradeSteps:  len(r.steps),
 	}
+	name := solver.ServiceName(r.registeredAlias(), r.id)
 	violations := registration.Check(chain)
 	for _, v := range violations {
 		if v.Bare {
 			c.Fail("%s", v.Body)
 		} else {
-			c.Fail("service %q: %s", r.id, v.Body)
+			c.Fail("service %s: %s", name, v.Body)
 		}
 	}
 	// the flow and the words are the shared rules'; only the reflect
@@ -237,10 +247,15 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	providesBodies := solver.CheckProvides(r.provides,
 		func(it reflect.Type) bool { return it != nil && it.Kind() == reflect.Interface },
 		func(it reflect.Type) bool { return concrete.Implements(it) },
-		func(it reflect.Type) string { return tags.TypeID(it) },
+		func(it reflect.Type) string {
+			if it == nil {
+				return ""
+			}
+			return tags.TypeID(it)
+		},
 		tags.TypeID(concrete))
 	for _, body := range providesBodies {
-		c.Fail("service %q: %s", r.id, body)
+		c.Fail("service %s: %s", name, body)
 	}
 	if len(r.steps) == 0 || r.cfgType != nil {
 		// the chain's SHAPE is type-level work and the commit owns it
@@ -250,7 +265,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 		// above. The factory-default version, an instance fact, stays
 		// schema-time.
 		for _, body := range engine.ChainShape(r.steps, r.cfgType) {
-			c.Fail("service %q: %s", r.id, body)
+			c.Fail("service %s: %s", name, body)
 		}
 	}
 	if r.cfgType != nil {
@@ -263,7 +278,7 @@ func (r *Registration[T]) registerInto(reg *registry.Registry, c *fail.Collector
 	}
 	var meta any
 	if r.metadata != nil {
-		meta = normalizeMetadata(c, r.id, r.metadata, r.cfgType != nil, engine.ProbeType(r.cfgType), false)
+		meta = normalizeMetadata(c, solver.ServiceName(r.registeredAlias(), r.id), r.metadata, r.cfgType != nil, engine.ProbeType(r.cfgType), false)
 	}
 	if c.Len() == before {
 		r.committed = true

@@ -356,8 +356,8 @@ func defaultsInDomain(d *registry.Descriptor, c *fail.Collector) {
 	if meta, has := d.Metadata.(*engine.Meta); has && d.ConfigPtr != nil {
 		probes := engine.ProbeFields(d.ConfigPtr)
 		for name, fm := range meta.Fields {
-			if probe, known := probes[name]; known && len(fm.Allowed) > 0 {
-				defaultDomainViolations(c, d.ID, name, fm.Allowed, probe)
+			if probe, known := probes[name]; known && (len(fm.Allowed) > 0 || fm.Min != nil || fm.Max != nil) {
+				defaultDomainViolations(c, solver.ServiceName(d.Alias, d.ID), name, fm, probe)
 			}
 		}
 	}

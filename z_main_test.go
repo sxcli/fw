@@ -319,7 +319,7 @@ func TestRegistrationErrorsAbort(t *testing.T) {
 	if code := w.run(); code != 2 {
 		t.Fatalf("exit code = %d, want 2", code)
 	}
-	if !strings.Contains(w.stderr.String(), `"test/app" already in use`) {
+	if !strings.Contains(w.stderr.String(), `service with id "test/app" has already been registered`) {
 		t.Errorf("violation not reported:\n%s", w.stderr.String())
 	}
 }

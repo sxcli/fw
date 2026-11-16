@@ -95,9 +95,11 @@ func TestConfiguredRejections(t *testing.T) {
 	}{
 		{"missing path", Config{Level: "info", Format: "text", Mode: "0600"}},
 		{"bad level", Config{Path: filepath.Join(dir, "a.log"), Level: "loud", Format: "text", Mode: "0600"}},
-		{"bad format", Config{Path: filepath.Join(dir, "b.log"), Level: "info", Format: "xml", Mode: "0600"}},
 		{"bad mode", Config{Path: filepath.Join(dir, "c.log"), Level: "info", Format: "text", Mode: "rw-r"}},
-		{"unopenable path", Config{Path: filepath.Join(dir, "no", "such", "dir", "d.log"), Level: "info", Format: "text", Mode: "0600"}},
+		{"parent is a file", Config{Path: filepath.Join(dir, "plain", "d.log"), Level: "info", Format: "text", Mode: "0600"}},
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plain"), nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,8 +110,24 @@ func TestConfiguredRejections(t *testing.T) {
 			}
 		})
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
-		t.Errorf("a rejected config must never create a file: %v", entries)
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("a rejected config must never create a file; only the planted one may be here: %v", entries)
+	}
+}
+
+func TestMissingLogDirectoryIsCreated(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "no", "such", "dir")
+	s := &File{cfg: Config{Path: filepath.Join(dir, "d.log"), Level: "info", Format: "text", Mode: "0600"}}
+	if err := s.Configured(); err != nil {
+		t.Fatalf("the sink must create the log directory: %v", err)
+	}
+	defer s.Stop()
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o700 {
+		t.Errorf("a 0600 log file gets a 0700 directory, got %v", fi.Mode().Perm())
 	}
 }
 

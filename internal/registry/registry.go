@@ -19,6 +19,8 @@ import (
 
 	"sxcli.dev/rules/grammar"
 	"sxcli.dev/rules/registration"
+	"sxcli.dev/rules/solver"
+	"sxcli.dev/rules/tags"
 
 	"sxcli.dev/conf/fail"
 )
@@ -98,7 +100,7 @@ func (r *Registry) Virtual(id string, instance any, c *fail.Collector) *Descript
 		// registry itself is never mutated
 		collectDeps(d, c)
 	} else {
-		c.Fail("virtual service %q: instance must be a non-nil pointer to struct", id)
+		c.Fail("internal error: the core root is a nil pointer. Please report this to the sxcli-fw project")
 	}
 	return d
 }
@@ -138,12 +140,13 @@ func (r *Registry) Retain(keep map[string]bool) {
 // only (spec §4). An embedded struct carrying an inject tag anywhere
 // under it is a violation — a service declares its own dependencies.
 func collectDeps(d *Descriptor, c *fail.Collector) {
+	name := solver.ServiceName(d.Alias, d.ID)
 	root := d.Concrete.Elem()
 	for i := 0; i < root.NumField(); i++ {
 		f := root.Field(i)
 		if f.Anonymous {
 			for _, inner := range injectedUnder(f.Type, "") {
-				c.Fail("service %q field %s: "+registration.InjectEmbeddedRule, d.ID, inner, inner, f.Name)
+				c.Fail("service %s field %s: "+registration.InjectEmbeddedRule, name, inner)
 			}
 		} else if tag, tagged := f.Tag.Lookup("inject"); tagged {
 			if f.IsExported() {
@@ -155,23 +158,23 @@ func collectDeps(d *Descriptor, c *fail.Collector) {
 							dep.Type = f.Type.Elem()
 							d.Deps = append(d.Deps, dep)
 						} else {
-							c.Fail("service %q field %s: "+registration.InjectSliceRule, d.ID, f.Name)
+							c.Fail("service %s field %s: "+registration.InjectSliceRule, name, f.Name, tags.TypeID(f.Type))
 						}
 					} else if f.Type.Kind() == reflect.Interface || f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
 						if len(ids) <= 1 {
 							dep.Type = f.Type
 							d.Deps = append(d.Deps, dep)
 						} else {
-							c.Fail("service %q field %s: "+registration.InjectOneIDRule, d.ID, f.Name)
+							c.Fail("service %s field %s: "+registration.InjectOneIDRule, name, f.Name, tag)
 						}
 					} else {
-						c.Fail("service %q field %s: "+registration.InjectShapeRule, d.ID, f.Name)
+						c.Fail("service %s field %s: "+registration.InjectShapeRule, name, f.Name, tags.TypeID(f.Type))
 					}
 				} else {
-					c.Fail("service %q field %s: %v", d.ID, f.Name, err)
+					c.Fail("service %s field %s: %v", name, f.Name, err)
 				}
 			} else {
-				c.Fail("service %q field %s: "+registration.InjectUnexportedRule, d.ID, f.Name)
+				c.Fail("service %s field %s: "+registration.InjectUnexportedRule, name, f.Name)
 			}
 		}
 	}

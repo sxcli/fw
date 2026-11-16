@@ -342,11 +342,15 @@ type Metadata struct {
 }
 type FieldMetadata[T any] struct {
     Allowed []T       // closed value domain; enforced by the framework
+    Min     *T        // lowest accepted value, inclusive; nil = none; built with Bound
+    Max     *T        // highest accepted value, inclusive; nil = none
     Doc     string    // long-form field description; usage: stays the one-liner
     Hint    ValueHint // advisory: what the value denotes (HintFile,
                       // HintDirectory, HintServiceID) — for tooling,
                       // never enforced
 }
+
+func Bound[T cmp.Ordered](v T) *T // a Min or Max value; the constraint refuses a bool
 ```
 
 A **Hint** declares what a value *denotes* so tooling (completion,
@@ -365,20 +369,24 @@ Validated at registration with everything else: an unknown field key, a
 non-FieldMetadata value, field metadata on a config-less service, an
 Allowed element type that does not match the field's type (same kind
 and convertible; element type for slices), a **registered default
-outside its own declared domain**, a hint on a non-string field (paths
+outside its own declared domain or bounds**, a hint on a non-string field (paths
 are strings), an unknown hint value, or a hint combined with a
 non-empty Allowed on the same field (a closed enum and "it's a file"
-contradict each other — declare one) are violations. Description alone
-is fine for config-less services.
+contradict each other — declare one) are violations. So are the bound
+mistakes (2026-10-26): a Min or Max whose T does not fit the field's
+type, a bound beside a non-empty Allowed, Min greater than Max, and a
+bound on a bool field, the one supported type outside cmp.Ordered.
+Strings are bounded like numbers, by Go's own ordering. Description
+alone is fine for config-less services.
 
-A non-empty `Allowed` is **enforced, not advisory**: every write path —
+A non-empty `Allowed`, and a `Min` or `Max`, are **enforced, not advisory**: every write path —
 strict argument parse, environment application, config file
-application — rejects a value outside the domain as a loud startup
-violation naming the source and the allowed set (slice fields checked
+application — rejects a value outside the domain or the bounds as a loud startup
+violation naming the source and the allowed set or the bound crossed (slice fields checked
 per element). Services may keep their own checks as defense in depth,
 but the declared contract is honored by the machinery, and completion
-services can trust it via `ArgInfo.Allowed`; the advisory hint travels
-the same road as `ArgInfo.Hint`.
+services can trust it via `ArgInfo.Allowed`, `ArgInfo.Min` and `ArgInfo.Max`; the advisory hint travels
+the same road as `ArgInfo.Hint`. `--help` prints neither the list nor the bounds yet (TODO).
 
 `Register` is typically called from package `init()` — cataloging is
 the one thing init still does, and it is inert; a single-file tool may
@@ -1757,8 +1765,9 @@ The core assembles a **multihandler** over every enabled sink:
   deadline-guaranteed remote logging is better served by the future
   async decorator (Open Items), which bounds any slow sink.
 - A sink SHOULD be **fully operational when `Configured()` returns** —
-  it acquires its own resources there (the file sink opens its file in
-  Configured, not Start), so it is live for the buffer replay at the
+  it acquires its own resources there (the file sink creates the log
+  file's directory and opens the file in Configured, not Start), so it
+  is live for the buffer replay at the
   swap and captures the complete startup history. `Start` is typically a
   no-op (sinks stay `Starter`s because only started Starters receive
   `Stop`, which is where resources close). A sink that *cannot* be

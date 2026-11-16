@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sxcli.dev/fw/system"
 	"testing"
+	"time"
 )
 
 // metaProbe introspects its OWN target view; the extra dependency
@@ -89,9 +90,9 @@ func TestMetadataViolations(t *testing.T) {
 		md   *Metadata
 		want string
 	}{
-		{"unknown field", &Metadata{Fields: map[string]any{"Nope": FieldMetadata[string]{}}}, "names no config field"},
-		{"wrong value type", &Metadata{Fields: map[string]any{"Flag": "not field metadata"}}, "must be a FieldMetadata"},
-		{"type mismatch", &Metadata{Fields: map[string]any{"Flag": FieldMetadata[int]{Allowed: []int{1, 2}}}}, "allows int values"},
+		{"unknown field", &Metadata{Fields: map[string]any{"Nope": FieldMetadata[string]{}}}, "names no field of the config struct"},
+		{"wrong value type", &Metadata{Fields: map[string]any{"Flag": "not field metadata"}}, "it must be a FieldMetadata"},
+		{"type mismatch", &Metadata{Fields: map[string]any{"Flag": FieldMetadata[int]{Allowed: []int{1, 2}}}}, "has Allowed values of type int"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -385,10 +386,10 @@ func TestHintViolations(t *testing.T) {
 	}{
 		{"hint plus allowed", &Metadata{Fields: map[string]any{
 			"Flag": FieldMetadata[string]{Allowed: []string{"fast", "slow"}, Hint: HintFile},
-		}}, "declares both a hint and an Allowed domain"},
+		}}, "has both Allowed and Hint"},
 		{"unknown hint", &Metadata{Fields: map[string]any{
 			"Flag": FieldMetadata[string]{Hint: ValueHint(42)},
-		}}, "unknown hint"},
+		}}, "unknown Hint"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -419,7 +420,7 @@ func TestHintOnNonStringFieldIsViolation(t *testing.T) {
 	if w.c.Len() == 0 {
 		t.Fatal("hint on an int field must be a violation")
 	}
-	if !strings.Contains(w.c.All()[0].Error(), "not a string") {
+	if !strings.Contains(w.c.All()[0].Error(), "is not a string") {
 		t.Errorf("violation text wrong: %v", w.c.All())
 	}
 }
@@ -459,5 +460,116 @@ func TestHintFlowsIntoIntrospection(t *testing.T) {
 	}
 	if disableHint != HintServiceID {
 		t.Errorf("core --disable must declare HintServiceID: %v", disableHint)
+	}
+}
+
+type boundCfg struct {
+	Version uint32        `json:"version"`
+	Port    int           `json:"port" conf:"port-x" usage:"the port"`
+	Wait    time.Duration `json:"wait" conf:"wait-x" usage:"the wait"`
+	Sizes   []int         `json:"sizes" conf:"size-x" usage:"pool sizes"`
+	Debug   bool          `json:"debug"`
+}
+
+type boundService struct {
+	cfg boundCfg
+}
+
+func boundWorld(t *testing.T, argv []string, files, env map[string]string, md *Metadata, cfg boundCfg) (*world, *boundService) {
+	t.Helper()
+	w := newWorld(t, argv, files, env)
+	w.applet(0)
+	svc := &boundService{cfg: cfg}
+	NewRegistration("test/bound", func() *boundService { return svc },
+		func(x *boundService) *boundCfg { return &x.cfg }).
+		Alias("bound").Metadata(md).registerInto(w.cat, w.c)
+	return w, svc
+}
+
+func portBounds() *Metadata {
+	return &Metadata{Fields: map[string]any{
+		"Port":  FieldMetadata[int]{Min: Bound(1), Max: Bound(65535)},
+		"Wait":  FieldMetadata[time.Duration]{Min: Bound(time.Second)},
+		"Sizes": FieldMetadata[int]{Min: Bound(1)},
+	}}
+}
+
+func TestBoundsEnforcedEndToEnd(t *testing.T) {
+	good := boundCfg{Version: 1, Port: 80, Wait: time.Minute}
+	cases := []struct {
+		name  string
+		argv  []string
+		files map[string]string
+		env   map[string]string
+		want  string
+	}{
+		{"argument above maximum", []string{"bin", "--enable", "bound", "--port-x", "70000"}, nil, nil, "--port-x: the value 70000 is above the maximum 65535"},
+		{"environment below minimum", []string{"bin", "--enable", "bound"}, nil, map[string]string{"APP__PORT_X": "0"}, "$APP__PORT_X: the value 0 is below the minimum 1"},
+		{"file below minimum", []string{"bin", "--enable", "bound"}, map[string]string{"/etc/app/config.json": `{"bound": {"port": 0}}`}, nil, "config bound.port: the value 0 is below the minimum 1"},
+		{"duration below minimum", []string{"bin", "--enable", "bound", "--wait-x", "10ms"}, nil, nil, "--wait-x: the value 10ms is below the minimum 1s"},
+		{"slice element below minimum", []string{"bin", "--enable", "bound", "--size-x", "0"}, nil, nil, "--size-x: the value 0 is below the minimum 1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w, _ := boundWorld(t, tc.argv, tc.files, tc.env, portBounds(), good)
+			if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), tc.want) {
+				t.Errorf("want exit 2 with %q, got %d:\n%s", tc.want, code, w.stderr.String())
+			}
+		})
+	}
+	w, svc := boundWorld(t, []string{"bin", "--enable", "bound", "--port-x", "65535", "--wait-x", "1s"}, nil, nil, portBounds(), good)
+	if code := w.run(); code != 0 {
+		t.Fatalf("values on the bounds must pass: exit %d\n%s", code, w.stderr.String())
+	}
+	if svc.cfg.Port != 65535 || svc.cfg.Wait != time.Second {
+		t.Errorf("values not applied: %d %v", svc.cfg.Port, svc.cfg.Wait)
+	}
+}
+
+func TestDefaultOutsideBoundsFailsTheRun(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  boundCfg
+		want string
+	}{
+		{"below minimum", boundCfg{Version: 1, Port: 0, Wait: time.Minute}, `field "Port" has an invalid default value: 0. It must be at least 1`},
+		{"above maximum", boundCfg{Version: 1, Port: 70000, Wait: time.Minute}, `field "Port" has an invalid default value: 70000. It must be at most 65535`},
+		{"slice element below minimum", boundCfg{Version: 1, Port: 80, Wait: time.Minute, Sizes: []int{2, 0}}, `field "Sizes" has an invalid default value: 0. It must be at least 1`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w, _ := boundWorld(t, []string{"bin"}, nil, nil, portBounds(), tc.cfg)
+			if w.c.Len() != 0 {
+				t.Fatalf("the commit is type-level and must pass: %v", w.c.All())
+			}
+			if code := w.run(); code != 2 || !strings.Contains(w.stderr.String(), tc.want) {
+				t.Errorf("want exit 2 with %q, got %d:\n%s", tc.want, code, w.stderr.String())
+			}
+		})
+	}
+}
+
+func TestBoundViolationsAtRegistration(t *testing.T) {
+	cases := []struct {
+		name string
+		md   *Metadata
+		want string
+	}{
+		{"min above max", &Metadata{Fields: map[string]any{"Port": FieldMetadata[int]{Min: Bound(10), Max: Bound(1)}}}, `field "Port" has Min 10 greater than its Max 1`},
+		{"allowed and bounds", &Metadata{Fields: map[string]any{"Port": FieldMetadata[int]{Allowed: []int{80}, Max: Bound(1024)}}}, `field "Port" has both Allowed and Min/Max`},
+		{"wrong type", &Metadata{Fields: map[string]any{"Port": FieldMetadata[string]{Min: Bound("a")}}}, `field "Port" has Min/Max of type string but the field's type is int`},
+		{"bool", &Metadata{Fields: map[string]any{"Debug": FieldMetadata[bool]{Min: new(bool)}}}, `field "Debug" has Min/Max but its type bool does not satisfy cmp.Ordered`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w, _ := boundWorld(t, []string{"bin"}, nil, nil, tc.md, boundCfg{Version: 1, Port: 80})
+			joined := ""
+			for _, err := range w.c.All() {
+				joined += err.Error() + "\n"
+			}
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("want %q in:\n%s", tc.want, joined)
+			}
+		})
 	}
 }

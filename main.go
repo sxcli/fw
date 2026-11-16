@@ -91,7 +91,7 @@ func run(rt *runtime) int {
 		if rt.isRoot() {
 			// only --help serves as root: the listing has no applet
 			// to vouch for the run
-			rt.c.Fail("--applets: running as root is not supported")
+			rt.c.Fail("--applets: this program refuses to run as root")
 			code = rt.report(buffer)
 		} else {
 			// the listing serves before dispatch: `mybox --applets`
@@ -190,7 +190,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 
 	ok := false
 	if len(applets) == 0 {
-		rt.usage(public, Tr("no applets are registered in this binary"))
+		rt.usage(public, Tr("this binary has no applets registered and cannot run anything"))
 	} else if nMain == 1 {
 		// Single-applet mode: the sole non-System applet always runs
 		// and the whole vector is its data — except a first bare token
@@ -212,7 +212,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 			}
 		}
 		if !ok {
-			rt.usage(public, Tr("{name} does not name an applet", "name", rest[0]))
+			rt.usage(public, Tr("\"{name}\" is not an applet of this binary", "name", rest[0]))
 		}
 	} else {
 		name := ""
@@ -225,7 +225,7 @@ func (rt *runtime) dispatch() (*registry.Descriptor, Applet, []string, bool) {
 			}
 		}
 		if !ok {
-			rt.usage(public, Tr("{name} does not name an applet", "name", name))
+			rt.usage(public, Tr("\"{name}\" is not an applet of this binary", "name", name))
 		}
 	}
 
@@ -396,6 +396,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 		Open:           rt.open,
 		OpenPinned:     rt.openPinned,
 		Providers:      rt.providers(),
+		ProviderName:   rt.providerName,
 		SuppressCore:   rt.coreSuppress(d),
 		ConfigMaxBytes: rt.configMaxBytes,
 	}
@@ -448,7 +449,7 @@ func (rt *runtime) plan(c *fail.Collector, d *registry.Descriptor, args []string
 				}
 			}
 			if applets != 1 {
-				c.Fail("internal: the resolved service set holds %d applets — exactly one is ever active", applets)
+				c.Fail("internal error: the resolved service set holds %d applets instead of one. Please report this to the sxcli-fw project", applets)
 			}
 		}
 	}
@@ -485,9 +486,9 @@ func (rt *runtime) serve(buffer *logging.Buffer, d *registry.Descriptor, applet 
 			// help is the one door that still serves — an operator
 			// staring at a refusing binary needs the page that
 			// explains it
-			fmt.Fprintln(rt.stderr, Tr("warning: running as root is not supported"))
+			fmt.Fprintln(rt.stderr, Tr("warning: this program refuses to run as root. Only --help is available"))
 		} else {
-			rt.c.Fail("applet %q does not support running as root — the registration can declare AllowsSuperuser", d.Alias)
+			rt.c.Fail("this program refuses to run as root")
 		}
 	}
 	if p.upgrade {
@@ -523,7 +524,7 @@ func (rt *runtime) serve(buffer *logging.Buffer, d *registry.Descriptor, applet 
 			} else if p.sk.WriteSharedConfig {
 				code = rt.writeSharedConfig(d, p)
 			} else {
-				code = rt.lifecycle(buffer, p.res, applet, pre)
+				code = rt.lifecycle(buffer, p.res, d, applet, pre)
 			}
 		}
 	}
@@ -568,7 +569,7 @@ func (rt *runtime) helpSchema(d *registry.Descriptor, p *invocationPlan) *engine
 // explicit --config target.
 func (rt *runtime) upgradeConfig(d *registry.Descriptor, p *invocationPlan) {
 	if p.target == "" {
-		rt.c.Fail("upgrade-config requires an explicit --config target")
+		rt.c.Fail("upgrade-config requires an explicit --config /path/file")
 		return
 	}
 	from, bare := engine.ParseFromVersions(rt.c, p.kn.FromVersion)
@@ -608,7 +609,7 @@ type prepared struct {
 	injected   map[string]bool
 	configured map[string]bool
 	skip       map[string]bool
-	depID      string
+	depName    string // the failed dependency as the messages name it, alias(id)
 	depErr     error
 }
 
@@ -642,41 +643,37 @@ func (rt *runtime) prepareTranslator(res graph.Result) *prepared {
 	var out *prepared
 	if rt.translatorID != "" {
 		if sub, member := res.Subtree(rt.translatorID); member {
-			subC := &fail.Collector{}
-			sub.Inject(subC)
-			if subC.Len() == 0 {
-				out = &prepared{injected: map[string]bool{}, configured: map[string]bool{}, skip: map[string]bool{}}
-				for _, m := range sub.Ordered {
-					out.injected[m.Desc.ID] = true
-				}
-				ok := true
-				for i := 0; i < len(sub.Ordered) && ok; i++ {
-					m := sub.Ordered[i]
-					if c, isConfigurable := m.Desc.Instance.(Configurable); isConfigurable {
-						if err := c.Configured(); err == nil {
-							out.configured[m.Desc.ID] = true
-						} else {
-							ok = false
-							out.skip[m.Desc.ID] = true
-							if m.Desc.ID == rt.translatorID {
-								slog.Warn("translator unavailable, proceeding untranslated", "service", m.Desc.ID, "error", err)
-							} else {
-								out.depID, out.depErr = m.Desc.ID, err
-							}
-						}
-					}
-				}
-				if ok {
-					for _, m := range sub.Ordered {
+			sub.Inject()
+			out = &prepared{injected: map[string]bool{}, configured: map[string]bool{}, skip: map[string]bool{}}
+			for _, m := range sub.Ordered {
+				out.injected[m.Desc.ID] = true
+			}
+			ok := true
+			for i := 0; i < len(sub.Ordered) && ok; i++ {
+				m := sub.Ordered[i]
+				if c, isConfigurable := m.Desc.Instance.(Configurable); isConfigurable {
+					if err := c.Configured(); err == nil {
+						out.configured[m.Desc.ID] = true
+					} else {
+						ok = false
+						out.skip[m.Desc.ID] = true
 						if m.Desc.ID == rt.translatorID {
-							if tr, isTranslator := m.Desc.Instance.(Translator); isTranslator {
-								activeTranslator = tr
-							}
+							name := solver.ServiceName(m.Desc.Alias, m.Desc.ID)
+							slog.Warn("translator "+name+" failed to configure, messages are printed untranslated", "service", name, "error", err)
+						} else {
+							out.depName, out.depErr = solver.ServiceName(m.Desc.Alias, m.Desc.ID), err
 						}
 					}
 				}
-			} else {
-				slog.Warn("translator subtree injection failed, proceeding untranslated", "service", rt.translatorID)
+			}
+			if ok {
+				for _, m := range sub.Ordered {
+					if m.Desc.ID == rt.translatorID {
+						if tr, isTranslator := m.Desc.Instance.(Translator); isTranslator {
+							activeTranslator = tr
+						}
+					}
+				}
 			}
 		}
 	}
@@ -688,23 +685,23 @@ func (rt *runtime) prepareTranslator(res graph.Result) *prepared {
 // with the buffered logs; failures after it are logged live. Members
 // the translator-first pass already configured are not re-Configured;
 // a degraded translator is skipped entirely.
-func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Applet, pre *prepared) int {
+func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, d *registry.Descriptor, applet Applet, pre *prepared) int {
 	code := 2
-	res.InjectExcept(rt.c, pre.injectedSet())
+	res.InjectExcept(pre.injectedSet())
 	if rt.c.Len() == 0 {
 		configured := true
 		if pre != nil && pre.depErr != nil {
 			// a translator-subtree dependency failed in the early
 			// pass; surface it under the normal fatal rules without a
 			// second Configured call
-			rt.c.Fail("service %q: %v", pre.depID, pre.depErr)
+			rt.c.Fail("service %s: %v", pre.depName, pre.depErr)
 			configured = false
 		}
 		for i := 0; i < len(res.Ordered) && configured; i++ {
 			id := res.Ordered[i].Desc.ID
 			if c, ok := res.Ordered[i].Desc.Instance.(Configurable); ok && !pre.isConfigured(id) && !pre.isSkipped(id) {
 				if err := c.Configured(); err != nil {
-					rt.c.Fail("service %q: %v", id, err)
+					rt.c.Fail("service %s: %v", solver.ServiceName(res.Ordered[i].Desc.Alias, id), err)
 					configured = false
 				}
 			}
@@ -714,11 +711,11 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 				slog.Warn(solver.CycleRule, "cycle", cycle)
 			}
 			for _, from := range res.UnusedOverrides {
-				slog.Warn("override matched no dependency", "from", from)
+				slog.Warn("--override "+from+"=...: no dependency on \""+from+"\" in this run, the override has no effect", "from", from)
 			}
 			multi := rt.assembleSinks(res)
 			if err := buffer.Replay(multi); err != nil {
-				fmt.Fprintf(rt.stderr, "log replay: %v\n", err)
+				fmt.Fprintf(rt.stderr, "the startup log could not be replayed into the configured log sinks: %v\n", err)
 			}
 			slog.SetDefault(slog.New(multi))
 			var started []*graph.Member
@@ -728,17 +725,19 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 					if err := s.Start(); err == nil {
 						started = append(started, &res.Ordered[i])
 					} else {
-						slog.Error("service start failed", "service", res.Ordered[i].Desc.ID, "error", err)
+						name := solver.ServiceName(res.Ordered[i].Desc.Alias, res.Ordered[i].Desc.ID)
+						slog.Error("service "+name+" failed to start", "service", name, "error", err)
 						healthy = false
 					}
 				}
 			}
 			if healthy {
-				code = rt.runApplet(applet)
+				code = rt.runApplet(d, applet)
 			}
 			for i := len(started) - 1; i >= 0; i-- {
 				if err := started[i].Desc.Instance.(Stopper).Stop(); err != nil {
-					slog.Error("service stop failed", "service", started[i].Desc.ID, "error", err)
+					name := solver.ServiceName(started[i].Desc.Alias, started[i].Desc.ID)
+					slog.Error("service "+name+" failed to stop", "service", name, "error", err)
 				}
 			}
 		}
@@ -746,10 +745,10 @@ func (rt *runtime) lifecycle(buffer *logging.Buffer, res graph.Result, applet Ap
 	return code
 }
 
-func (rt *runtime) runApplet(applet Applet) int {
+func (rt *runtime) runApplet(d *registry.Descriptor, applet Applet) int {
 	var code int
 	if rt.execApplet != nil {
-		code = rt.execApplet(applet)
+		code = rt.execApplet(d, applet)
 	} else {
 		code = applet.Run()
 	}
@@ -818,6 +817,17 @@ func (rt *runtime) providers() []engine.Provider {
 		}
 	}
 	return out
+}
+
+// providerName prints a format provider as the messages name every
+// service, alias(id), looking its descriptor up by instance.
+func (rt *runtime) providerName(p engine.Provider) string {
+	for _, d := range rt.reg.All() {
+		if d.Instance == p {
+			return "service " + solver.ServiceName(d.Alias, d.ID)
+		}
+	}
+	return fmt.Sprintf("%T", p)
 }
 
 // providerSeeds maps the format providers that actually transcoded a
@@ -911,7 +921,7 @@ func (rt *runtime) help(sch *engine.Schema) int {
 func (rt *runtime) writeConfig(sch *engine.Schema, target string, src engine.Sources, files *engine.Files) int {
 	code := 0
 	if err := sch.WriteMerged(rt.stdout, target, src, files); err != nil {
-		rt.c.Fail("write-config: %v", err)
+		rt.c.Fail("--write-config: the config file could not be written: %v", err)
 		code = 2
 	}
 	return code
@@ -955,7 +965,7 @@ func (rt *runtime) writeSharedConfig(d *registry.Descriptor, p *invocationPlan) 
 			}
 		}
 		if err := engine.WriteDocument(rt.stdout, p.core.Config, p.src, doc); err != nil {
-			rt.c.Fail("write-shared-config: %v", err)
+			rt.c.Fail("--write-shared-config: the shared config file could not be written: %v", err)
 		}
 	}
 	if rt.c.Len() > 0 {

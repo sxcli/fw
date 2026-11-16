@@ -49,16 +49,14 @@ func init() {
 }
 
 // Configured builds the inner handler from the merged configuration.
+// Output and Format hold one of their Allowed values by the time this
+// runs: the registration's metadata makes the engine refuse any other.
 func (s *Console) Configured() error {
-	var err error
-	if s.cfg.Output == "stderr" {
-		err = s.build(os.Stderr)
-	} else if s.cfg.Output == "stdout" {
-		err = s.build(os.Stdout)
-	} else {
-		err = fmt.Errorf("console: invalid output %q (stderr or stdout)", s.cfg.Output)
+	w := io.Writer(os.Stderr)
+	if s.cfg.Output == "stdout" {
+		w = os.Stdout
 	}
-	return err
+	return s.build(w)
 }
 
 // build constructs the inner handler over w; split from Configured so
@@ -69,15 +67,13 @@ func (s *Console) build(w io.Writer) error {
 	if err = level.UnmarshalText([]byte(s.cfg.Level)); err == nil {
 		s.level.Set(level)
 		opts := &slog.HandlerOptions{Level: &s.level}
-		if s.cfg.Format == "text" {
-			s.inner = slog.NewTextHandler(w, opts)
-		} else if s.cfg.Format == "json" {
+		if s.cfg.Format == "json" {
 			s.inner = slog.NewJSONHandler(w, opts)
 		} else {
-			err = fmt.Errorf("console: invalid format %q (text or json)", s.cfg.Format)
+			s.inner = slog.NewTextHandler(w, opts)
 		}
 	} else {
-		err = fmt.Errorf("console: invalid level %q: %v", s.cfg.Level, err)
+		err = fmt.Errorf("unknown log level %q. Use debug, info, warn or error, optionally with an offset like info+5", s.cfg.Level)
 	}
 	return err
 }

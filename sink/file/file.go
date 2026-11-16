@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"sxcli.dev/fw"
@@ -59,16 +60,19 @@ func (s *File) Configured() error {
 	var level slog.Level
 	var mode uint64
 	if s.cfg.Path == "" {
-		err = fmt.Errorf("logfile: a path is required when the sink is enabled")
+		err = fmt.Errorf("--logfile-path is required")
 	} else if err = level.UnmarshalText([]byte(s.cfg.Level)); err != nil {
-		err = fmt.Errorf("logfile: invalid level %q: %v", s.cfg.Level, err)
-	} else if s.cfg.Format != "text" && s.cfg.Format != "json" {
-		err = fmt.Errorf("logfile: invalid format %q (text or json)", s.cfg.Format)
+		err = fmt.Errorf("unknown log level %q. Use debug, info, warn or error, optionally with an offset like info+5", s.cfg.Level)
 	} else if mode, err = strconv.ParseUint(s.cfg.Mode, 8, 12); err != nil {
-		err = fmt.Errorf("logfile: invalid mode %q: must be octal permissions", s.cfg.Mode)
+		err = fmt.Errorf("--logfile-mode %q is not octal file permissions like 0600", s.cfg.Mode)
 	} else {
 		var out *os.File
-		if out, err = os.OpenFile(s.cfg.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode)); err == nil {
+		dir := filepath.Dir(s.cfg.Path)
+		if err = os.MkdirAll(dir, directoryMode(os.FileMode(mode))); err != nil {
+			err = fmt.Errorf("the log directory %q could not be created: %v", dir, err)
+		} else if out, err = os.OpenFile(s.cfg.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(mode)); err != nil {
+			err = fmt.Errorf("the log file %q could not be created or opened: %v", s.cfg.Path, err)
+		} else {
 			s.level.Set(level)
 			s.out = out
 			opts := &slog.HandlerOptions{Level: &s.level}
@@ -77,11 +81,23 @@ func (s *File) Configured() error {
 			} else {
 				s.inner = slog.NewTextHandler(out, opts)
 			}
-		} else {
-			err = fmt.Errorf("logfile: %v", err)
 		}
 	}
 	return err
+}
+
+// directoryMode is the mode for a log directory the sink creates: the
+// file's mode with the execute bit added to every triad that can read,
+// so 0600 gives 0700 and 0640 gives 0750. An existing directory keeps
+// its own mode.
+func directoryMode(file os.FileMode) os.FileMode {
+	dir := file
+	for _, read := range []os.FileMode{0400, 0040, 0004} {
+		if file&read != 0 {
+			dir |= read >> 2
+		}
+	}
+	return dir
 }
 
 // Start is a no-op: the file was opened in Configured so the sink could

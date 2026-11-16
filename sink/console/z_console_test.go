@@ -74,17 +74,12 @@ func TestDerivedViewCarriesAttrs(t *testing.T) {
 	}
 }
 
-func TestInvalidConfig(t *testing.T) {
-	cases := []Config{
-		{Level: "loud", Format: "text", Output: "stderr"},
-		{Level: "info", Format: "xml", Output: "stderr"},
-		{Level: "info", Format: "text", Output: "/dev/null"},
-	}
-	for _, cfg := range cases {
-		s := &Console{cfg: cfg}
-		if err := s.Configured(); err == nil {
-			t.Errorf("config %+v must be rejected", cfg)
-		}
+// Format and Output are guarded by their Allowed values at the write
+// path, so Configured checks the level alone.
+func TestInvalidLevelIsRejected(t *testing.T) {
+	s := &Console{cfg: Config{Level: "loud", Format: "text", Output: "stderr"}}
+	if err := s.Configured(); err == nil {
+		t.Errorf("config %+v must be rejected", s.cfg)
 	}
 }
 
